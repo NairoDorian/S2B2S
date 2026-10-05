@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+desktop (macOS, Windows, Linux — Tauri 3 shell, native window per platform)
 
 ## Users
 
@@ -26,18 +26,18 @@ Unlike cloud transcription wrappers or heavy electron utilities:
 2. **Multi-STT Parallel Consensus**: Capable of running multiple STT models concurrently in real-time, feeding their intermediate or completed hypotheses into a local LLM to produce clean, high-accuracy consensus text.
 3. **Multi-Layer UI Experience**:
    - **Deep Configuration & Management Surface**: Comprehensive control over model weights, quantizations, audio devices, VAD thresholds, benchmarks, and recall vault notes.
-   - **Minimalist "Épuré" Live Canvas**: Once configured, the interface recedes into an ultra-minimal, dark blank canvas showcasing only the crisp white transcription paired with circular FFT spectrum and raw audio visualizers.
-4. **Sub-Millisecond System Feel**: Built with Tauri 3 and SolidJS backed by an allocation-free Rust audio pipeline and lock-free thread coordination.
+   - **Minimalist "Épuré" Live Canvas**: Once configured, the interface recedes into an ultra-minimal, dark blank canvas showcasing only the crisp white transcription wrapped around a circular FFT scope with its waveform drawn inside.
+4. **Sub-Millisecond System Feel**: Built with Tauri 3 and Solid 2, backed by an allocation-free Rust audio pipeline and lock-free thread coordination.
 
 ## Operating Context
 
 - **Desktop Global Utility**: Resides in the system tray and runs via global hotkeys (push-to-talk or toggle recording).
 - **Active Window Injection**: Directly types or pastes transcribed text into IDEs, text editors, browsers, chat apps, and terminals.
-- **Hardware Acceleration**: Scales from pure CPU execution to local GPU acceleration (CUDA, Metal, Vulkan) depending on user hardware.
+- **Hardware Acceleration**: Scales from pure CPU execution to local GPU acceleration, preferring CUDA and falling back to Vulkan on Windows and Linux, and Metal on macOS, depending on user hardware.
 
 ## Capabilities and Constraints
 
-- **Engine Support**: GGUF speech models via `transcribe.cpp` with native streaming (Whisper, Nemotron, R2T2) and local LLM post-processing via supervised `llama-server`.
+- **Engine Support**: GGUF speech models via `transcribe.cpp`, with native streaming on the trained families (Parakeet Unified, Nemotron 3.5, Nemotron Speech, R2T2) and local LLM post-processing via a supervised `llama-server`.
 - **Audio Processing**: High-speed voice activity detection (VAD), real-time live FFT spectral analysis (8 spectral features, linear/mel/bark scales, circular sweep scope).
 - **Geometric / Aesthetic Constraint**: Sharp corners for containers and panels across the interface; avoid excessive rounding or bubbly pill aesthetics. Dark, high-contrast, distraction-free palette.
 - **Identity & Renaming Architecture**: Product identity is strictly centralized in `scripts/app-meta.ts` and mirrored code constants. The codebase is architected for easy identity rebranding and extension into future speech/thought capabilities.
@@ -51,7 +51,7 @@ Unlike cloud transcription wrappers or heavy electron utilities:
 
 ## Evidence on Hand
 
-- Shipped live application code with complete Rust engine, custom FFT DSP pipelines, and SolidJS UI.
+- Shipped live application code with complete Rust engine, custom FFT DSP pipelines, and Solid 2 UI.
 - Model catalog in `src-tauri/src/catalog/catalog.json`.
 - Comprehensive performance and latency budgets documented in `docs/PERFORMANCE.md`.
 

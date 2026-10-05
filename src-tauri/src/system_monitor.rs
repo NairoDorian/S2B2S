@@ -44,6 +44,12 @@ pub fn latest() -> Option<SystemStatsEvent> {
     LATEST.lock().unwrap().clone()
 }
 
+/// Spawn the sampler thread. Idempotent: a second call is a no-op, so the
+/// startup path and any later caller can both ask without coordinating.
+///
+/// The thread never exits — it is the process's lifetime — and only the latest
+/// sample is kept, so a caller that arrives between ticks reads the previous one
+/// through [`latest`] instead of waiting.
 pub fn start(app: AppHandle) {
     if STARTED.swap(true, Ordering::SeqCst) {
         return;

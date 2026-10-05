@@ -48,6 +48,17 @@ interface LiveModeStore {
   closeViewer: () => void;
 }
 
+/**
+ * Session state of the "Live Mode" page. Lives in a store (not the page) because
+ * the session keeps running in the backend while the user browses other pages:
+ * the event listeners are installed once and survive unmounts, and the committed
+ * text is not lost by a page switch mid-session.
+ *
+ * `stable` is bounded (`MAX_STABLE_CHARS`) and is the in-memory mirror of the
+ * transcript *file* — which is the session's real output. The cap only stops a
+ * very long session from growing the webview without limit; the oldest characters
+ * dropped here are still on disk.
+ */
 const liveModeState = createSolidStore<LiveModeStore>((set, get) => ({
   status: IDLE_STATUS,
   stable: "",

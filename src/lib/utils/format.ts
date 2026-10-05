@@ -25,20 +25,22 @@ export const formatModelSize = (sizeMb: number | null | undefined): string => {
 };
 
 /**
- * A percentage into the `0…100` a bar can actually draw. Callers that already
- * hold a percentage pass it straight through.
+ * A percentage into the `0…100` a bar can actually draw. This is the clamp for
+ * every meter that already holds a percentage: the CPU/GPU bars
+ * (`SystemMeters`), the download progress bars and the audio player's playback
+ * position.
  */
 export const clampPercent = (percent: number): number =>
   Math.max(0, Math.min(100, percent));
 
 /**
- * A ratio (`0…1`, a playback position, a meter reading) as a percentage in
- * `0…100`, rounded for display.
+ * A ratio (`0…1`) as a percentage in `0…100`, rounded for display.
  *
- * One clamp for every meter in the app: the CPU/GPU bars, the playback
- * position and the VAD level all arrive from a ratio or a raw percentage, and
- * a value outside `0…1`/`0…100` would otherwise overflow the bar's track or
- * show a number no bar agrees with.
+ * Every VAD readout goes through here rather than through `clampPercent`: the
+ * Earshot score, its peak, the threshold, the level and the RNNoise probability
+ * are all ratios, so a value that arrives slightly outside `0…1` renders as a
+ * full or empty bar rather than overflowing the track or showing a number the
+ * meter disagrees with.
  */
 export const formatPercent = (ratio: number): string =>
   `${Math.round(clampPercent(ratio * 100))}%`;

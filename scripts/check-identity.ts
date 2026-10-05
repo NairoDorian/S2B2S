@@ -12,9 +12,10 @@
  * So this walks every tracked file and reports two kinds of leak:
  *
  * 1. **The old name.** Any occurrence of `APP.legacy.name` (as a word, any
- *    case) outside an exemption below. Renaming again means moving the current
- *    name into `legacy` and updating this list — the code itself needs no
- *    edit, which is the point.
+ *    case), or of the pre-rename bundle identifier `APP.legacy.identifier`,
+ *    outside an exemption below. Renaming again means moving the current name
+ *    into `legacy` and updating this list — the code itself needs no edit,
+ *    which is the point.
  * 2. **A hardcoded current name in code.** `src/**` and `src-tauri/src/**`
  *    must read the name from `appIdentity.ts` / `app_identity.rs`, never
  *    spell it. Prose — docs, comments in scripts, release notes, locales —

@@ -1,3 +1,14 @@
+//! Standalone recorder demo: an interactive always-on / on-demand REPL around
+//! [`AudioRecorder`], writing each take to `recording_N.wav`.
+//!
+//! **This is not a build target.** `Cargo.toml` declares only `[lib]`, and this
+//! file sits outside `src/bin/`, so Cargo never discovers it and no lane, build
+//! script or CI job compiles it. Nothing in the crate declares it as a module
+//! either. It is kept as a manual harness for the recorder, and it has to be
+//! kept compiling *by hand*: nothing here is checked for us, and a change to
+//! the recorder's public API can silently break the only caller that exercises
+//! the always-on / on-demand paths outside the tests.
+
 use std::io::{self, Write};
 
 use app_lib::audio_toolkit::{

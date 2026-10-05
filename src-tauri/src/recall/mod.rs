@@ -34,7 +34,7 @@ const KEY_AUDIO: &str = "audio";
 
 /// Sub-folder of the vault the note files live in.
 pub const NOTES_SUBDIR: &str = "notes";
-/// Sub-folder holding (or linking to) the recordings behind the notes.
+/// Sub-folder holding the recordings behind the notes (copied in, never linked).
 pub const AUDIO_SUBDIR: &str = "audio";
 /// Longest slug a new note's id takes from its title.
 const MAX_SLUG_LEN: usize = 80;

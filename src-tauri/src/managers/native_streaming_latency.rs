@@ -82,9 +82,11 @@ const fn nemotron_right_frames(
     }
 }
 
-/// Parakeet Unified `(chunk_ms, right_ms)` per preset. `Accurate` is the model
-/// default tuple `(70, 13, 13)` frames = 1040 / 1040 ms that the runtime picks
-/// when no extension is attached.
+/// Parakeet Unified `(chunk_ms, right_ms)` per preset — the two of the runtime
+/// default the app overrides; `left_ms` is always the same value.
+/// `Accurate` is the model default this preset defers to: `(70, 13, 13)` encoder
+/// frames = 5600 / 1040 / 1040 ms of left / chunk / right context, and its
+/// 70 × 80 ms left context is exactly the `left_ms` sent below.
 const fn parakeet_buffered_chunk_right_ms(preset: NativeStreamingLatencyPreset) -> (u32, u32) {
     match preset {
         NativeStreamingLatencyPreset::Fastest => (160, 160),

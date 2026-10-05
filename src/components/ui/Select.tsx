@@ -40,6 +40,17 @@ type NonCreatableProps = {
   formatCreateLabel?: never;
 };
 
+/**
+ * The searchable combobox (`ui/Dropdown` is the plain one). Two things the
+ * type has to say out loud:
+ *
+ * - `isCreatable` is the discriminator, not `onCreateOption`: with it off,
+ *   `onCreateOption` / `formatCreateLabel` are `never`, so a caller that
+ *   passes them without `isCreatable: true` gets a compile error rather than
+ *   an "create" row that silently never appears.
+ * - `isClearable` defaults to true, so an absent prop still renders the
+ *   clear button and `onChange(null)`.
+ */
 export type SelectProps = BaseProps & (CreatableProps | NonCreatableProps);
 
 interface MenuItem {

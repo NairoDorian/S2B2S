@@ -38,6 +38,10 @@ const ToastItem = (props: ToastItemProps): JSX.Element => {
     },
   );
 
+  // The auto-dismiss timer, keyed on what blocks it. Hover or keyboard focus
+  // parks the countdown rather than restarting it: `remaining` is whatever was
+  // left when the block began, so releasing the pointer dismisses the toast on
+  // schedule instead of giving it a fresh four seconds.
   createEffect(
     () => hovered() || focused() || leaving(),
     (blocked) => {

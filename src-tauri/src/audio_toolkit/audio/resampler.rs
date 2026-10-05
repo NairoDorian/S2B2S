@@ -5,6 +5,13 @@ use std::time::Duration;
 
 const RESAMPLER_CHUNK_SIZE: usize = 1024;
 
+/// Rate-and-frame converter: arbitrary-rate mono `f32` in, whole output frames
+/// of `out_hz × frame_dur` out. `push` emits only complete frames and buffers the
+/// remainder; `finish` flushes the inner FFT resampler's delay line and emits the
+/// last partial frame zero-padded, so a caller that pushes everything and then
+/// finishes loses nothing. `reset` returns it to the state of a fresh instance
+/// (delay line, counters, partial frame) — the capture path calls it between
+/// recordings so one session's tail cannot bleed into the next.
 pub struct FrameResampler {
     resampler: Option<Fft<f32>>,
     chunk_in: usize,

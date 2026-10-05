@@ -21,10 +21,12 @@ To change a fork:
 4. only then move the pin in ZER0 (`Cargo.lock` / `package.json`).
 
 Never patch a fork's code from inside this repository, and never edit a copy
-under `src-tauri/target`, `docs/vendor/` or `~/.cargo/git/checkouts`. Those are
-build products of the git source: an edit in one is either overwritten on the
-next fetch or invisible to everyone else — including CI and the next machine to
-build the app.
+under `src-tauri/target` or `~/.cargo/git/checkouts`. Those are build products of
+the git source: an edit in one is either overwritten on the next fetch or
+invisible to everyone else — including CI and the next machine to build the app.
+(`docs/vendor/` is a mirror of upstream _documentation_, not a build product of
+any git source — see [STACK_WATCH.md](STACK_WATCH.md) — so it is not another
+place to look for a fork's code.)
 
 This is not a style preference. ZER0 consumes all three as **git sources**, so
 `Cargo.lock` pins a commit SHA, not a path. A change that is not committed and
@@ -104,6 +106,16 @@ For the npm half of `tauri-plugin-macos-permissions`, step 4 is
 `bun update tauri-plugin-macos-permissions-api` in ZER0 (the dependency is a git
 spec, so it resolves the same way).
 
+`transcribe-cpp` is the exception to step 4: its pin is not moved by hand. The
+next `bun run tauri` (or any `build:*` lane) runs
+`scripts/check-transcribe-deps.ts`, which reads the locked commit, `git
+ls-remote`s `main` and runs `cargo update` for you if the branch has moved — so
+step 5 _is_ step 4 for that fork. The one case where you want the check to
+leave the pin alone is a local prebuilt install: with `TRANSCRIBE_DIR` (or
+`TRANSCRIBE_PREBUILT_DIR`) set, `scripts/tauri-runner.ts` skips the refresh
+rather than replacing the library you are testing (see
+[STT_BENCHMARKS.md](STT_BENCHMARKS.md)).
+
 **`bun run dev:cpu` is the check that covers everything**, and the one to reach
 for by default: it compiles the frontend, builds the whole Rust app and launches
 it, which is what a fork bump needs — a Tauri-side break (an API rename, a
@@ -117,23 +129,52 @@ to link until it exits.
 
 ## Constraints that bite when bumping
 
-- **Tauri alpha ceilings.** Core `tauri` and `tauri-runtime-wry` are on
-  `3.0.0-alpha.2`; the rest of the `tauri-*` family tops out at `alpha.1` (no
-  alpha.2 was published for them); the runtime `tauri-plugin-*` crates are not
-  on crates.io past `3.0.0-alpha.0` at all, which is why they come from
-  `tauri-apps/plugins-workspace` `v3`. Check what a fork's own pins resolve to
-  before assuming a bump is needed.
+- **Tauri alpha ceilings — and why the core is pinned with `=`.** Core `tauri`
+  and `tauri-runtime-wry` are on `3.0.0-alpha.2`; `tauri-build`, `tauri-utils`,
+  `tauri-codegen`, `tauri-macros` and `tauri-plugin` are on `3.0.0-alpha.1`.
+  That split is not a preference, and it is not merely "the plugins lag": the
+  `v3` branch tip (`d9be6d0`) **is** the `v3.0.0-alpha.2` release of every
+  `tauri-plugin-*` — the same commit is the branch head, the crate source, and
+  the npm `-js-` tag. So the plugins are not behind the core; the core has moved
+  past them. Two separate breaks stand between here and `alpha.4` (verified
+  against the published `tauri-3.0.0-alpha.4`, whose commit is the `v3` branch
+  head):
+  1. **The plugins.** `alpha.3` moved `run_on_main_thread` off an inherent
+     `AppHandle` method onto the `Manager` trait, and the plugin sources call
+     `handle.run_on_main_thread(..)` without `use tauri::Manager` (E0599 in
+     `tauri-plugin-dialog`). Fixing it means forking plugins-workspace.
+  2. **The core's own API, which the fork would hit second.** `b9a77ebb`
+     _`refactor(core)!: remove the macos-private-api feature flag`_ landed on
+     `v3` on 2026-09-30, so `macos-private-api` is **no longer a feature** in
+     `alpha.4` — and this manifest passes it to both `tauri` and
+     `tauri-runtime-wry`. `c9a3cb89` is the other half: macOS private APIs are
+     now enabled unconditionally. Taking alpha.4 is therefore a code change
+     here, not only a fork upstream.
+     Two failures follow from a partial bump, and both are silent until compile
+     time: `tauri-build` alpha.1 validates `tauri.conf.json` through `tauri-utils`,
+     so a `tauri-utils` a single patch ahead makes it reject `macOSPrivateApi` as
+     an unknown field (its diagnostic blames "a CLI newer than tauri-build"), and a
+     partially-bumped family otherwise resolves and then fails to compile naming
+     none of the crates you would think to check. `scripts/update-deps.ts` holds the
+     family in `CARGO_VERSION_LOCKED` and `src-tauri/Cargo.toml` carries `=` on
+     every member — including the four nothing in the crate calls directly, which
+     are declared purely so an `=` has somewhere to live. Check what a fork's own
+     pins resolve to before assuming a bump is needed.
 - **`js_init_script` → `initialization_script`.** Core alpha.2 renamed
   `Builder::js_init_script`. Any fork code calling the old name will not compile
   against this core. Verified 2026-09-21: neither `tauri-specta-v3` nor
   `tauri-plugin-macos-permissions` calls either name (it is the published
   alpha.0 plugin crates that do, which is why they are not used).
-- **Prerelease carets move further than they look.** A fork pinning
-  `tauri = "3.0.0-alpha.0"` resolves to `3.0.0-alpha.2` in this graph — Cargo
-  matches prereleases of the same `3.0.0` triple — so moving the app's core
-  forward usually does **not** require touching a fork. Bump a fork when its
-  code needs an API that moved, or when upstream published something it should
-  carry.
+- **Prerelease carets move further than they look — and they move the whole
+  family at once.** A requirement like `3.0.0-alpha.2` reads as
+  `>=3.0.0-alpha.2, <3.0.0`, so a fork pinning it resolves to whatever is newest
+  inside `3.0.0`, on its own and without being asked. That is usually what you
+  want; it is exactly what broke when tauri published alpha.3, because `cargo
+update` unified the transitive members (`tauri-utils`, `tauri-macros`,
+  `tauri-plugin`, `tauri-codegen`) forward too while the git-pinned plugins
+  stayed put. Use `=` for any crate whose release has to match another's, and
+  declare the ones nothing calls directly if the only thing you need from them
+  is a place to put the `=`.
 - **Windows COM instances.** On Windows the app's direct `webview2-com` and
   `windows-core` pins must stay the instances `tauri-runtime-wry` links, or the
   `ICoreWebView2Settings3` cast stops resolving. A fork that adds its own

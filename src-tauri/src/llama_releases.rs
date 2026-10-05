@@ -23,8 +23,6 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 const REPO: &str = "ggml-org/llama.cpp";
-// No local user agent: `app_identity::USER_AGENT` is the one this app sends
-// everywhere, so the GitHub API sees the same identity as the model downloads.
 const CACHE_TTL: Duration = Duration::from_secs(600);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
 
@@ -101,6 +99,9 @@ struct GhRelease {
 
 static CACHE: Mutex<Option<(Instant, Vec<LlamaRelease>)>> = Mutex::new(None);
 
+/// The GitHub client. No local user agent string: `app_identity::USER_AGENT` is
+/// the one this app sends everywhere, so the API sees the same identity here as
+/// it does for the model downloads.
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(crate::app_identity::USER_AGENT)

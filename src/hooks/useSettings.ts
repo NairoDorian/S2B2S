@@ -84,7 +84,7 @@ export const useSettings = (): UseSettingsResult => {
 
   // The action entries below snapshot the store's function references once.
   // Reading `store.updateSetting` etc. directly in this body would trip
-  // `STRICT_READ_UNTRACKED` (14 untracked store reads per component — this
+  // `STRICT_READ_UNTRACKED` (17 untracked store reads per component — this
   // hook is called by ~100 of them); the refs are stable for the app's
   // lifetime, so the one-time read is intentional and wrapped in `untrack`
   // to say so. The state entries stay accessors so their reads land in

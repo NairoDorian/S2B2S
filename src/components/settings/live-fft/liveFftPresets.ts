@@ -85,7 +85,9 @@ export interface LiveFftPreset {
 
 /**
  * Starting points. Each preset is applied on top of the defaults (not the
- * current values), keeping only the source and threading choices.
+ * current values), keeping only what describes the *instrument* rather than
+ * its sound: the capture source, the threading choice, and the two overlays
+ * (`spectral_features`, `show_vad`).
  */
 export const LIVE_FFT_PRESETS: LiveFftPreset[] = [
   { id: "analyzer", patch: {} },

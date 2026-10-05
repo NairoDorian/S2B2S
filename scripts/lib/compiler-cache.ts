@@ -8,9 +8,12 @@
 // 2. CMAKE_C_COMPILER_LAUNCHER and CMAKE_CXX_COMPILER_LAUNCHER in TRANSCRIBE_CMAKE_ARGS
 //    for transcribe.cpp C/C++ files.
 //
-// Note: Does NOT pass sccache to CMAKE_CUDA_COMPILER_LAUNCHER on Windows because
-// sccache fails to parse NVCC's MSVC flags (-Xcompiler=-Fd...,-FS) with "Could not parse shell line".
-// CUDA nvcc runs directly with Ninja parallel jobs, while C, C++, and Rust enjoy full caching.
+// Note: sccache is never passed to CMAKE_CUDA_COMPILER_LAUNCHER, on Windows or
+// anywhere else: on Windows it fails to parse NVCC's MSVC flags
+// (-Xcompiler=-Fd...,-FS) with "Could not parse shell line", and the guard is
+// deliberately not platform-conditional so the launcher cannot come back through
+// a stale CMake cache. ccache can drive nvcc and is passed. CUDA nvcc runs
+// directly with Ninja parallel jobs, while C, C++, and Rust enjoy full caching.
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -18,8 +21,9 @@ import { join } from "node:path";
 import { withCmakeArg } from "./cpu-lane";
 
 /**
- * Dynamically locate sccache or ccache on the system without relying on
- * custom configuration environment variables.
+ * Probe for sccache, then ccache: PATH first (`Bun.which`), then the standard
+ * developer tool folders a shell has not added yet. sccache wins when both are
+ * installed. Returns the absolute path, or null when neither is present.
  */
 export function findCompilerCacheDynamically(): string | null {
   // 1. Probe PATH dynamically using Bun.which
@@ -51,13 +55,19 @@ export function findCompilerCacheDynamically(): string | null {
  * Configure compiler caching dynamically:
  * - Enables RUSTC_WRAPPER for Rust crate builds.
  * - Passes CMAKE_C_COMPILER_LAUNCHER and CMAKE_CXX_COMPILER_LAUNCHER to TRANSCRIBE_CMAKE_ARGS.
- * - Leaves CMAKE_CUDA_COMPILER_LAUNCHER unset on Windows for sccache to avoid nvcc shell-parsing crashes.
+ * - Passes CMAKE_CUDA_COMPILER_LAUNCHER for ccache; for sccache it clears the
+ *   launcher instead, so nvcc compiles directly (see the header).
+ *
+ * @returns the cache binary in use, or null when none was found — the caller's
+ *   banner only reports a cache when there is one.
  */
 export function applyCompilerCache(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
-  // Make sure TRANSCRIBE_CCACHE_PATH is unset so upstream build.rs doesn't
-  // blindly bind sccache to CMAKE_CUDA_COMPILER_LAUNCHER on Windows.
+  // Make sure TRANSCRIBE_CCACHE_PATH is unset: transcribe-cpp-sys's build
+  // script honours it and would otherwise define the launchers itself —
+  // binding sccache to CMAKE_CUDA_COMPILER_LAUNCHER on Windows, past the guard
+  // below. The launcher is set here (and cleared, where needed) instead.
   delete env.TRANSCRIBE_CCACHE_PATH;
 
   const cachePath = findCompilerCacheDynamically();

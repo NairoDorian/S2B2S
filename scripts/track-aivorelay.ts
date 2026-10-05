@@ -1,11 +1,14 @@
 /**
- * track-aivorelay.ts
+ * scripts/track-aivorelay.ts
  *
  * Scans the AIVORelay cousin repository, extracts all commits ahead of upstream Handy main,
  * categorizes them, and generates docs/COUSIN_AIVORELAY_TRACKER.md.
  *
- * Can be run anytime via:
- *   bun run scripts/track-aivorelay.ts
+ * Maintainer tooling, and the reason it is not in any gate: the sibling
+ * checkout path below is hardcoded, so the script runs on one machine only and
+ * exits 1 anywhere else. Nothing in the app or the build depends on its output.
+ *
+ *   bun run track:aivorelay
  */
 
 import { execSync } from "child_process";

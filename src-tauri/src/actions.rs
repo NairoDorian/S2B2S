@@ -2264,7 +2264,7 @@ impl ShortcutAction for MultiSttAction {
             // === PERFORMANCE MODE: FULL POWER ===
             // Signal the user's performance-mode shortcut (e.g. Ctrl+Space)
             // before the heavy transcription workload starts, giving the OS
-            // a chance to ramp up CPU clocks ahead of the 4-way inference.
+            // a chance to ramp up CPU clocks ahead of the parallel inference.
             // If trigger_on_start is enabled, it was already triggered in start().
             let perf_settings = get_settings(&ah);
             if perf_settings.multi_stt_performance_mode_enabled
@@ -2907,8 +2907,8 @@ pub(crate) fn join_nonempty_lines(parts: &[&str]) -> String {
 /// Whether a merge prompt is configured at all. Shared with
 /// `multi_stt_stream`, which refuses to arm the experimental streaming mode
 /// without one: that mode's whole contract is "the merged text replaces the
-/// rough text", and with nothing to merge with it would only quadruple the
-/// live transcript on screen.
+/// rough text", and with nothing to merge with it would only multiply the live
+/// transcript on screen.
 pub(crate) fn has_merge_prompt(settings: &AppSettings) -> bool {
     settings
         .multi_stt_merge_prompt

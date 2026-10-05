@@ -27,6 +27,13 @@ interface AudioPlayerGroupContextValue {
 const AudioPlayerGroupContext =
   createContext<AudioPlayerGroupContextValue | null>(null);
 
+/**
+ * Scopes `AudioPlayer` so only one of them plays at a time. The History list
+ * renders one player per row inside a single group, and the rows overlap on
+ * screen, so two recordings talking over each other is the default outcome
+ * without this. A player claims the slot from its own `play` handler, which
+ * pauses whoever holds it, and releases it on `pause` / `ended`.
+ */
 export const AudioPlayerGroup = (props: {
   children?: JSX.Element;
 }): JSX.Element => {

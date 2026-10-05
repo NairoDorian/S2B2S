@@ -58,6 +58,16 @@ interface RecallStore {
 
 const EMPTY_DRAFT: RecallDraft = { title: "", tags: "", body: "" };
 
+/**
+ * The Recall page's note list, editor draft and vault state, held outside the
+ * page so switching settings pages mid-edit does not discard the open note.
+ *
+ * `draft` / `savedDraft` are the dirty-state pair: the editor compares them
+ * rather than tracking keystrokes, so a save that fails leaves the draft intact
+ * and still marked unsaved. Every action is command-driven — the vault has no
+ * event stream — so this store installs no listeners and nothing survives a
+ * reload except what the backend has written.
+ */
 const recallState = createSolidStore<RecallStore>((set, get) => ({
   notes: [],
   vault: null,

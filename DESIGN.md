@@ -86,9 +86,9 @@ It rejects contemporary decorative SaaS fluff—bubbly cards, oversized corner r
 
 ## Colors
 
-The application operates on an explicit dual-palette system (Dark / Light) driven by `data-theme` on `<html>`. The default and primary identity is Dark.
+The application operates on an explicit dual-palette system (Dark / Light) driven by `data-theme` on `<html>`. The `theme` setting defaults to **System**, so a fresh install follows the OS; Dark is the palette the product is designed around and the identity it ships as.
 
-### Primary Palette (Dark - Default)
+### Primary Palette (Dark — the product's identity)
 
 - **Background (`--dark-color-background`)**: `#0b0e11` — Deep obsidian base.
 - **Text / Foreground (`--dark-color-text`)**: `#e6f1f3` — Crisp, cool off-white.
@@ -119,10 +119,10 @@ Typographic hierarchy enforces the separation between natural human speech and m
    - Stack: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
    - Weight: Regular (`400`) for body/settings labels; Medium (`500`) for section titles; Semibold (`600`) for top-level headers.
    - Size Scale:
-     - `15px` (`--font-size` base) with `24px` line height.
-     - Section Headings: `14px` (uppercase, letter-spaced).
-     - Body Text: `14px` / `15px`.
-     - Descriptions: `12px` / `13px` in `--color-mid-gray`.
+     - Root `15px` with a `24px` line height (`src/App.css` `:root`).
+     - Section Headings: `text-xs`, uppercase and letter-spaced (`SettingsGroup`).
+     - Body Text: `text-sm` / `text-base`.
+     - Descriptions: `text-xs` / `text-sm` in `--color-mid-gray`.
 
 2. **Machine Telemetry & Tokens (`font-mono`)**:
    - Stack: `"Cascadia Mono", "JetBrains Mono", "Fira Code", Consolas, "SF Mono", Menlo, monospace`
@@ -135,9 +135,10 @@ Typographic hierarchy enforces the separation between natural human speech and m
 
 1. **Density**: Compact and information-rich without clutter. Settings pages run on structured grids with clear vertical flow.
 2. **Settings Groups**: Structured into modular `<SettingsGroup>` boxes framed by 1px hairline borders.
-3. **Live Surface (Épuré Mode)**: Ultra-minimal canvas. All framing chrome, menus, and sidebars hide completely, leaving only:
-   - Centered live transcription text in high-contrast white.
-   - Real-time circular FFT audio visualizer and waveform scope below or adjacent.
+3. **Live Surface (Épuré Mode)**: Ultra-minimal canvas. Framing chrome hides itself while you speak — leaving:
+   - Centered live transcription text in high-contrast white, with the tentative tail in electric cyan.
+   - A real-time circular FFT scope with the waveform trace drawn inside it.
+   - A top status strip (state chip, elapsed timer, model) that auto-fades after a few seconds of speech, and a collapsible **TELEMETRY** drawer (WPM, words, speech duration, state) at the bottom. Both recede to nothing once the HUD idle timer fires.
 4. **Recording Overlay**: Floating desktop HUD anchored to screen edges, constrained to tight dimensions (`--ov-rest-w: 236px`), housing twin 48px scope canvases and recording state indicator.
 
 ---
@@ -160,9 +161,10 @@ Typographic hierarchy enforces the separation between natural human speech and m
 ## Shapes
 
 - **Absolute Sharp Corners (`0px`)**:
-  - Tailwind v4 radius tokens are globally overridden to `0`:
+  - Tailwind v4 radius tokens are globally overridden to `0` in `src/App.css`:
     `--radius-xs: 0; --radius-sm: 0; --radius-md: 0; --radius-lg: 0; --radius-xl: 0;`
-  - `.rounded-full` is overridden to `border-radius: 0`.
+    (plus `--radius-2xl`, `--radius-3xl`, `--radius-4xl`).
+  - `.rounded-full` is overridden to `border-radius: 0` in the utilities layer.
   - Cards, modals, buttons, text inputs, dropdowns, and progress bars **must remain razor-sharp rectangles**.
 - **The Sole Exception**:
   - Toggle switches and push-to-talk pill indicators use `@utility rounded-pill { border-radius: 9999px; }`. This exception is permitted only because toggle tracks and knobs require pill geometry to be immediately recognizable as switches.
@@ -185,8 +187,8 @@ Typographic hierarchy enforces the separation between natural human speech and m
    - Track: Flat dark channel with 1px border.
    - Fill: Electric cyan (`#1fe0ff`) or dynamic gradient without rounded caps.
 4. **Scopes & Visualizers**:
-   - Circular FFT scope, waveform scope, and bar spectrum.
-   - Direct HTML5 Canvas 2D/WebGL rendering with zero layout thrash.
+   - Circular FFT scope, waveform trace, and bar spectrum.
+   - Direct HTML5 Canvas 2D rendering, painted on demand (a new frame, a hover, a resize) with zero layout thrash.
 
 ---
 
@@ -198,11 +200,11 @@ Typographic hierarchy enforces the separation between natural human speech and m
 - **DO** use `font-mono` for all numeric metrics, timestamps, percentages, shortcut hotkeys, and audio technical values.
 - **DO** use 1px hairlines (`var(--color-hairline)`) for visual boundaries instead of drop shadows.
 - **DO** maintain high contrast between text (`#e6f1f3`) and backgrounds (`#0b0e11`).
-- **DO** use the single source of truth for app branding via `appIdentity` rather than hardcoding names.
+- **DO** use the single source of truth for app branding via `src/lib/appIdentity.ts` (`APP_NAME`, `RELEASES_URL`, …) rather than hardcoding names.
 
 ### Don't:
 
 - **DON'T** introduce soft drop shadows, blur glares, or floating pill containers (outside toggle switches).
-- **DON'T** use rounded buttons (`rounded-lg`, `rounded-full`) that bypass the 0-radius theme.
+- **DON'T** use rounded buttons (`rounded-lg`, `rounded-full`) that bypass the 0-radius theme — every `rounded-*` utility already resolves to `0`, so reaching for one is a sign something wants `rounded-pill`.
 - **DON'T** use colorful saturated rainbows or pastel palettes; stick to obsidian ground + electric cyan telemetry.
 - **DON'T** clutter the live transcription canvas with unnecessary chrome when in focused dictation mode.

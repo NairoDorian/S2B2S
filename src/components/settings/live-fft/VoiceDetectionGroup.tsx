@@ -9,6 +9,7 @@ import { VadMeter, VadStatusChip, useVadFrames } from "../VadMeter";
 import { VadSensitivity } from "../VadSensitivity";
 import { VoiceActivityDetection } from "../VoiceActivityDetection";
 
+/** Mirrors `DEFAULT_VAD_THRESHOLD_EARSHOT` in `src-tauri/src/settings.rs`. */
 const DEFAULT_THRESHOLD = 0.5;
 const P = "settings.liveFft.voice";
 

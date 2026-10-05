@@ -8,7 +8,8 @@
 //! buffer surfaces cleanly as [`GgufError::Truncated`] instead of panicking.
 //!
 //! This is intentionally not a full GGUF library — it reads what the app needs to
-//! display a model's capabilities before download. Format reference: GGUF v2/v3,
+//! display a model's capabilities from a file already on disk, before that file is
+//! ever loaded. Format reference: GGUF v2/v3,
 //! little-endian. v1 (32-bit lengths) is not supported; every transcribe-cpp
 //! model is v3.
 

@@ -1,3 +1,17 @@
+//! The transcription lifecycle state machine and the thread that runs it.
+//!
+//! Every way of starting and stopping a recording — the shortcut backends,
+//! SIGUSR2 and the CLI flags, the cancel hotkey — goes through here, so "is the
+//! key still held, was that a tap or a hold, did a press arrive while the last
+//! transcription was still processing" is answered in exactly one place. That is
+//! the whole reason this exists: the answers used to be spread across the
+//! shortcuts, the signals and the async pipeline, where a press dropped in the
+//! wrong window left a recording nothing would ever stop.
+//!
+//! [`CoordinatorState`] owns the decisions and is pure, so its transitions are
+//! unit-tested directly; the thread around it only transports commands, runs the
+//! [`Effect`]s the state returns, and arms the `RELEASE_GRACE` timeout.
+
 use crate::actions::ACTION_MAP;
 use crate::managers::audio::AudioRecordingManager;
 use crate::settings::ShortcutActivation;

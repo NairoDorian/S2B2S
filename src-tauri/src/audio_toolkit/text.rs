@@ -300,8 +300,10 @@ impl OutputLanguageEvidence {
 /// Filler tokens that are not lexical words in any language the app's models can
 /// output, so removing them cannot corrupt text regardless of the (possibly
 /// unknown) output language. Kept deliberately conservative: anything that is a
-/// real word somewhere ("um" pt/de, "ha" es, "ah"/"eh" interjections, "mm"
-/// millimetres) belongs in the language-gated lists instead.
+/// real word somewhere ("um" pt/de, "ha" es, "ah"/"eh" interjections) belongs in
+/// the language-gated lists instead — and one that is a *unit* rather than a word
+/// ("mm" millimetres) belongs in neither, because a gated list would still eat
+/// it whenever the output language happened to be English.
 const UNIVERSAL_FILLER_WORDS: &[&str] = &[
     "uh", "uhm", "umm", "uhh", "uhhh", "ehh", "ehm", "ahm", "hmm", "hm", "mmm", "хм", "ммм",
 ];
@@ -363,9 +365,9 @@ fn collapse_stutters(text: &str) -> String {
 
 /// Removes filler words from transcription output when enabled.
 ///
-/// Built-in removal is two-tiered: [`UNIVERSAL_FILLER_WORDS`] apply regardless
-/// of language evidence, while [`gated_filler_words_for_language`] tokens are
-/// only removed when the output language is known. A custom list is an
+/// Built-in removal is two-tiered: the `UNIVERSAL_FILLER_WORDS` tier applies
+/// regardless of language evidence, while the `gated_filler_words_for_language`
+/// tokens are only removed when the output language is known. A custom list is an
 /// explicit user override and replaces both tiers without requiring language
 /// evidence. `Some(empty vec)` disables removal, preserving the legacy
 /// power-user setting. The master toggle takes precedence over both built-in

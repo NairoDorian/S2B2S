@@ -12,6 +12,27 @@ verbatim, then followed by **what it means**, **where it lives** and **how it
 was tested**. Nothing here is aspirational — every entry describes code in the
 tree at the date above.
 
+> **This is a directive record, and every directive in it was carried out.** It
+> is not a specification of pending work: `multi_stt_streaming_multi_enabled` and
+> `multi_stt_streaming_multi_debug_view` both exist and default to off, D9/D10
+> are fixed, and the design companion
+> (`2026-09-build-lanes-per-model-backends-and-multi-streaming.md` §4) records the
+> one place the implementation departed from the design.
+>
+> Three counts below are from 2026-09-22 and have since moved, because settings
+> schema 7 replaced the fixed `multi_stt_model_2/3/4` slots with a list of up to
+> `MULTI_STT_MAX_EXTRA_MODELS` = 8:
+>
+> | Said here                      | Actually true now                                                   |
+> | ------------------------------ | ------------------------------------------------------------------- |
+> | `STREAM_SLOTS = 4`             | `STREAM_SLOTS = 1 + MULTI_STT_MAX_EXTRA_MODELS` = **9**             |
+> | `MERGE_BLOCK_SLOT` = 4         | = 9                                                                 |
+> | `EXTRA_MODELS = 3`, models 2–4 | `EXTRA_MODELS = 8`, "Model 2"–"Model 9" of `multi_stt_extra_models` |
+>
+> So D5's "2 or more, not two" is now "2 or more of eight". Everything else
+> below — the slot arithmetic, the sink's exclusivity rule, the views, the
+> language-hint trap — is unchanged.
+
 ---
 
 ## D1 — Two live texts, and a merged third block under them
@@ -30,10 +51,10 @@ shape, and the "3 blocks" of the later directive D6 with two models.
 - The blocks are the overlay's existing stream-text path, keyed by stream slot:
   `StreamTextEvent.slot: Option<u8>` (`managers/transcription.rs`). Model 1 is
   slot `0` (`PRIMARY_STREAM_SLOT`), model _n_ of the Multi-STT list is slot
-  _n_ (`multi_streaming::stream_slot_of`), and `STREAM_SLOTS = 4` sizes every
-  per-slot array in the manager so a fourth model has somewhere to run.
-- The merged block rides `MERGE_BLOCK_SLOT = STREAM_SLOTS as u8` (= 4,
-  `multi_stt_stream.rs`): a slot _no model can occupy_, so the merged text can
+  _n_ (`multi_streaming::stream_slot_of`), and `STREAM_SLOTS` sizes every
+  per-slot array in the manager so every extra has somewhere to run.
+- The merged block rides `MERGE_BLOCK_SLOT = STREAM_SLOTS as u8`
+  (`multi_stt_stream.rs`): a slot _no model can occupy_, so the merged text can
   never be drawn as one more model column. It is published by
   `publish_merged_block` and carries `whole_session: true`.
 - The overlay (`src/overlay/RecordingOverlay.tsx`) reads the two apart from the
@@ -42,7 +63,7 @@ shape, and the "3 blocks" of the later directive D6 with two models.
   → one model column (`applyExtraText(slot, …)`); `slot` absent → the production
   path, untouched. `extraColumns()` renders one `.stext-col` per model, in slot
   order, each with its `1`/`2`/… mark; `.smerged` renders below them, marked
-  `M`, in the accent colour.
+  with `overlay.mergeAndCleaned` in the accent colour (it read `M` until D8).
 
 **Tested.** The discriminator is deliberately not a setting
 (`debugStream()` answers from what the backend actually sent), so a build that
@@ -145,7 +166,7 @@ settings.multi_stt_streaming_multi_debug_view);`
   the transcription (the live streams' own results ride alongside for statistics
   and history only).
 - **No batch STT anywhere in the session.** No extra decode runs during the
-  recording, and `task2`/`extra_model_2..4` remain `None`: `merge_requested` must
+  recording, and no extra-model task is spawned at all: `merge_requested` must
   not fall through to the batch-merge branch, because in this mode the merge
   already happened per chunk.
 
@@ -159,17 +180,17 @@ model plus the merge.
 
 > 2 or more by the way
 
-**Meaning.** The mode is not a two-model mode with the third and fourth slots
-ignored.
+**Meaning.** The mode is not a two-model mode with the remaining slots ignored.
 
 **Where it lives.** `multi_streaming::streaming_slots` collects **every**
-streaming-capable slot among models 2, 3 and 4, in the list's order, and the
-session opens one stream per slot, one waiter thread per slot
-(`EXTRA_MODELS = 3`; with the primary that is up to four live models in one
-session). A session with one streaming slot works as two texts; with none it
-refuses. The overlay needs no change for this: it draws one column per numbered
-event it receives, so three models draw three columns with no code that knows
-the number three.
+streaming-capable entry of `multi_stt_extra_models`, in the list's order, and
+the session opens one stream per slot, one waiter thread per slot
+(`EXTRA_MODELS = MULTI_STT_MAX_EXTRA_MODELS` = 8; with the primary that is up to
+nine live models in one session — three extras, i.e. up to four models, when
+this was written). A session with one streaming slot works as two texts; with
+none it refuses. The overlay needs no change for this: it draws one column per
+numbered event it receives, so three models draw three columns with no code that
+knows the number three.
 
 ---
 
@@ -315,7 +336,7 @@ pinned by a test, because it is read in both directions now (settings on the way
 into a decode, model on the way back out of a finished stream) and a disagreement
 would be silent.
 
-### D8.5 — Found while in there, deliberately _not_ changed
+### D8.5 — Found while in there, deliberately _not_ changed — **since changed**
 
 `native_streaming_latency_presets` is keyed by full file name, and the user's map
 holds `…-Q6_K.gguf` → `fastest` while the configured extra is `…-Q8_0.gguf`. The
@@ -329,6 +350,17 @@ the lookahead and cost accuracy, which the standing constraint below forbids, so
 this is reported rather than changed: the fix is to key these presets by model
 **variant** instead of by quantised file name, which is a settings-shape decision
 and not this step's.
+
+> **That fix has since been made**, in the shape this note asked for. The three
+> per-model maps are now written under **both** the exact id and its base repo by
+> one helper (`commands/models.rs::set_per_model`), stale siblings are dropped on
+> every write, and the resolvers (`get_effective_latency_preset`,
+> `get_effective_r2t2_chunk_ms`, `resolve_model_backend`) fall back exact id →
+> base repo → siblings, with `settings::sanitize_per_model_settings` harmonising
+> a store written by an older build. A preset therefore follows the model across
+> its quants, and each extra slot also carries its own override
+> (`change_multi_stt_extra_model_latency`). The observation above is kept as the
+> record of how it was found.
 
 ---
 
@@ -407,9 +439,10 @@ warns that the secret key `does not match the public key` for a mismatched pair,
 which is how a probe with a throwaway key confirmed that check has teeth), and an
 independent `sigcheck` build against `minisign-verify 0.2.5` — the version the
 plugin resolves to — verifies both signatures against the configured public key
-and rejects one made with any other key. Outstanding, and not code: the
-repository has **no Actions secrets at all**, so that secret has to be created
-before CI can sign.
+and rejects one made with any other key. Outstanding at the time, and not code:
+the repository had **no Actions secrets at all**. **Closed the same day** —
+`gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/zer0.key` was run on
+2026-09-22, and `gh secret list` now shows the one secret.
 
 ---
 
@@ -432,6 +465,9 @@ before CI can sign.
 ## Not in this step
 
 - Per-model backend selection for the streaming extras (§2 of the build-lanes
-  note) — the extras still load on the global accelerator setting.
+  note) — the extras still load on the global accelerator setting. **Since
+  done**: `per_model_backends` is keyed by model id and covers the primary and
+  every Multi-STT slot alike, `ModelBackendDropdown.tsx` sits on the Multi-STT
+  page, and a pin on one slot survives a quant change (see D8.5).
 - Release profiles for the new toggle beyond `#[serde(default)]` — the field
   needs no schema bump, and `bindings.ts` regenerates at debug-build startup.

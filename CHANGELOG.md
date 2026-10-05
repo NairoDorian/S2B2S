@@ -14,12 +14,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 >
 > The fork's version tracked upstream's through 0.9.6. From **0.9.7** ZER0
 > carries its own version and cuts its own releases, so entries move out of
-> `[Unreleased]` into a version heading at release time. The notes shown in the
-> app's What's New dialog live in `src/content/release-notes/`.
+> `[Unreleased]` into a version heading at release time. Nothing has been
+> released under that version yet, so everything the fork has done since 0.9.6
+> is still collected below. (The `v0.9.7` git tag in this history is
+> _upstream's_ release, merged from `upstream/main`, not a ZER0 release.) The
+> notes shown in the app's What's New dialog live in
+> `src/content/release-notes/`.
 
 ## [Unreleased]
 
 ### Added
+
+- **The fork is now ZER0 (2026-09-12).** The project has its own name, its own
+  mark (a rounded badge with a slashed zero), its own links and its own version
+  line: the window and tray titles, the binary (`zer0`, `zer0.exe`), the bundle
+  identifier (`com.nairodorian.zer0`), the app-data folder, the `ZER0_`
+  environment-variable prefix and every user-facing string in 25 locales. The
+  upstream name survives only where it is somebody else's identifier (the
+  `handy-keys` crate, the `handy-computer/*` Hugging Face org,
+  `blob.handy.computer`), where it is a frozen wire value already in users'
+  settings files (`"handy_keys"`), or as the attribution the MIT licence
+  requires. Every value now comes from `scripts/app-meta.ts` and its generated
+  mirrors (`bun run meta:sync`), and `bun run check:identity` fails the build on
+  a hand-written or stale spelling outside a documented per-file exemption.
+  Installs made before the rename keep working: the legacy `HANDY_` prefix, the
+  old app-data folder and the old portable marker are all still read, once.
+
+- **Auto shortcut behavior (from upstream #1971, integrated 2026-08-09).**
+  `shortcut_activation` (`toggle` | `push_to_talk` | `hold_or_toggle`, the last
+  one labelled **Auto** and default on new installs) lets one binding be both
+  push-to-talk and a toggle, with `hold_threshold_ms` deciding which. It
+  replaces the old `push_to_talk` boolean.
 
 - **Recall — the local note vault (2026-09-14).** A new sidebar page and a
   new kind of destination for the transcription pipeline: a plain folder
@@ -62,16 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `index.json` does not survive the toggle (deleted on enable, rebuilt on
     disable) — zero knowledge includes metadata. Multi-STT's
     performance-mode power restore fires in the vault-only path exactly as
-    in the ordinary ones.
-
-### Fixed
-
-- **`bun run typecheck` was red for the bun test files (2026-09-14).** The
-  `*.test.ts` files under `src/` (migrated to `bun test` earlier) imported
-  `bun:test` with no type package installed, so `tsc -b` failed tree-wide.
-  `@types/bun` / `bun-types` are now dev dependencies, registered in
-  `tsconfig.json`'s `types`, with the test-globals reference where the bare
-  `test` global is used.
+    in the ordinary ones. _Superseded on 2026-09-24: enabling no longer writes
+    a plaintext backup at all; see Fixed._
 
 - **Signed auto-updates (2026-09-14).** The fork now has its own updater
   signing key pair. `bundle.createUpdaterArtifacts` is on, so every release
@@ -101,10 +118,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the preview's lifetime. When the selected model supports streaming, the
   preview demonstrates in streaming mode and shows the streamed text on the
   overlay.
-- **Never-clearing log console (2026-09-13).** The Debug page's live log
-  keeps every line of the session instead of dropping history, with the
-  level filter owned by the console itself: ALL/ERR/WRN/INF/DBG/TRC chips
-  with live counts, no dropdown menu.
 - **Overlay settings page (2026-09-11).** A new sidebar page gathers the
   recording overlay's settings, which were spread over Advanced: style and
   position, direct typing of the live text and its speed, the speech
@@ -310,6 +323,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows real-time optimisations.** `HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS
   power-throttling opt-out, 1 ms `timeBeginPeriod`, MMCSS `"Capture"`
   scheduling for the audio worker thread, and minimal hardware buffer sizes.
+  _Superseded on 2026-09-20: all four were removed — see Removed._
 
 - **Status-bar model controls.** Three mutually exclusive popovers in the
   footer: model switcher, quantization picker with a per-quant download button
@@ -325,6 +339,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Accent colour palette selector** (`custom_accent_color`) with a gold
   default and eight presets; the overlay follows the chosen colour.
+  _Superseded on 2026-09-11 by the restyle below: the default is neon-cyan
+  (`custom_accent_color` unset) and the palette now holds eleven presets._
 
 - **Configurable microphone idle timeout** (`mic_idle_timeout_value`,
   `mic_idle_timeout_unit`, `mic_idle_infinite`) for the lazy-close mode that
@@ -353,10 +369,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audit that fed its first version was deleted once its findings were fixed
   or tracked here.)
 
+- **Transcribe Files, Live Mode and the VAD sensitivity slider (2026-09-10).**
+  Three more fork pages with their own backends. **Transcribe Files** turns
+  audio files into `.txt` / `.md` transcripts: any number of files or whole
+  folders (drag & drop included), decoded with `symphonia` (already in the
+  graph through `rodio`), cut at the quietest 100 ms window near each hard
+  boundary, and run in one of four modes (primary only, post-processed,
+  Multi-STT, Multi-STT then post-processed) with configurable output folder,
+  format and overwrite behaviour. **Live Mode** keeps the microphone open
+  indefinitely and writes the live transcript into a text file beside chunked
+  WAVs, one session folder per run, with the transcript's committed prefix
+  separated from a live tail rewritten in place. `VadSensitivity` exposes the
+  Earshot threshold as a slider that applies mid-recording.
+- **Statistics dashboard and History overhaul (2026-08-28).** Persistent
+  per-session statistics in their own SQLite table (transcriptions, words,
+  audio duration, WPM measured on silence-removed speech, streaks, and
+  stop-relative transcription / LLM latency distributions), plus a History page
+  rebuilt around rich per-entry metadata, search and filters, Multi-STT and LLM
+  re-processing of an existing entry, and a words-per-minute rating on every
+  entry.
+- **Multi-STT streaming-first mode, experimental (2026-09-12).** The primary
+  model streams as it always did, and at every pause the extra models re-decode
+  a **bounded window** of audio — the chunk that just closed plus
+  `multi_stt_streaming_context_chunks` already-closed chunks in front of it —
+  and the merge rewrites that one chunk's text in place. The cost per pause is
+  therefore set by the settings, not by the length of the session. A chunk is
+  the audio between two pauses (`multi_stt_streaming_pause_ms`, default
+  1000 ms), capped at 60 s; the batch Multi-STT path is unchanged and still
+  runs whenever the mode is off, the model cannot stream or the stream never
+  starts. See `docs/MULTI_STT_STREAMING.md`.
+- **Multi Streaming STT, experimental (2026-09-22), and per-model compute
+  backends.** The nested mode runs a live stream on every streaming-capable
+  extra slot beside the primary and merges the models' live texts at each
+  pause, with no re-decode and nothing batch-decoded at stop. `per_model_backends`
+  overrides `transcribe_accelerator` per model id, and a dual-GPU machine can
+  run CUDA on the discrete card while Vulkan serves the integrated one in the
+  same process (the `dynamic-backends` build).
+- **Confucius4-R2T2 in the catalog, streaming natively (2026-09-21).** The
+  family the transcribe.cpp fork implements natively: the catalogue entry
+  (`davidxifeng/Confucius4-R2T2-gguf`, recorded as `qwen3_asr`, Q8_0 the
+  verified default, F16 alongside) makes the GGUF visible at all, since it
+  carries the audio.cpp `audiocpp` marker rather than a transcribe arch name,
+  and its decode cadence is a **continuous 80–2000 ms chunk size**
+  (`native_streaming_chunk_ms`, default 320 ms, one-millisecond steps and
+  numeric entry) rather than one of the trained presets.
+  `docs/CONFUCIUS4_R2T2_INTEGRATION.md` is the integration contract.
+- **Any number of Multi-STT extra models, 1 to 8 (2026-09-24).** The three
+  hard-wired slots became one `multi_stt_extra_models` list, so the Multi-STT
+  page picks the count (settings schema **7** converts an existing store,
+  keeping every slot's position and so its `${outputN}` placeholder) and every
+  slot is the same component. `MULTI_STT_MAX_EXTRA_MODELS` is 8; a fresh
+  install still starts with three. Settings schema **9**
+  (`remap_moved_model_ids`) later moved every setting keyed by the interim id a
+  development build had given R2T2's Q4_K_M back to the model's own id.
+- **Parakeet Ultra and Parakeet Redux (2026-09-26), and an R2T2 Q4_K_M.**
+  Two new catalogue entries, and a 1.19 GB Q4_K_M of Confucius4-R2T2 as an
+  alternate quant hosted in its own repository
+  (`Nairod785/Confucius4-R2T2-Q4_K_M-GGUF`) alongside the publisher's Q8_0
+  and F16.
+- **Streaming latency is stated in milliseconds, for every family (2026-09-26).**
+  The status-bar control is one slider in ms for every streaming-capable
+  family — continuous for R2T2, snapping to the trained points for Nemotron
+  and Parakeet Unified (`latency_point` in
+  `src-tauri/src/managers/native_streaming_latency.rs`) — and the same control
+  sets each streaming-capable **Multi-STT extra slot's** latency as that slot's
+  own override. A native-streaming benchmark joins the quantization one.
+- **Live Canvas (2026-10-02).** A full-window surface the Sidebar opens over
+  Live Mode, replacing the settings window: the overlay scope, the session
+  controls and the live transcript, read from one store.
+- **Headless STT benchmark harness (2026-09-20).** `scripts/bench-stt.ts`
+  (`bun run bench:stt -- --exe … --wav … --output …`) replays a WAV through the
+  headless path for each selected installed model × every device
+  `--list-devices` reports, three runs each with the first discarded, flags
+  latency and transcript regressions against a baseline, and downloads nothing.
+  `docs/STT_BENCHMARKS.md` is the procedure.
+
 ### Changed
 
-- **Default merge and post-processing prompts put the transcripts last, and
-  the llama.cpp prompt cache is requested explicitly (2026-09-27).** Both
+- **Dependencies moved to their newest prereleases (2026-10-05), and the Tauri
+  core is now pinned rather than merely lagged.** A `bun run update-deps
+-- --prerelease` pass took `solid-js` / `@solidjs/web` 2.0.0-rc.9 → **rc.13**,
+  `@solidjs/vite-plugin` 3.0.0-next.43 → **next.47**, `typescript`
+  7.1.0-dev.20260921.1 → **dev.20261004.1**, `vite` 8.3.0 → **8.3.2**, `oxlint`
+  1.85.0 → **1.86.0**, `@tauri-apps/api` and the six plugin packages
+  3.0.0-alpha.1 → **alpha.2** (`@tauri-apps/cli` alpha.2 → **alpha.4**),
+  `bun-types` and `@playwright/test` to their current builds, and on the Cargo
+  side `rubato` 5.0.1, `tokio` 1.53.2, `libc` 0.2.190, `signal-hook` 0.4.5. The
+  frontend type-checks and builds unchanged across the Solid bump.
+  The same run **failed to compile the backend**, twice, in two ways worth
+  recording. `tauri` 3.0.0-alpha.3 moved `run_on_main_thread` off an inherent
+  `AppHandle` method onto the `Manager` trait, and the thirteen `tauri-plugin-*`
+  crates this app git-pins to `tauri-apps/plugins-workspace` `branch = "v3"` call
+  it without importing that trait. Worth being precise about the relationship,
+  because the obvious reading is backwards: `v3`'s tip (`d9be6d0`) is _also_ the
+  `v3.0.0-alpha.2` release of every plugin — same commit for the branch head, the
+  crate source and the npm `-js-` tag, and crates.io now publishes them at
+  `3.0.0-alpha.2` too. The plugins are not behind the core; the core has moved
+  past them. A second, independent break waits behind it: `b9a77ebb`
+  _`refactor(core)!: remove the macos-private-api feature flag`_ landed on the
+  `v3` branch on 2026-09-30, so `macos-private-api` is no longer a feature in
+  alpha.4 and this manifest passes it to both `tauri` and `tauri-runtime-wry` —
+  reaching alpha.4 is a code change here as well as an upstream fork. The
+  failure mode for a _partial_ bump is worse than for none, because `cargo
+  update` unifies the transitive members (`tauri-utils`, `tauri-macros`,
+  `tauri-plugin`, `tauri-codegen`) forward on its own and `tauri-build` then
+  rejects `macOSPrivateApi` in `tauri.conf.json` as an unknown field — a
+  diagnostic that names neither the crate nor the cause. Contained by pinning
+  every family member with `=` in `src-tauri/Cargo.toml` (four of them are now
+  declared purely so the `=` has somewhere to live, since a transitive
+  requirement cannot carry one) and by a new `CARGO_VERSION_LOCKED` hold in
+  `scripts/update-deps.ts`, which reads the manifest version rather than
+  repeating it and prints the reason in the report. See `docs/KNOWN_ISSUES.md`
+  and `docs/FORKS.md`.
+- **Default merge and post-processing prompts put the transcripts last, and the
+  llama.cpp prompt cache is requested explicitly (2026-09-27).** Both
   defaults are now the benchmarked V7 prompts (the merge scored 93–100 on the
   four-transcript business case where the previous default scored 63–67)
   with the same lines reordered: fixed instructions first, the transcripts
@@ -463,6 +589,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1060×720 (also the default size) so it always fits on one line next to the
   default sidebar. Debug → **Interface scale** zooms the whole window
   (70–160 %) for screens whose OS scaling makes the UI too small or large.
+  _These two figures are the final ones; the "Window and sidebar sizing" entry
+  above is the earlier 1080×780 / 960×720 step they replaced._
 - **Shortcut cheat sheet moved to a top-right overlay (2026-09-11).** The
   right-edge tab with pin and resize is gone; a keyboard button in the
   window's top-right corner, reachable from every page, toggles a panel of
@@ -510,19 +638,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LoadedEngine` is a single-variant enum around the transcribe-cpp
   `Session`. `tests/vad_speech_clock_probe.rs` now drives Earshot;
   `tests/vad_backend_bench.rs` (a two-backend comparison) was deleted.
-  `docs/PLAN_TRANSCRIBE_CPP_ONLY.md` records the plan and what was skipped.
+  _That plan (`docs/PLAN_TRANSCRIBE_CPP_ONLY.md`) was later removed from the
+  tree once its findings were all recorded here._
 
 - **GPU backend on Windows x86_64 and Linux is CUDA** (transcribe.cpp
   `cuda` feature via the `NairoDorian/transcribe.cpp` fork) instead of
-  upstream's Vulkan; `.cargo/config.toml` passes the CUDA 13.3 / MSVC 2026
-  flags and disables sccache for the native build. Windows aarch64 stays CPU,
+  upstream's Vulkan; `.cargo/config.toml` passed the CUDA 13.3 / MSVC 2026
+  flags and disabled sccache for the native build. Windows aarch64 stays CPU,
   macOS stays Metal. The upstream CI workflows (`build.yml`, `test.yml`) still
-  install the Vulkan SDK — see `docs/KNOWN_ISSUES.md`.
+  install the Vulkan SDK — see `docs/KNOWN_ISSUES.md`. _The `.cargo/config.toml`
+  flags are gone: both config files now set nothing but
+  `rustflags = ["-C", "target-cpu=native"]`, and Windows x86_64 builds
+  transcribe.cpp with `dynamic-backends`, `cuda` **and** `vulkan`, so one
+  binary serves a CUDA and a CPU device in the same process._
 - **Capture pipeline framed to the VAD's native window** (32 ms for Silero,
   was 30 ms) so one resampled frame is exactly one VAD decision. Hangover,
   prefill and onset are now specified in milliseconds
   (`VAD_STREAMING_HANGOVER_MS` = 1650 → 52 frames = 1.664 s, offline hangover
-  and prefill 450 ms → 480 ms, onset 60 ms → 64 ms).
+  and prefill 450 ms → 480 ms, onset 60 ms → 64 ms). _Superseded on
+  2026-09-10, when Silero gave way to Earshot's 16 ms frames and the durations
+  became 104 / 29 / 4 frames — see Changed._
 - **Fresh installs ship without a transcribe hotkey.** `transcribe` and
   `multi_stt_transcribe` default to an empty `current_binding` (the
   `default_binding` is kept for "reset"), and settings schema migrations 3/4
@@ -536,6 +671,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bun 1.4** (`bunfig.toml`: isolated linker, `noOrphans`, no `.env`
   loading), lockfile v2, and prerelease pins for React 19.3, TypeScript 7,
   Vite 8, Prettier 4 and Playwright (`bun run update-deps --prerelease`).
+  _React left the tree with the Solid migration on 2026-09-13; every other pin
+  in that list has been updated to its newest prerelease since._
 - **Release profile** uses thin LTO with 16 codegen units for faster
   parallel linking.
 - **Finalised streaming text** uses `stream.text().display()` (committed +
@@ -545,9 +682,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `multi_stt_keep_extra_models_loaded` only matters when
   `model_unload_timeout` is `Immediately`; with any other timeout the idle
   watcher unloads extra engines together with the primary model.
+- **transcribe.cpp pinned to `ba949120` (2026-09-26).** R2T2 was dropping audio
+  on the native streaming path; the pin moved to the fork revision that fixes
+  it, with a latency sweep recorded in `docs/R2T2_STREAMING_LATENCY_SWEEP.md`.
+- **Per-model settings follow the quant variants (2026-09-25, unified
+  2026-10-02).** `per_model_backends`, `native_streaming_latency_presets` and
+  `native_streaming_chunk_ms` are keyed by model id, and selecting a quant
+  sibling now inherits them instead of silently falling back to the global
+  default; the settings page and the status-bar meters read one resolved value.
+- **One durable log file per app session, at every severity (2026-09-20,
+  2026-09-22).** The session's log-file stem is frozen before the plugin opens
+  its file, every build profile captures Trace to terminal and file, `RUST_LOG`
+  does not filter it, the `log_level` setting survives only as compatibility
+  data, and a copied console record carries its module attribution. See
+  `docs/LOGGING.md`.
+- **Updater signing key rotated (2026-09-22).** The fork's own key pair, not
+  upstream's, with the bundler's password prompt stopped for the local
+  no-password key at `~/.tauri/zer0.key`. Nothing had been released under the
+  old key, so there is no install to migrate.
+- **Tauri 3.0.0 published alphas replace the fork (2026-09-16, 2026-09-21), and
+  the NSIS template follows the alpha CLI (2026-09-22).**
+- **Upstream #2106 (unload the model after a recording with no audio) was
+  integrated on 2026-09-25 and reverted the same day (2026-09-25).** The
+  speechless path skips the decode entirely, so the residency loss bought
+  nothing the idle watcher did not already do.
 
 ### Fixed
 
+- **`bun run typecheck` was red for the bun test files (2026-09-14).** The
+  `*.test.ts` files under `src/` (migrated to `bun test` earlier) imported
+  `bun:test` with no type package installed, so `tsc -b` failed tree-wide.
+  `@types/bun` / `bun-types` are now dev dependencies, registered in
+  `tsconfig.json`'s `types`, with the test-globals reference where the bare
+  `test` global is used.
+- **Never-clearing log console (2026-09-13).** The Debug page's live log
+  keeps every line of the session instead of dropping history, with the
+  level filter owned by the console itself: ALL/ERR/WRN/INF/DBG/TRC chips
+  with live counts, no dropdown menu.
 - **CUDA streaming corrupted audio at `att_right = 0` (2026-09-13).** The
   `transcribe.cpp` fork pinned in `Cargo.lock` moved to `edaacaff`, which
   fixes the attention mask the CUDA path computed when `att_right` is zero —
@@ -683,7 +854,8 @@ build`, with or without a source change (four minutes in release). The
   on blur or Enter instead of being written to the settings store per
   keystroke.
 - Windows EcoQoS opt-out uses `PROCESS_POWER_THROTTLING_CURRENT_VERSION`
-  instead of a literal `1`.
+  instead of a literal `1`. _The EcoQoS opt-out itself was removed on
+  2026-09-20 — see Removed._
 - **Earshot VAD now uses the same threshold hysteresis as Silero.** The
   adapter compared each 16 ms score against a single threshold, so the
   flapping that hysteresis was added to fix for Silero (stuttering speech
@@ -701,6 +873,36 @@ build`, with or without a source change (four minutes in release). The
   `opt-level = 3` in the dev profile so the numbers are representative.
   _Deleted on 2026-09-10 with the second backend; the numbers it produced are
   kept in AGENTS.md._
+- **Encrypting a Recall vault left a plaintext copy of every note
+  (2026-09-24).** Enabling wrote a `backup/<timestamp>/` folder full of
+  readable `.md` files, which defeats the point. Each note's ciphertext is now
+  read back and must decrypt to the original bytes before the plaintext is
+  overwritten with zeros and deleted (a failed round-trip stops the run with
+  that note still plain), `index.json` is deleted, and a `backup/` folder an
+  earlier version wrote is removed on enable and on the first unlock.
+- **A Multi-STT merge could paste text it had no audio for (2026-09-21).** The
+  merge that answered the prompt is the one that is pasted, not the audio's own
+  output.
+- **Multi-STT merge context was truncated in the overlay, and the overlay could
+  not be dragged on Windows (2026-09-24).**
+- **The quantization benchmark measured every quant on the wrong device, and
+  sibling quants of one model disagreed (2026-09-25).** Each variant is now
+  evaluated on the backend its model targets, and the variants are
+  synchronised.
+- **The first development run reported two false failures** — stale
+  architecture plugins and a failed autostart registration (2026-09-24).
+- **Delete All Recordings was disabled while the list was empty** (2026-09-22),
+  so the one state where it is most useful was the one state that hid it.
+- **Autostart called the v2 plugin API** (`ManagerExt::autostart` is what
+  `tauri-plugin-autostart` v3 wants) and silently did nothing (2026-09-22).
+- **A cached model that arrived without `refs/` was invisible** to the
+  installed-model list (2026-09-21).
+- **`overlay_back_correction` only took effect on the next session** (2026-09-21).
+- **The circular spectrum view gained an inner-line toggle and a drag grip**
+  (2026-09-15) after the quarter-rotation construction landed.
+- **The overlay's geometry and topmost `SetWindowPos` are one atomic call on
+  Windows** (2026-09-14), instead of two that could be seen half-applied.
+- **Earshot gained 4-point VAD variants and a native SIMD path** (2026-09-18).
 
 ### Removed
 
@@ -721,10 +923,16 @@ build`, with or without a source change (four minutes in release). The
   `Win32_Media_Audio` / `Win32_Media_Multimedia` feature flags, and the unused
   `zod` npm dependency.
 - `eslint.config.js` (replaced by `.oxlintrc.json`).
-
-### Known gaps
-
-- All 23 non-English locales are missing the same 87 fork-added strings; they
-  fall back to English at runtime and `bun run check:translations` fails
-  until they are translated. See `docs/KNOWN_ISSUES.md` for this and the other
-  open items from the 2026-08-26 review.
+- **Windows real-time optimisations (2026-09-20).** `HIGH_PRIORITY_CLASS`,
+  the Windows 11 EcoQoS power-throttling opt-out, the 1 ms `timeBeginPeriod`
+  timer resolution request and MMCSS `"Capture"` scheduling on the audio worker
+  thread are all gone, with the `ProcessThreadPriority` / `AvSetMmThreadCharacteristics`
+  calls and the `PROCESS_POWER_THROTTLING_CURRENT_VERSION` opt-out. They were
+  measured to cost more than they bought (see `docs/STT_PERFORMANCE_FINDINGS.md`),
+  and the app now runs on ordinary OS CPU scheduling. _These were Added on
+  2026-08-25 — see Added._
+- **The capture-level log selector (2026-09-20).** `LogLevelSelector.tsx` and the
+  `log_level` setting's effect on capture: runtime logging now records every
+  severity to terminal and file in every build profile, `RUST_LOG` does not
+  filter it, and the Debug console's severity chips only hide rows in the view.
+  See `docs/LOGGING.md`.

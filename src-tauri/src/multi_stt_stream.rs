@@ -64,9 +64,9 @@
 //!
 //! # Where a chunk's other texts come from
 //!
-//! A chunk's merge needs one text per model, and there are two ways to get them,
-//! which is the only thing the nested **Experimental Multi Streaming STT** mode
-//! changes about this coordinator:
+//! A chunk's merge needs one text per model, and there are two ways to get them.
+//! The nested **Experimental Multi Streaming STT** mode changes which of the two
+//! this coordinator uses, and that is very nearly all it changes:
 //!
 //! - [`TextSource::ReDecode`] — the parent mode. The other models are batch
 //!   models, so their text for the chunk has to be produced: they decode the
@@ -78,11 +78,15 @@
 //!   the previous close and this one. Nothing is decoded at a break, which is
 //!   the point — the merge costs one LLM round trip and no inference at all.
 //!
-//! The two differ in where the texts come from and in nothing else. The pause
-//! test, the chunk lifecycle, the merge job, the retry, the failure badge, the
-//! in-place correction of the displayed text, the direct-typing writer and the
-//! session's result are all shared, which is what makes the nested mode an
-//! extension of the parent one rather than a second implementation of it.
+//! The two differ in where the texts come from, and in one thing about the
+//! close test: a live session closes on `has_text` alone, with no drain hint to
+//! wait for and no catch-up grace to run out of — at the valve, a chunk that
+//! still has no text simply gives up its audio (`Coordinator::step`). Everything
+//! else — the pause test, the chunk lifecycle, the merge job, the retry, the
+//! failure badge, the in-place correction of the displayed text, the
+//! direct-typing writer and the session's result — is shared, which is what
+//! makes the nested mode an extension of the parent one rather than a second
+//! implementation of it.
 //!
 //! A live session's texts need no cropping: the models' streams are cut on the
 //! same breaks, so each one's slice starts where the chunk starts. The context
@@ -139,7 +143,7 @@ const MAX_CHUNK_SECONDS: i64 = 60;
 /// The most already-closed chunks a merge window may carry. Matches the range the
 /// settings page offers and caps what a hand-edited store can ask for: each
 /// context chunk is up to [`MAX_CHUNK_SECONDS`] of audio held in memory and
-/// re-decoded by three models.
+/// re-decoded by every configured extra model.
 const MAX_CONTEXT_CHUNKS: usize = 3;
 
 /// How much of the context's tail the crop tries to find in an extra's decode,
@@ -214,9 +218,9 @@ const _: () = assert!(FINISH_TIMEOUT.as_secs() > MERGE_TIMEOUT.as_secs());
 /// decoder consumes in order — and a suffix this short lies inside that silence
 /// and cannot hold a word that has not been written yet. That only holds while
 /// the tolerance is below the break, so [`break_outcome`] caps it at the
-/// configured pause (settable down to 100 ms). It is also an order of magnitude below the
-/// backlog this must still catch: the model that motivated [`Break::Retire`]
-/// measured 4918 ms.
+/// configured pause (settable down to 100 ms). It is also an order of magnitude
+/// below the backlog this must still catch: the model that motivated
+/// [`Break::Retire`] measured 4918 ms.
 const STREAM_DRAIN_TOLERANCE_MS: i64 = 500;
 
 /// [`STREAM_DRAIN_TOLERANCE_MS`] capped at the configured pause: an un-drained
@@ -365,8 +369,8 @@ fn context_depth(raw: u32) -> usize {
 ///
 /// `has_audio` is the only structural guard there is, and it is not a policy:
 /// a chunk with no audio behind it has nothing to merge, and dispatching a job
-/// over an empty window would only cost three decodes of silence. Every break
-/// that has audio behind it closes its chunk.
+/// over an empty window would only cost a decode of silence per extra. Every
+/// break that has audio behind it closes its chunk.
 fn closes(paused: bool, has_audio: bool, chunk_ms: i64) -> bool {
     has_audio && (paused || chunk_ms >= MAX_CHUNK_SECONDS * 1000)
 }
@@ -520,8 +524,9 @@ pub(crate) fn strip_context_prefix(decoded: &str, context: &str) -> Option<Strin
             let Some(start) = find_run(&decoded_tokens, want) else {
                 continue;
             };
-            // An echo prefix must begin at or right near the beginning of decoded text (token 0 or 1).
-            // A match deeper inside decoded text is not a context echo prefix, but words in the user's chunk.
+            // An echo prefix must begin at or right near the beginning of the
+            // decoded text (token 0 or 1). A match deeper inside it is not a
+            // context echo prefix but the user's own chunk.
             if start > 1 {
                 continue;
             }
@@ -695,10 +700,15 @@ struct JobResult {
 /// Decode the extras for one chunk and merge them with the primary's text.
 ///
 /// The extras' decodes run on the blocking pool, one per model, concurrently —
-/// the same shape as the batch path in `MultiSttAction::stop`. The untracked
+/// the same shape as the batch path in `MultiSttAction::stop` — and each
+/// decode is cropped back to this chunk (`strip_context_prefix`). The untracked
 /// `transcribe_with_extra` is used deliberately: a session's statistics record
-/// one run, and an extra decode attempt per model per chunk would inflate that run's
-/// numbers by the chunk count.
+/// one run, and an extra decode attempt per model per chunk would inflate that
+/// run's numbers by the chunk count.
+///
+/// A live session skips that stage entirely: its slots' texts are what the
+/// streams already published, so no inference runs here at all and the reported
+/// decode latency measures the dispatch alone.
 async fn run_merge_job(
     tm: Arc<TranscriptionManager>,
     settings: AppSettings,
@@ -726,16 +736,9 @@ async fn run_merge_job(
         live.chars().count()
     );
 
-    // The two sources, and nothing else about the job differs between them.
-    //
-    // A live session takes the texts its streams already produced, so the whole
-    // decode stage is skipped: `outputs` is what the models said, and the elapsed
-    // time is 0 because no inference ran here. The parent mode decodes the
-    // window with each extra instead, one per model on the blocking pool,
-    // concurrently — the same shape as the batch path in `MultiSttAction::stop`.
-    // The untracked `transcribe_with_extra` is used deliberately there: a
-    // session's statistics record one run, and an extra decode attempt per model per
-    // chunk would inflate that run's numbers by the chunk count.
+    // The two sources, and nothing else about the job differs between them
+    // (see the fn docs): a live session takes the texts its streams already
+    // produced, the parent mode decodes the window with each extra.
     let outputs: [String; STREAM_SLOTS] = if let Some(outputs) = live_outputs {
         outputs
     } else {
@@ -1332,9 +1335,6 @@ impl PendingRetry {
 /// One extra live model's stream, as the coordinator sees it.
 ///
 /// Written by the sink, which runs on that stream's own worker thread, and read
-/// One extra live model's stream, as the coordinator sees it.
-///
-/// Written by the sink, which runs on that stream's own worker thread, and read
 /// by the coordinator's thread. The `chunk_start` cursor is an absolute byte offset
 /// into `full_text()`, representing how far previous chunks have consumed this
 /// stream's words.
@@ -1901,9 +1901,9 @@ impl Coordinator {
     ///
     /// A live session's input is not audio at all: every slot's text for the
     /// chunk was produced by its own model as the speech happened, so the merge
-    /// is handed four texts and asked to reconcile them. There is nothing to
-    /// decode, and therefore no `context_samples` to divide and no context text
-    /// to crop against — the extras' texts are already exactly this chunk's.
+    /// is handed one text per slot and asked to reconcile them. There is nothing
+    /// to decode, and therefore no `context_samples` to divide and no context
+    /// text to crop against — the extras' texts are already exactly this chunk's.
     /// `audio` stays empty, which is what makes the job's decode stage and its
     /// `crop_decode` unreachable.
     fn window_for(&self, index: usize, record_outputs: bool) -> JobInput {
@@ -2439,8 +2439,8 @@ impl Coordinator {
             self.publish_merged_block(&final_text, "", true);
         }
 
-        // Slot 1 is the primary model's own live text for the session. The other
-        // three are the extras' outputs: a parent-mode session accumulated them
+        // Slot 1 is the primary model's own live text for the session. The slots
+        // after it are the extras' outputs: a parent-mode session accumulated them
         // chunk by chunk as its merges landed, and a live session takes them
         // straight off its extra streams, which hold each model's whole session
         // for exactly this reason — it is that model's own output, not a
@@ -2576,7 +2576,7 @@ mod tests {
     #[test]
     fn a_break_with_no_audio_closes_nothing() {
         // The one structural guard: a chunk with no audio behind it has nothing
-        // to merge, so a job over it would be three decodes of silence.
+        // to merge, so a job over it would be a decode of silence per extra.
         assert!(!closes(true, false, 0));
         assert!(!closes(true, false, MAX_CHUNK_SECONDS * 1000));
     }

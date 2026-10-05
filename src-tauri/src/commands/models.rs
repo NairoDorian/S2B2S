@@ -399,13 +399,13 @@ async fn benchmark_reference_audio(hm: Arc<HistoryManager>) -> Result<(String, V
 }
 
 /// Benchmark all downloaded quantization variants of the model identified by
-/// `model_id`.  Uses the latest completed recording as the reference audio.
+/// `model_id`. Uses the latest completed recording as the reference audio.
 ///
 /// For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) the model is loaded
 /// on a temporary engine, one warmup transcription is run and discarded (it is
 /// never counted in the average), `runs` timed transcriptions are averaged
 /// (clamped to 2..=10, default 5 when omitted), and the engine is dropped
-/// before the next variant.  Progress events are emitted on the
+/// before the next variant. Progress events are emitted on the
 /// `benchmark-progress` channel and the full result vector is returned when
 /// all variants are done.
 #[tauri::command]

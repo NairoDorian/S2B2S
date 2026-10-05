@@ -894,6 +894,9 @@ impl LiveFftManager {
         self.join_scope_worker();
         self.scope.stop_requested.store(false, Ordering::Release);
         let settings = lock(&self.shared.settings).clone();
+        // Never inline, whatever `async_analysis` says: the page's setting is
+        // about the page, and a dictation must never carry the transform on the
+        // audio consumer thread (see `scope`).
         TAP.arm(settings.source.into(), false, None);
 
         let mut engine = scope::ScopeEngine::new(Arc::clone(&self.shared), Arc::clone(&self.scope));

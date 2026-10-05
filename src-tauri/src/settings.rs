@@ -1433,7 +1433,7 @@ pub struct AppSettings {
     /// default bindings for any missing keys before the settings are used.
     #[serde(default)]
     pub bindings: HashMap<String, ShortcutBinding>,
-    /// Replaces the pre-0.10 `push_to_talk` bool; stores missing this key are
+    /// Replaces the retired `push_to_talk` bool; stores missing this key are
     /// migrated from it in `apply_settings_migrations`.
     #[serde(default)]
     pub shortcut_activation: ShortcutActivation,

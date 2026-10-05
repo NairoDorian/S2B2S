@@ -1,3 +1,24 @@
+//! The typewriter that types a live transcript into the foreground app
+//! (`paste_method = direct_streaming`).
+//!
+//! One thread per session, owned by a [`DirectStreamWriter`]: the caller pushes
+//! whole target texts with [`update_target`](DirectStreamWriter::update_target)
+//! and the worker advances towards the newest one at `direct_streaming_speed`
+//! characters per second, in 1–3 character steps. Nothing else may type into the
+//! app while one of these exists — the Multi-STT streaming coordinator makes the
+//! same rule of its own stream worker — because two typewriters over one
+//! document interleave into nonsense.
+//!
+//! A target is a whole snapshot of the session's text, never a delta, and it may
+//! *shrink*: a merge replaces a chunk the user has already watched being typed,
+//! so the worker backspaces the divergent suffix and retypes the rest
+//! ([`retract_to_common_prefix`]). That is why [`is_caught_up`] exists — a
+//! revision handed over while the worker is still behind is a revision applied
+//! to half-typed text — and why the coordinator gates its own pushes on it.
+//!
+//! The trailing space, trailing newline and auto-submit settings are applied
+//! once, at [`flush`](DirectStreamWriter::flush), never per update.
+
 use crate::clipboard::{backspace_direct, paste_direct};
 use crate::settings::AppSettings;
 use log::{debug, warn};
@@ -39,6 +60,12 @@ impl DirectStreamWriter {
         }
     }
 
+    /// Aim the worker at `text`, the session's whole text as it stands.
+    ///
+    /// An update replaces the target rather than adding work: the worker
+    /// re-reads the newest one every tick and advances towards that, so a burst
+    /// of updates costs one retype of the divergence, not one per update.
+    /// `text` shorter than what is on screen is a revision, not an error.
     pub fn update_target(&self, text: String) {
         if let Some(tx) = &self.tx {
             let _ = tx.send(DirectStreamCmd::UpdateTarget(text));
@@ -56,6 +83,15 @@ impl DirectStreamWriter {
         self.pending_chars.load(Ordering::Acquire) == 0
     }
 
+    /// Type the remainder, apply the trailing settings and stop the worker.
+    ///
+    /// `final_text` replaces the last target when given (the session's final
+    /// text, which a merge may have revised after the last push) and leaves the
+    /// last known target in place when `None`.
+    ///
+    /// Consumes the writer and joins its thread, so the caller can treat the
+    /// app as holding the whole text once this returns. The 3 s wait is only for
+    /// the worker's acknowledgement; the join that follows it is the real bound.
     pub fn flush(mut self, final_text: Option<String>) {
         if let Some(tx) = self.tx.take() {
             let (reply_tx, reply_rx) = mpsc::channel();
@@ -75,6 +111,11 @@ impl DirectStreamWriter {
         }
     }
 
+    /// Stop the worker and stop typing: no remainder, no trailing space or
+    /// newline, no auto-submit. What is already in the document stays there.
+    ///
+    /// This is what a cancelled recording wants, and it is also the `Drop`
+    /// fallback — dropping a writer without flushing must not type anything.
     pub fn cancel(mut self) {
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(DirectStreamCmd::Cancel);

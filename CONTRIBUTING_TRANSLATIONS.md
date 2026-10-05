@@ -84,7 +84,7 @@ export const LANGUAGE_METADATA: Record<
   {
     name: string;
     nativeName: string;
-    priority?: number; // optional: sort weight in the language picker
+    priority?: number; // optional: lower sorts higher in the picker; omitted = alphabetical at the end
     direction?: "ltr" | "rtl"; // optional: defaults to "ltr"
   }
 > = {
@@ -163,9 +163,15 @@ Some languages have complex plural rules. For now, use a general form that works
 
 ## Currently Supported Languages
 
-`src/i18n/locales/` currently holds 25 locales: `en` (source), `ar`, `bg`,
-`ca`, `cs`, `da`, `de`, `es`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ne`, `nl`,
-`pl`, `pt`, `ru`, `sv`, `tr`, `uk`, `vi`, `zh`, `zh-TW`.
+`src/i18n/locales/` currently holds 26 locales: `en` (source), `ar`, `bg`,
+`ca`, `cs`, `da`, `de`, `es`, `fr`, `he`, `hi`, `id`, `it`, `ja`, `ko`, `ne`,
+`nl`, `pl`, `pt`, `ru`, `sv`, `tr`, `uk`, `vi`, `zh`, `zh-TW`.
+
+`bun run check:translations` (`scripts/check-translations.ts`) walks `en`'s key
+paths and, for every other locale, reports two things: keys `en` has that the
+locale is **missing**, and keys the locale has that `en` does not. Both are
+failures, so a locale must match `en`'s key set exactly — it may not drop a key
+and it may not invent one.
 
 **Fork status (2026-09-11):** every locale has exactly the key set of `en`
 (`bun run check:translations` enforces it), but the strings this fork added

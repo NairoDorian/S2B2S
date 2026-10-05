@@ -17,6 +17,11 @@ interface DropdownProps {
   onSelect: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  /**
+   * Called on the open transition, before the menu is shown. The menu stays
+   * mounted while closed, so a caller whose option list is fetched (devices,
+   * backends) refetches here rather than on mount.
+   */
   onRefresh?: () => void;
 }
 

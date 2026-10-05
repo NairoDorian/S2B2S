@@ -2,15 +2,21 @@
 
 > **NOTE:** This project is **ZER0**, a fork of Handy by CJ Pais that has grown
 > into its own application. Beyond the upstream feature set it adds **Multi-STT**
-> mode — running up to four STT models in parallel with optional LLM-based output
-> merging — alongside Live Mode, Transcribe Files, Live FFT and in-app llama.cpp
-> management. See [AGENTS.md](../../../AGENTS.md) for the full architecture.
+> mode — running a primary model plus one to eight extra STT models in parallel
+> with optional LLM-based output merging — alongside Recall, Live Mode, Transcribe
+> Files, Live FFT and in-app llama.cpp management. See
+> [AGENTS.md](../../../AGENTS.md) for the full architecture.
 
 Add user-facing release notes as Markdown files named by app version:
 
 ```text
 src/content/release-notes/0.8.4.md
 ```
+
+The name is the whole contract: the loader globs `*.md` from this folder,
+reads the filename as the version, and **skips any file whose name is not a
+`major.minor.patch` triple** — which is how this `README.md` stays out of the
+dialog. No frontmatter; the file body is the note.
 
 The update modal shows the highest bundled release note newer than the
 persisted `whats_new_last_seen_version` and not newer than the running app

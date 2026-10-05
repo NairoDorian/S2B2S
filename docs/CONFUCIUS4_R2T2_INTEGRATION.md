@@ -16,22 +16,25 @@ server. Its source is a reference for porting model behavior, not an application
 backend. The existing Qwen native graphs can provide encoder/decoder math;
 R2T2 additionally needs its own streaming prefix/rollback state machine.
 
-The verified Q8 download is packaged in audio.cpp's GGUF schema, so its valid
-URL alone does not establish compatibility with the current native library.
-Native schema adaptation or conversion remains necessary. The engine has
-started source preparation, but no working R2T2 model or latency UI is shipped.
+The original worry — that the verified Q8 download is packaged in audio.cpp's
+GGUF schema, so its valid URL alone would not establish compatibility with the
+current native library — was resolved once the sidecars turned out to be
+GGUF-embedded (see **Resolved: no conversion is required** below). The engine's
+first source preparation is shipped: the family streams natively, and the
+catalogue entry, the settings map and the latency control are all in the tree.
 
 The requested range remains 80–2000 ms with exact integer-millisecond values,
 direct numeric entry and access to 80 ms. This is a model decode cadence, not
 the existing PCM feed size or the Nemotron lookahead preset. First committed
-text, queue wait and finalization must be measured separately. Context and
+text, queue wait and finalization are measured separately. Context and
 hotwords remain deferred by user choice.
 
 The engine already includes the compatible audio.cpp graph-optimizer subset
 as an opt-in. It does not require an audio.cpp runtime. Enabling that pass is
 separate from implementing R2T2, and prior results do not support a universal
-performance claim. The app still needs the final native dependency pin,
-catalogue entry, bindings, settings and both streaming call sites updated.
+performance claim. The app side of that work is done: the dependency pin, the
+catalogue entry, the generated bindings, the settings key and both streaming
+call sites are all updated.
 
 ## User decisions
 
@@ -50,8 +53,9 @@ Changing the value affects the next stream. Persist the exact per-model value.
 - `src-tauri/src/managers/native_streaming_latency.rs`: pass the exact duration
   through a dedicated native extension accepted by the loaded model. Reject
   invalid values instead of silently substituting one of the four presets.
-- `src/components/model-selector/LatencyPanel.tsx`: show the numeric range for
-  this family; preserve the existing presets for their supported models.
+- `src/components/model-selector/StreamingLatencyControl.tsx`: show the numeric
+  range for this family; preserve the existing presets for their supported
+  models. (It was `LatencyPanel.tsx` until the latency-in-ms change renamed it.)
 - `src/components/model-selector/ModelSelector.tsx`, settings commands/store,
   generated bindings and settings import/export: carry the value end to end.
 - Both primary and Multi-STT native streaming paths must use the same resolved
@@ -59,7 +63,10 @@ Changing the value affects the next stream. Persist the exact per-model value.
 - Headless benchmark requests must select the same native chunk option; feed
   packet duration and model decode-chunk duration are distinct settings.
 
-Label the value **Streaming chunk size**, not guaranteed latency. Show requested
+Label the value **Streaming chunk size**, not guaranteed latency — as shipped it
+sits under **Streaming latency**, one slider for every family, with the chunk
+semantics spelled out in its hint ("how much audio to accumulate before each
+decode"), so the number is never read as a guarantee. Show requested
 and resolved duration in native/app logs together with first committed text,
 queue wait, feed p95/max, final flush, and total real-time factor. No new worker,
 poller, or per-feed webview event is needed for the control.
@@ -76,13 +83,15 @@ That is the **audio.cpp reference download point** — the repo its own model sp
 names (`confucius4_r2t2_q8_0.download.repo`), not a repack we host ourselves. The
 catalogue entry's `id` _is_ the source: there is no separate URL field, so
 `davidxifeng/Confucius4-R2T2-gguf` + the pinned revision is what hf-hub resolves.
-The F16 variant of the same package is listed too, but Q8_0 is the default
+The F16 variant of the same package is listed too, and a 1.19 GB Q4_K_M from
+`Nairod785/Confucius4-R2T2-Q4_K_M-GGUF` beside them, but Q8_0 is the default
 because it is the only one verified to load and stream natively end to end.
 
 **Resolved: no conversion is required.** The earlier concern — that these are
 audio.cpp metadata/tensor names rather than the transcribe GGUF schema — does not
-apply to this artifact. `src/arch/qwen3_asr/r2t2-package.cpp` reads its sidecars
-out of GGUF-embedded data (`audiocpp.embedded_files.{names,offsets,data}`), and
+apply to this artifact. The engine's `src/arch/qwen3_asr/r2t2-package.cpp` reads
+its sidecars out of GGUF-embedded data
+(`audiocpp.embedded_files.{names,offsets,data}`), and
 the published file carries `config.json`, `tokenizer.json`,
 `generation_config.json`, `preprocessor_config.json` and `chat_template.json`
 inline, plus `audiocpp.model_spec.family = "confucius4_r2t2"` which is what

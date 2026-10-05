@@ -1,3 +1,11 @@
+// scripts/update-rtk.ts
+//
+// Reinstalls the `rtk` CLI (the command proxy the maintainer's agent hook
+// routes every shell command through), so `rtk` itself is tracked like any
+// other dependency. Tooling for the agent, not part of the application: it
+// touches nothing under `src/` or `src-tauri/`, and `bun run update` runs it
+// first because a stale proxy makes every later step's output the wrong shape.
+
 import { execSync } from "node:child_process";
 
 import { APP } from "./app-meta";

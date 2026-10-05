@@ -39,13 +39,21 @@
 // (kernels, device selection, VRAM, a timing), and `build:full` for anything
 // release-shaped.
 //
+// "No CUDA" is exactly that: the `cuda` cargo feature cannot be dropped (it
+// lives in `src-tauri/Cargo.toml`'s target table, and `tauri dev` has no
+// --no-default-features), so `--cpu` switches it at CMake configure time.
+// Vulkan is untouched and stays in the build — a `vulkan` device is still
+// selectable in `--cpu` runs.
+//
 // `--full` sets the architecture variable explicitly (`default`) rather than
 // leaving it unset, so it means "every architecture" in a dev build too —
 // unset falls back to the profile, and a dev profile probes the local GPU.
 //
 // `--full` / `--fast` / `--cpu` are the primitives; `dev:full` / `build:cpu`
 // style tokens are accepted as sugar so `bun run tauri build:full` behaves
-// like `bun run build:full`.
+// like `bun run build:full`. A run with no posture flag at all is `--fast`, so
+// `bun run tauri dev` is `bun run dev:fast` — which is why the CUDA
+// architecture is always written out below rather than left to the profile.
 
 import { existsSync, readFileSync } from "fs";
 import { resolve, join } from "path";
@@ -60,9 +68,11 @@ import { FAST_BUILD_OPTIONS, FULL_BUILD_OPTIONS } from "./build-options";
 const root = resolve(import.meta.dirname, "..");
 
 /**
- * How many architecture families `FULL_MODEL_SET` (src/CMakeLists.txt
- * `_all_families`) compiles — reported in the posture line. The set itself is
- * `lib/cpu-lane.ts`'s, shared with every script that compiles the backend.
+ * How many architecture families `FULL_MODEL_SET` compiles — reported in the
+ * posture line. Counted from transcribe.cpp's `src/CMakeLists.txt`
+ * `_all_families`, which is the authority (it drifts with every new family).
+ * The set itself is `lib/cpu-lane.ts`'s, shared with every script that compiles
+ * the backend.
  */
 const FULL_FAMILY_COUNT = 19;
 
@@ -88,8 +98,8 @@ function expandModeToken(arg: string): { args: string[] } | null {
 
 // 1. Process arguments — posture flags are consumed here, everything else is
 //    forwarded to the Tauri CLI untouched.
-// `--local-gpu` and friends predate `--fast` and remain the documented spelling
-// of the fast local-release build, so each maps onto the same posture.
+// `--local-gpu` and friends predate `--fast` and are still accepted as aliases
+// for the same fast local-release build, so each maps onto the same posture.
 const POSTURE_FLAGS: Record<string, CudaPolicy> = {
   "--full": "matrix",
   "--fast": "local",
@@ -215,6 +225,9 @@ if (posture.cuda === "local") {
 const cudaLine = {
   local: `TRANSCRIBE_CUDA_ARCHITECTURES=${FAST_BUILD_OPTIONS.cudaArchitectures} (${FAST_BUILD_OPTIONS.description}).`,
   matrix: `TRANSCRIBE_CUDA_ARCHITECTURES=${FULL_BUILD_OPTIONS.cudaArchitectures} (${FULL_BUILD_OPTIONS.description}).`,
+  // "no CUDA" and nothing more: the `cuda` cargo feature stays on (it cannot be
+  // dropped), so this is the configure switch, and Vulkan is still compiled in
+  // and still selectable as a device. See lib/cpu-lane.ts.
   off: "TRANSCRIBE_CUDA=OFF (no CUDA in this build; the app runs on CPU).",
 }[posture.cuda];
 

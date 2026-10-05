@@ -50,6 +50,9 @@ unsafe extern "C" {
 /// way to enumerate those. Treat a `false` here as "the app did not have to load
 /// it", not as "it is not loaded".
 static EXPLICITLY_LOADED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+/// The directories handed to the C loader so far, in registration order.
+/// Empty means nothing has been registered yet, which is the branch
+/// [`list_arch_plugins`] uses to register the standard set on first call.
 static REGISTERED_DIRS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 /// Whether this build splits model families into loadable plugins (the

@@ -11,9 +11,11 @@ silence the durable console. Hide records with the viewer chips.
 - Interactive runtime: stdout (visible under `bun run tauri dev`).
 - Headless commands: stderr, keeping JSON stdout parseable.
 - File: the same records, one file per app session
-  (`zer0-YYYYMMDD-HHMMSS-mmm.log`), with a 10 MB rotation cap per file.
-  `portable::app_log_dir` resolves its location; the Debug page can open it.
-  Previous sessions' files are left on disk; the console only ever reads the
+  (`zer0-YYYYMMDD-HHMMSS-mmm.log`), with a 10 MB rotation cap per file
+  (`RotationStrategy::KeepOne`: a rotated file is replaced, not kept as a
+  numbered sibling — but only ever inside the session that wrote it, so every
+  earlier session's file stays where it is). `portable::app_log_dir` resolves
+  the location; the Debug page can open it. The console only ever reads the
   current session's file (`session_log::basename`).
 - In-app console: polls the last 2,000 file lines every 500 ms while mounted.
   No polling or log events when the page is closed. Only one read is in flight.
@@ -21,8 +23,10 @@ silence the durable console. Hide records with the viewer chips.
 The viewer uses a single durable source. The previous live-event/file merge
 could delete a live record and then mistakenly consider its file copy already
 present. Removing that merge also removes its quadratic reconciliation work.
-Repeated identical records survive. Reads run on the blocking pool, are byte
-bounded, and tolerate a tail boundary inside a UTF-8 character.
+Repeated identical records survive. `get_recent_logs` runs on the blocking pool,
+caps the read at the file's last 512 KiB (so a log near its 10 MB rotation size
+is never read whole) and at 10,000 lines, drops the partial record a byte cap
+can leave at the head, and tolerates a tail boundary inside a UTF-8 character.
 
 Pause freezes the view; resume fetches the current tail. All severity chips
 start enabled and can be toggled independently. Clear explicitly truncates the

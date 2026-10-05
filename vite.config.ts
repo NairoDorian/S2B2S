@@ -34,7 +34,8 @@ export default defineConfig(async () => ({
     // Assets load from the local asset protocol, not the network, so the
     // settings window ships as one ~700 kB chunk (no route splitting). The
     // limit stays to catch accidental bloat: the eagerly bundled locales
-    // (2 MB, now one lazy chunk per language) tripped the 500 kB default.
+    // (26 languages, 2.8 MB — now one lazy chunk per language, see
+    // src/i18n/index.ts) tripped the 500 kB default.
     chunkSizeWarningLimit: 1000,
   },
 

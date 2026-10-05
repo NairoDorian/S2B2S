@@ -6,10 +6,11 @@
 //   bun run update              rtk + npm + Cargo, newest that resolves
 //   bun run update --dry-run    report what would move, write nothing
 //
-// Run this before each release (0.9.7 → 0.9.8 → 0.9.9 → 1.0.0) and whenever
-// something has been pinned for a while. It is not part of the pre-commit
-// hook: it reaches the network, it rewrites four lockfiles, and a dependency
-// bump is a change that deserves its own commit with its own message.
+// Run this before each release (the current version and the ones after it:
+// patch, then minor, then 1.0.0) and whenever something has been pinned for a
+// while. It is not part of the pre-commit hook: it reaches the network, it
+// rewrites four lockfiles, and a dependency bump is a change that deserves its
+// own commit with its own message.
 //
 // **`--prerelease` is always passed to the dependency updater.** Newest-first
 // is the point of running this at all: a pre-release that is newer than the

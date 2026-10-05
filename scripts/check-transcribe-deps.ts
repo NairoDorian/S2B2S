@@ -22,9 +22,12 @@
 //   4. If they match, reports up to date
 //
 // When it runs:
-//   - Automatically before every `bun run tauri` / `build:fast` / `build:full`
-//     invocation: scripts/tauri-runner.ts imports `checkTranscribeDeps` from
-//     this file (one implementation, not two copies that can drift).
+//   - Automatically before every `bun run tauri` invocation, which is every
+//     `dev:*` and `build:*` lane alike: scripts/tauri-runner.ts imports
+//     `checkTranscribeDeps` from this file (one implementation, not two copies
+//     that can drift). Skipped when `TRANSCRIBE_DIR` or
+//     `TRANSCRIBE_PREBUILT_DIR` points the native build at an explicit local
+//     install — there is nothing to pull in that case.
 //   - Manually: bun scripts/check-transcribe-deps.ts
 //
 // Safe by design: never throws and always leaves the process exit code at 0,

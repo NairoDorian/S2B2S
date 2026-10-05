@@ -307,10 +307,12 @@ const settingUpdaters: {
     commands.changeShowTrayIconSetting(value as boolean),
   model_unload_timeout: (value) =>
     commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
+  // A no-op entry on purpose, and the first of two. Neither latency map has a
+  // generic command of its own — each is written only through its dedicated
+  // action below (`setLatencyPreset` / `setLatencyChunkMs`), which validates the
+  // value and rolls back on refusal — but an entry that resolves is what keeps a
+  // stray `updateSetting` on either key from logging `No handler for setting`.
   native_streaming_latency_presets: () => Promise.resolve(),
-  // Same shape as the preset map above: this field has no generic
-  // `updateSetting` dispatch — it is written only through the dedicated
-  // `setLatencyChunkMs` (per-model, and validated against the native range).
   native_streaming_chunk_ms: () => Promise.resolve(),
   transcribe_accelerator: (value) =>
     commands.changeTranscribeAcceleratorSetting(
@@ -1048,9 +1050,9 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
     }
   },
 
-  // Check whether update checks are locked by system configuration
-  // (the updater-disable environment flag, set by the Nix package; its full
-  // name is `ENV_PREFIX` + `DISABLE_UPDATER` in lib/appIdentity.ts)
+  // Check whether update checks are locked by system configuration: the
+  // updater-disable environment flag `ZER0_DISABLE_UPDATER` (`ENV_PREFIX` plus
+  // the `DISABLE_UPDATER` suffix), which the Nix package sets.
   loadUpdateChecksLocked: async () => {
     try {
       const locked = await commands.isUpdateChecksLocked();

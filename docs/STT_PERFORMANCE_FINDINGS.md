@@ -31,9 +31,17 @@ pinning, P/E-core selection or elevated scheduling is restored.
 Detailed timings, upstream comparisons, causes, candidate optimizations and
 limitations are in the engine's [investigation](https://github.com/NairoDorian/transcribe.cpp/blob/main/docs/nemotron-performance-investigation.md)
 and [CUDA/optimizer experiments](https://github.com/NairoDorian/transcribe.cpp/blob/main/docs/cuda-graph-experiments.md).
-The benchmark-only Handy branch is `Handy_benchmarks` (commit `6c7311f0`).
-Previously provided reference directories remain unchanged.
+The benchmark-only branch is `Handy_benchmarks`; its three-run headless model
+harness landed in `6c7311f0`. Previously provided reference directories remain
+unchanged.
 
-The app lockfile now selects engine commit 28a3f9851d413c4bb9ce379934e92b5868831890. Local development can use the rebuilt prebuilt install by setting `TRANSCRIBE_DIR` in the shell (see [STT_BENCHMARKS.md](STT_BENCHMARKS.md)): `bunfig.toml` sets `env = false`, so an `.env.local` is not loaded. No machine path is committed.
+These runs were made against engine commit
+`28a3f9851d413c4bb9ce379934e92b5868831890`. The app lockfile has since moved to
+`ba949120d60f29daaaa13eec65b9c28c2c2112a6`, which fixes R2T2 dropping audio on the
+native streaming path, so a rebuild resolves a different engine than the one
+measured here. Local development can use the rebuilt prebuilt install by setting
+`TRANSCRIBE_DIR` in the shell (see [STT_BENCHMARKS.md](STT_BENCHMARKS.md)):
+`bunfig.toml` sets `env = false`, so an `.env.local` is not loaded. No machine
+path is committed.
 
 An existing conflict-resolved upstream README/sponsor merge was completed in a separate commit before the STT commit; its content was preserved.

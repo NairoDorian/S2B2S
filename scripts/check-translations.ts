@@ -1,3 +1,23 @@
+// scripts/check-translations.ts
+//
+// The i18n completeness gate: every locale under src/i18n/locales must carry
+// exactly the key set of `en`, no more and no less.
+//
+//   bun run check:translations
+//
+// "Exactly" in both directions on purpose. A missing key renders as the raw
+// dotted path in the UI (`t('settings.model.download')`), which is the whole
+// failure i18next's dev warnings exist to prevent; an *extra* key is a dead
+// entry — renamed or deleted in `en` and left behind in a translation — that
+// nothing can ever render, so it would hide the real work.
+//
+// A key's value is never compared, only its presence: translations are prose
+// and belong to their authors (see CONTRIBUTING_TRANSLATIONS.md). The
+// reference is `en` because it is the source, and it is loaded first and exits
+// 1 if it cannot be read — without it there is nothing to compare against.
+//
+// Runs in the pre-commit gate (after `check:identity`) and in CI.
+
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";

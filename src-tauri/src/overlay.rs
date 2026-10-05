@@ -58,9 +58,12 @@ tauri_panel! {
 // setting with the same arithmetic as `src/lib/overlayScope.ts`.
 const OVERLAY_WIDTH: f64 = 280.0;
 const OVERLAY_HEIGHT: f64 = 50.0;
-/// The resting pill without its scope block (172 px around the old level
-/// bars minus those 46 px), and the same for the pill carrying speech stats.
+/// The resting pill's own width, without the scope block it grows by
+/// (`OVERLAY_SCOPE_BLOCK_PX`): 172 px around the old level bars minus those
+/// 46 px.
 const OVERLAY_REST_BASE_W: f64 = 126.0;
+/// The same resting pill carrying the speech-stats cluster, which is 72 px
+/// wider than the bare one — `--ov-stats-w` (308) minus the scope block (110).
 const OVERLAY_STATS_BASE_W: f64 = 198.0;
 /// The working pill's fixed width (`--ov-work-w`). The compact window must fit
 /// it whatever the resting pill shrinks to, since the same window hosts both.
@@ -424,10 +427,11 @@ fn get_monitor_for_physical_point(
 ///
 /// The Bottom anchor uses the macOS work area (visibleFrame) so the overlay
 /// tracks the Dock — above it when shown, at the screen edge when hidden.
-/// This relies on tauri 2.11's work_area.position.y fix (#14655), the same
-/// bug that led PR #969 to abandon work_area for full monitor bounds. Top and
-/// the other platforms keep full monitor bounds plus the fixed offsets
-/// (work_area is unreliable on Wayland; Windows' offset clears the taskbar).
+/// This relies on the upstream `work_area.position.y` fix (tauri-apps/tauri
+/// #14655), the same bug that led PR #969 to abandon work_area for full monitor
+/// bounds. Top and the other platforms keep full monitor bounds plus the fixed
+/// offsets (work_area is unreliable on Wayland; Windows' offset clears the
+/// taskbar).
 ///
 /// We must use LogicalPosition (not PhysicalPosition) because Tauri/tao
 /// converts PhysicalPosition using the scale factor of the monitor the window
@@ -1353,7 +1357,7 @@ pub fn update_overlay_scope_cache(scope: &OverlayScopeSettings) {
 /// card has to grow with it. The frontend measures its own transcript and reports
 /// the height in 24 px steps (`overlay_stream_text_height`) — one call per line
 /// of text, not per character — and reads the cap from the same reply so its
-/// `--ov-cap-max-h` and this window size can never disagree. The cap is ~70 % of
+/// `--ov-cap-max-h` and this window size can never disagree. The cap is ~35 % of
 /// the monitor height (minus the card's own chrome), past which the card scrolls
 /// back instead of growing.
 static OVERLAY_STREAM_TEXT_H: AtomicU32 = AtomicU32::new(0);
@@ -1436,8 +1440,6 @@ fn streaming_text_cap(app: &AppHandle) -> u32 {
         // No monitor to measure (the window is gone): leave the card at its base
         // size rather than inventing a screen big enough for anything.
         .unwrap_or(base_height);
-    // Transcript capped at max 280px logical (total card height ~400px),
-    // and at most 35% of the monitor height minus base height.
     let max_text_h = (logical_monitor_height * 0.35 - base_height).clamp(160.0, 280.0);
     max_text_h.round() as u32
 }

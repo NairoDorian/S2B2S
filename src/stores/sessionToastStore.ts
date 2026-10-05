@@ -1,3 +1,14 @@
+/**
+ * The session's error and warning toasts, kept after they auto-dismiss so the
+ * Debug page's `SessionToastHistory` can still list them — a toast that has
+ * already gone is a failure nobody reads.
+ *
+ * Written only through `lib/sessionToast.ts`, which records the two levels worth
+ * keeping; `success` and `info` are deliberately not stored. `showErrors` and
+ * `showWarnings` are that page's two view chips and nothing more: they never
+ * suppress the recording, so both filter one bounded list.
+ */
+
 import { createStore } from "solid-js";
 
 export type SessionToastLevel = "error" | "warning";

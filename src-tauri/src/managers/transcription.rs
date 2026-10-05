@@ -3087,7 +3087,7 @@ impl TranscriptionManager {
     }
 
     /// Unload all extra (multi-STT) model engines at once. Used during app
-    /// shutdown so the 2nd, 3rd, and 4th models are freed just like the primary model.
+    /// shutdown so every extra model is freed just like the primary model.
     ///
     /// Engines sitting in `extra_engines` are dropped directly. Engines
     /// currently leased out (an in-flight decode or a live stream) are not in

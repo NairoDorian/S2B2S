@@ -201,9 +201,10 @@ const formatKeyPart = (part: string): string => {
 };
 
 /**
- * Get display-friendly key combination string for the current OS
- * Formats raw hotkey strings like "option_left+shift+space" into
- * human-readable form like "Left Option + Shift + Space"
+ * Get a display-friendly key combination string: the tokens of a stored hotkey
+ * ("option_left+shift+space") in human-readable form ("Left Option + Shift +
+ * Space"). `osType` is unused — the labels come from the token, which already
+ * carries the platform's own spelling.
  */
 export const formatKeyCombination = (
   combination: string,

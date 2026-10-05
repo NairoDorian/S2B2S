@@ -676,8 +676,9 @@ const HistoryEntryComponent = ({
   };
 
   // File the displayed text (polished when that tab is active) as a new note
-  // in the Recall vault; the recording stays where it is and is referenced
-  // by file name, never copied.
+  // in the Recall vault. `recall_save_transcription` COPIES the recording into
+  // the vault's `audio/` (the recordings folder keeps its own copy); the note
+  // then references the vault copy, not the file name passed here.
   const handleSaveToRecall = async () => {
     const text = textToDisplay();
     if (!text || !text.trim()) return;
@@ -1173,7 +1174,9 @@ const HistoryEntryComponent = ({
       >
         {(meta) => (
           <div class="space-y-3">
-            {/* 4 Model Cards */}
+            {/* One card per slot the run recorded: Model 1 (the primary)
+                first, then each configured extra — so 2–9 of them, not a
+                fixed four. See `format_multi_stt_history_transcript`. */}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <For each={meta().models}>
                 {(m) => (

@@ -22,11 +22,13 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          # libvulkan-dev + glslc + spirv-headers are a leftover from upstream's
-          # Vulkan build (transcribe.cpp's native-ci apt set for
-          # -DTRANSCRIBE_VULKAN=ON). This fork's Linux target enables
-          # transcribe-cpp's `cuda` feature instead (src-tauri/Cargo.toml), so
-          # nothing here builds the Vulkan backend.
+          # libvulkan-dev + glslc + spirv-headers are what ggml's Vulkan backend
+          # needs to configure and compile: this fork's Linux target enables
+          # transcribe-cpp's `vulkan` feature beside `cuda`
+          # (src-tauri/Cargo.toml), so -DTRANSCRIBE_VULKAN=ON does build here,
+          # shader-gen and all. They are what upstream's Vulkan CI installed,
+          # and they are load-bearing here rather than a leftover — see the
+          # SPIRV notes in build.yml for the same dependency elsewhere.
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libssl-dev libgtk-layer-shell-dev \
             libvulkan-dev glslc spirv-headers
 

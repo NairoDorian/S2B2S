@@ -1,7 +1,7 @@
 // scripts/pre-commit.ts
 //
-// The routine. Two things live here, and the difference between them is the
-// point:
+// The routine. Two things live here — the gate and the routine around it — and
+// the difference between them is the point:
 //
 //   bun run precommit          THE GATE. The fast checks, nothing else. This is
 //                              what the git hook runs, and it must stay fast

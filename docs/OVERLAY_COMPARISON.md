@@ -5,6 +5,14 @@ always-on-top overlay window; the cross-OS story; the backend that drives it;
 and what ZER0 (`Handy_Multi_STT`) should learn from each. Every claim below was
 verified against the named files in the named repos — the five projects:
 
+> **What kind of document this is: a cross-repo survey plus a (now partly spent)
+> recommendation list.** The five projects are described as they stood on
+> 2026-09-14 and are not re-audited here — only ZER0's own column is kept
+> current, because that is the half a reader in this repo acts on. Two of the ten
+> "what ZER0 should take" items have since been adopted; they are marked
+> inline. Line numbers are given for orientation only: search the symbol, not
+> the line.
+
 | #   | Project                                 | Path                                           | Purpose of its overlay                                                                            |
 | --- | --------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | 1   | **ZER0** (this repo, `Handy_Multi_STT`) | `PROJECTS\Handy_V2`                            | Live dictation card: status, streaming text, speech stats, spectrum                               |
@@ -13,20 +21,30 @@ verified against the named files in the named repos — the five projects:
 | 4   | **AIVORelay**                           | `PROJECTS\STT_BRAIN_TTS\AIVORelay`             | Five overlays: recording card, live-text preview, TTS window, command confirm, voice button       |
 | 5   | **CursorFX**                            | `PROJECTS\Cross_Platform_Rust_WebGPU_CursorFX` | GPU-drawn cursor effects on a full-virtual-desktop transparent surface (wgpu, not a text webview) |
 
+> `overlay_fx/window.rs`, and every Win32 / wgpu / Wayland symbol in this
+> document (`DwmSetWindowAttribute`, `SurfaceTargetUnsafe`, `WH_MOUSE_LL`,
+> `GWLP_WNDPROC`, `CompositeAlphaMode`, `WS_EX_NOREDIRECTIONBITMAP`,
+> `WM_QUERYENDSESSION`), belongs to one of the four **sibling** repos or to a
+> third-party crate. None of them is expected to exist in this tree; they are
+> quoted here so the comparison is checkable in _those_ repositories.
+
 ---
 
 ## 1. The five implementations, in brief
 
 ### ZER0 (`Handy_Multi_STT`)
 
-Tauri 2 webview window, built programmatically at startup and kept hidden
-(`overlay.rs:443` `create_recording_overlay`, non-macOS; `:505` macOS).
+Tauri webview window (the app is on Tauri 3 alpha now), built
+programmatically at startup and kept hidden (`create_recording_overlay` in
+`overlay.rs` — `:713` non-macOS, `:776` macOS).
 Flags: `transparent(true)`, `always_on_top(true)`, `decorations(false)`,
 `skip_taskbar(true)`, `focused(false)`, `shadow(false)` — one reusable window
-resized per state, never recreated. Cross-OS: **Windows** re-asserts
-`HWND_TOPMOST` with raw `SetWindowPos` on the main thread after every show
-(`force_overlay_topmost`, `overlay.rs:200`) and works around tao's
-`WM_DPICHANGED` reflow by re-applying placement; **macOS** converts the window
+resized per state, never recreated. Cross-OS: **Windows** places and sizes in
+**one** native `SetWindowPos` (`place_windows_overlay`, adapted from
+AIVORelay's `apply_recording_overlay_geometry_native`) and re-asserts
+`HWND_TOPMOST` with a second native call on the main thread after every show
+(`force_overlay_topmost`), working around tao's `WM_DPICHANGED` reflow by
+re-applying placement; **macOS** converts the window
 to an NSPanel via `tauri-nspanel` (`PanelLevel::Status`,
 `nonactivating_panel`, `can_become_key_window: false`); **Linux** attaches GTK
 Layer Shell (`Layer::Overlay`, `KeyboardMode::None`, anchors + margins instead
@@ -36,12 +54,19 @@ window. Data: typed Tauri events (`StreamTextEvent`, `SpeechActivityEvent` —
 both gated on cached atomics and suppressed while hidden), plus one raw-byte
 polled IPC (`overlay_scope_frame`) for the analyser so per-frame data never
 becomes JSON events. Text growth: the webview reports its height in 24 px
-steps (`overlay_stream_text_height`), clamped to 70 % of the monitor, with the
+steps (`overlay_stream_text_height`), clamped to ~35 % of the monitor minus the
+card's own chrome (160–280 px), with the
 geometry math defined once in Rust and mirrored in TypeScript. A generation
 counter (`OVERLAY_SHOW_GENERATION`) makes stale hides harmless. Rendering is
 HTML/CSS (typewriter reveal, CSS card animations) + 2D canvas for the
 spectrum. **No click-through — deliberately**: the overlay carries a cancel
 button and scrollable text.
+
+Two things it has since gained, both from the sibling projects and both listed
+in §4 as "should take": accessibility text scaling on Windows
+(`windows_text_scale_factor`, the `TextScaleFactor` registry read) and a
+drag-grip whose physical-pixel position is persisted and honoured on the next
+placement.
 
 ### S2B2S
 
@@ -137,22 +162,22 @@ styles live: `WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP`
 
 ## 2. Side-by-side
 
-| Concern             | ZER0                                                                       | S2B2S                                                                                     | CopySpeak                                                       | AIVORelay                                                                                                       | CursorFX                                                                                          |
-| ------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Toolkit             | Tauri 2 webview                                                            | Tauri 2 webview                                                                           | Tauri 2 webview                                                 | Tauri 2 webview                                                                                                 | Tauri 2 shell + **wgpu surface on the native window**                                             |
-| Window creation     | Programmatic, startup, hidden, reused                                      | Programmatic, startup, hidden, reused                                                     | **Declarative** in tauri.conf.json, parked off-screen           | Pre-created hidden (card) + lazy (others)                                                                       | Programmatic, startup, one per virtual desktop                                                    |
-| Transparency        | Builder + transparent CSS                                                  | Builder + transparent CSS                                                                 | Builder + transparent CSS                                       | Builder + transparent CSS                                                                                       | Builder + transparent page + **swapchain alpha negotiation** + premultiplied WGSL                 |
-| Always-on-top       | `always_on_top` + Win32 `HWND_TOPMOST` re-assert after show                | Same + re-assert after DPI reflow                                                         | Declarative only, never re-asserted                             | Builder + **one atomic native `SetWindowPos`** (move+size+topmost) + 50 ms re-assert thread                     | Builder only (per-virtual-desktop window is the topmost surface)                                  |
-| Click-through       | **No** (interactive card)                                                  | No (despite a stale doc claim)                                                            | **Yes, permanent** (`set_ignore_cursor_events`)                 | No (interactive: drag, buttons)                                                                                 | **Yes, uniform whole-screen** (portable API; raw `WS_EX_*` only in the unshipped winit daemon)    |
-| Focus policy        | `focused(false)`; macOS non-activating panel                               | `focusable(false)`; macOS non-activating panel                                            | Never focused; focus returned to main at startup                | `focused(false)`; macOS non-activating panel; some windows focusable by design                                  | `focused(false)`; input via OS-wide hook                                                          |
-| Windows specifics   | `HWND_TOPMOST` re-assert; placement after show (DPI reflow)                | Same + TextScaleFactor accessibility scaling, work-area, CoreGraphics frontmost detection | None                                                            | **Atomic geometry SetWindowPos**, DWM border/corner attributes, `GetMonitorInfoW` work area, tao shutdown patch | Virtual-desktop metrics, refresh-rate probe, `timeBeginPeriod(1)`, thread priority, `WH_MOUSE_LL` |
-| macOS specifics     | NSPanel (Status level, non-activating)                                     | NSPanel + CoreGraphics window info + Dock-tracking work area                              | None                                                            | NSPanel (Status, non-activating, all-Spaces)                                                                    | None (daemon declares objc2, unused)                                                              |
-| Linux specifics     | **GTK layer shell** (anchors+margins, size-request quirk, env kill-switch) | GTK layer shell (same lineage)                                                            | None                                                            | **None** — plain Tauri path (live-text window Windows-only)                                                     | None (Vulkan backend only)                                                                        |
-| "Hidden" strategy   | `hide()` / `show()` on a persistent window                                 | Same                                                                                      | **Parked off-screen forever** (WebView2 repaint-bug workaround) | `hide()`/`show()`; lazy windows destroyed                                                                       | Window always shown; GPU work parked instead                                                      |
-| Text/data transport | Typed events + raw-byte polled IPC for analyser                            | Same lineage                                                                              | Global events + 50 ms delayed payload                           | Events + 120 ms polled state mirror + 30 FPS level throttle                                                     | Not text: physics → wgpu frames, condvar-idle                                                     |
-| Positioning         | Cursor's monitor, top/bottom anchors, 24 px growth steps, cached geometry  | Same lineage                                                                              | 6 preset anchors, primary monitor only, physical px             | Cursor monitor + manual draggable positions persisted in physical px + glow padding                             | Full virtual desktop, 1 s layout re-poll                                                          |
-| Rendering           | HTML/CSS + 2D canvas                                                       | HTML/CSS + 2D canvas                                                                      | HTML/CSS + 2D canvas (marquee synced to audio)                  | HTML/CSS (bars, themes, highlight marks)                                                                        | **wgpu WGSL**, premultiplied, SDF ribbon, Mailbox                                                 |
-| Idle behavior       | Events gated while hidden                                                  | Same                                                                                      | Window parked off-screen but webview alive                      | Lazy windows destroyed when unused                                                                              | **GPU fully parked after 3 settle frames**                                                        |
+| Concern             | ZER0                                                                                                                             | S2B2S                                                        | CopySpeak                                                       | AIVORelay                                                                                                       | CursorFX                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Toolkit             | Tauri webview (3 alpha)                                                                                                          | Tauri 2 webview                                              | Tauri 2 webview                                                 | Tauri 2 webview                                                                                                 | Tauri 2 shell + **wgpu surface on the native window**                                             |
+| Window creation     | Programmatic, startup, hidden, reused                                                                                            | Programmatic, startup, hidden, reused                        | **Declarative** in tauri.conf.json, parked off-screen           | Pre-created hidden (card) + lazy (others)                                                                       | Programmatic, startup, one per virtual desktop                                                    |
+| Transparency        | Builder + transparent CSS                                                                                                        | Builder + transparent CSS                                    | Builder + transparent CSS                                       | Builder + transparent CSS                                                                                       | Builder + transparent page + **swapchain alpha negotiation** + premultiplied WGSL                 |
+| Always-on-top       | `always_on_top` + Win32 `HWND_TOPMOST` re-assert after show                                                                      | Same + re-assert after DPI reflow                            | Declarative only, never re-asserted                             | Builder + **one atomic native `SetWindowPos`** (move+size+topmost) + 50 ms re-assert thread                     | Builder only (per-virtual-desktop window is the topmost surface)                                  |
+| Click-through       | **No** (interactive card)                                                                                                        | No (despite a stale doc claim)                               | **Yes, permanent** (`set_ignore_cursor_events`)                 | No (interactive: drag, buttons)                                                                                 | **Yes, uniform whole-screen** (portable API; raw `WS_EX_*` only in the unshipped winit daemon)    |
+| Focus policy        | `focused(false)`; macOS non-activating panel                                                                                     | `focusable(false)`; macOS non-activating panel               | Never focused; focus returned to main at startup                | `focused(false)`; macOS non-activating panel; some windows focusable by design                                  | `focused(false)`; input via OS-wide hook                                                          |
+| Windows specifics   | One native `SetWindowPos` for move+size, `HWND_TOPMOST` re-assert after show, `TextScaleFactor` scaling, persisted drag position | Same + re-assert after DPI reflow                            | None                                                            | **Atomic geometry SetWindowPos**, DWM border/corner attributes, `GetMonitorInfoW` work area, tao shutdown patch | Virtual-desktop metrics, refresh-rate probe, `timeBeginPeriod(1)`, thread priority, `WH_MOUSE_LL` |
+| macOS specifics     | NSPanel (Status level, non-activating)                                                                                           | NSPanel + CoreGraphics window info + Dock-tracking work area | None                                                            | NSPanel (Status, non-activating, all-Spaces)                                                                    | None (daemon declares objc2, unused)                                                              |
+| Linux specifics     | **GTK layer shell** (anchors+margins, size-request quirk, env kill-switch)                                                       | GTK layer shell (same lineage)                               | None                                                            | **None** — plain Tauri path (live-text window Windows-only)                                                     | None (Vulkan backend only)                                                                        |
+| "Hidden" strategy   | `hide()` / `show()` on a persistent window                                                                                       | Same                                                         | **Parked off-screen forever** (WebView2 repaint-bug workaround) | `hide()`/`show()`; lazy windows destroyed                                                                       | Window always shown; GPU work parked instead                                                      |
+| Text/data transport | Typed events + raw-byte polled IPC for analyser                                                                                  | Same lineage                                                 | Global events + 50 ms delayed payload                           | Events + 120 ms polled state mirror + 30 FPS level throttle                                                     | Not text: physics → wgpu frames, condvar-idle                                                     |
+| Positioning         | Cursor's monitor, top/bottom anchors, 24 px growth steps, cached geometry                                                        | Same lineage                                                 | 6 preset anchors, primary monitor only, physical px             | Cursor monitor + manual draggable positions persisted in physical px + glow padding                             | Full virtual desktop, 1 s layout re-poll                                                          |
+| Rendering           | HTML/CSS + 2D canvas                                                                                                             | HTML/CSS + 2D canvas                                         | HTML/CSS + 2D canvas (marquee synced to audio)                  | HTML/CSS (bars, themes, highlight marks)                                                                        | **wgpu WGSL**, premultiplied, SDF ribbon, Mailbox                                                 |
+| Idle behavior       | Events gated while hidden                                                                                                        | Same                                                         | Window parked off-screen but webview alive                      | Lazy windows destroyed when unused                                                                              | **GPU fully parked after 3 settle frames**                                                        |
 
 ---
 
@@ -184,9 +209,11 @@ that Tauri's `always_on_top` alone loses on Windows, and re-assert
 atomic `SetWindowPos` doing move+size+topmost with `SWP_NOACTIVATE |
 SWP_NOOWNERZORDER`, eliminating the one-frame stale-geometry flash that the
 two-step move/then-topmost sequence can show, plus a deferred re-assert for
-the DPI reflow. ZER0 currently does topmost and placement as separate
-operations with a post-show re-apply — AIVORelay's single-call form is a
-direct upgrade.
+the DPI reflow. **ZER0 has since adopted the single-call form** for
+move+size (`place_windows_overlay`, which cites AIVORelay by name), keeping
+`force_overlay_topmost` as a separate z-order pass because `SWP_NOZORDER` is
+what makes the move land at the right DPI in the first place — so the shape is
+AIVORelay's with the topmost deliberately split out.
 
 **4. Click-through is a product decision, not a technique gap.** Only the
 two display-only overlays (CopySpeak HUD, CursorFX) use
@@ -226,19 +253,33 @@ wired in the same pass it is added.
 
 ## 4. What ZER0 should take from each
 
+Items 1 and 4 have since been adopted; both are kept in the list with their
+outcome, because a recommendation with its result attached is more useful than a
+deleted one. `place_windows_overlay` credits AIVORelay by name in its doc
+comment; `windows_text_scale_factor` does not, but it implements exactly the
+clamped-applied-to-size-not-offsets behaviour S2B2S is credited with here.
+Everything else is still open.
+
 From **AIVORelay** (highest value, lowest risk):
 
-1. Fold move+size+topmost into one native `SetWindowPos` with
-   `SWP_NOACTIVATE | SWP_NOOWNERZORDER` for the Windows streaming overlay —
-   kills the stale-geometry flash and simplifies the post-show re-apply.
+1. ~~Fold move+size+topmost into one native `SetWindowPos`~~ **Taken, in two
+   calls.** `place_windows_overlay` does move+size in one `SetWindowPos` with
+   `SWP_NOACTIVATE | SWP_NOZORDER`; `force_overlay_topmost` is the second call
+   that sets z-order. `SWP_NOOWNERZORDER` is not used, because the z-order
+   argument is exactly what has to survive here.
 2. `DwmSetWindowAttribute` border-color `NONE` + `DWMWCP_DONOTROUND` if we
-   ever want square-cornered, borderless native frames.
+   ever want square-cornered, borderless native frames. **Still open** — no DWM
+   attribute call exists in `overlay.rs`. The overlay's square corners come from
+   CSS and the window's `corner_radius` setting, not from DWM.
 3. The lazy-vs-precreated rule: pre-create only the window every recording
    needs; lazily create anything else so an idle renderer process never
-   lingers.
+   lingers. **Still open** — ZER0 has the one recording window and
+   pre-creates it.
 
-From **S2B2S**: 4. Windows accessibility text scaling (`TextScaleFactor`, clamped, applied
-to size but not to edge offsets) — an accessibility win ZER0 lacks. 5. The worked examples of main-thread discipline for monitor queries
+From **S2B2S**: 4. ~~Windows accessibility text scaling~~ **Taken.**
+`windows_text_scale_factor()` reads `HKCU\...\Accessibility\TextScaleFactor`
+and `place_windows_overlay` multiplies the logical size by it, clamped, and
+scales with the monitor it lands on. 5. The worked examples of main-thread discipline for monitor queries
 (issue #227) — ZER0 already follows it; keep the rationale documented.
 
 From **CopySpeak**: 6. The off-screen parking pattern as the ready-made fix for any WebView2

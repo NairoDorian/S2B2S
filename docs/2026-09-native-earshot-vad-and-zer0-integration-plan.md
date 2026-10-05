@@ -2,8 +2,33 @@
 
 **Document Version**: 2.1.0  
 **Target Systems**: `transcribe.cpp` (C++23 Standalone ASR Engine, GGML C++23, CUDA C++20) & `Handy_V2` (ZER0 Tauri/Rust Desktop Dictation App)  
-**Date**: September 2026  
-**Status**: Ready for Engineering Execution
+**Date**: September 2026
+
+> **Status: implemented.** Earshot is ZER0's **only** VAD backend — it has been
+> since Silero was removed on 2026-09-10 — and the in-engine VAD this plan asked
+> for exists in the fork. Kept as the specification the work was done from.
+>
+> - **§7, the app-side optimisation suite: all four points landed.** A is
+>   verbatim in `audio_toolkit/vad/earshot.rs`, B in `…/smoothed.rs`, C in both
+>   `.cargo/config.toml` files, D in `earshot.rs` — at **−45.0 dBFS**, not the
+>   engine's −42, because this gate runs before the model's own and only has to
+>   catch deep silence. Per-point notes are inline.
+> - **§6: Stage 2 shipped, not Stage 1.** The fork has no `vendor/earshot/`
+>   Rust C-FFI crate; `src/transcribe-vad.{h,cpp}` is the clean-room C++23
+>   minGRU with the weights inlined from `src/earshot-weights.inl`. The C ABI in
+>   §6.1 is the shape that landed, including
+>   `transcribe_stream_set_vad_threshold`.
+> - **§2 / §3: the C++23 matrix is in place** — `CMAKE_CXX_STANDARD 23`,
+>   `CMAKE_CUDA_STANDARD 20`.
+> - **ZER0 does not use the engine's VAD.** Nothing in `src-tauri/` passes
+>   `enable_vad` or calls `transcribe_vad_*`; the app keeps filtering frames
+>   itself with Rust Earshot and feeds the engine speech only. The engine-side
+>   gate is available, not wired — so §1.2's parity table describes an
+>   alternative ZER0 could adopt, not what it does.
+>
+> Historical note: Silero v6.2 was removed from ZER0 on 2026-09-10, leaving
+> `earshot` as the only backend. This plan already assumes that — §1.1 names
+> `earshot` + `SmoothedVad` — so nothing in it refers to a Silero-era state.
 
 ---
 
@@ -15,9 +40,18 @@ In the current Handy ZER0 dictation architecture, Voice Activity Detection (VAD)
 
 1. **Cross-Boundary Jitter & Buffer Ping-Pong**:
    - Audio captured at 44.1/48 kHz via CPAL is resampled to 16 kHz and segmented into 16 ms (256-sample) frames.
-   - In `Handy_V2/src-tauri/src/audio_toolkit/vad/smoothed.rs`, every single 16 ms frame is cloned onto the heap via `frame.to_vec()` and stored in a `VecDeque<BufferedFrame>`.
-   - When speech triggers, frames are copied out into a temporary vector (`temp_out`), dispatched across thread channels (`StreamCmd::Feed(frame.to_vec())`), and finally copied across the C FFI boundary to `transcribe_stream_feed`.
-   - This creates **62.5 to 125 heap allocations and deallocations per second** on the real-time audio capture thread.
+   - **Superseded.** `Handy_V2/src-tauri/src/audio_toolkit/vad/smoothed.rs` used
+     to clone every 16 ms frame onto the heap via `frame.to_vec()` and store it
+     in a `VecDeque<BufferedFrame>`. It is now a preallocated circular ring
+     (`buffer_samples` + `buffer_slots`, §7 Point B), so the **62.5 to 125 heap
+     allocations per second** this point is about no longer happen. The rest of
+     the path is unchanged: frames are copied out into a reused temporary vector
+     (`temp_out`), then `StreamCmd::Feed { pcm: frame.to_vec() }` crosses the
+     thread channel and the C FFI boundary to `transcribe_stream_feed` — that
+     per-frame allocation still happens, off the capture thread.
+   - One number is worth keeping for the surviving half: the prefill ring holds
+     `prefill_frames + 2` slots, and the prefill is 450 ms — 29 frames, ~30 KB
+     at 16 kHz float — so the buffer itself was never the expensive part.
 
 2. **Acoustic Boundary Truncation (Word-Initial & Word-Final Phoneme Clipping)**:
    - Fixed prefill buffers (e.g., 450 ms) and hangover counters (1650 ms) decoupled from the ASR encoder cannot "see" acoustic energy valleys.
@@ -42,7 +76,7 @@ A non-negotiable requirement of moving VAD into `transcribe.cpp` is that **every
 | **Floating Overlay Speaking Indicator**              | `SpeechActivityEvent { speaking: bool, ... }` emitted to `recording_overlay`.            | Populated directly from `transcribe_stream_update::vad_speaking` on every `feed`.                                                 | **100% Exact** (Visual indicator reacts in real-time).                                   |
 | **Speech Duration & WPM Clock**                      | `SpeechActivityEvent { speech_ms: u32 }` drives Words-Per-Minute calculations.           | Populated directly from `transcribe_stream_update::vad_speech_ms` tracking accumulated voiced audio.                              | **100% Exact** (WPM math identical).                                                     |
 | **Live VAD Test Diagnostic** (`Settings → Advanced`) | `VadFrameCallback` receives `VadFrameReport { score, voiced, kept, level }`.             | `transcribe_stream_update` returns `vad_last_score`, `vad_speaking`, and `audio_level_dbfs`.                                      | **100% Exact** (Visual bar and threshold graphs function identically).                   |
-| **History WAV Re-analysis** (`history.rs:353`)       | Instantiates `EarshotVad::new(0.5)` to re-calculate speech duration of saved recordings. | Expose standalone C API `transcribe_vad_process_frame` in `include/transcribe.h` and Rust bindings.                               | **100% Exact** (Eliminates duplication; exact same math used for recording and history). |
+| **History WAV Re-analysis** (`managers/history.rs`)  | Instantiates `EarshotVad::new(0.5)` to re-calculate speech duration of saved recordings. | Expose standalone C API `transcribe_vad_process_frame` in `include/transcribe.h` and Rust bindings.                               | **100% Exact** (Eliminates duplication; exact same math used for recording and history). |
 
 ---
 
@@ -220,6 +254,16 @@ flowchart TD
 
 ### 6.1 Stage 1 (Option A): Direct C FFI Linkage of Earshot
 
+> **Not what shipped.** The fork went straight to Stage 2 — there is no
+> `vendor/earshot/` Rust C-FFI crate and no Cargo build dependency for the VAD.
+> What _did_ land from this section is the **C ABI shape** below, in
+> `include/transcribe.h`: `transcribe_vad_init` / `_free` / `_predict_frame` /
+> `_set_threshold`, the `vad_threshold` / `vad_prefill_ms` / `vad_hangover_ms`
+> fields on `transcribe_stream_params`, the `vad_speaking` / `vad_speech_ms` /
+> `vad_last_score` telemetry on `transcribe_stream_update`, and
+> `transcribe_stream_set_vad_threshold`. The `src/transcribe-vad.{h,cpp}`
+> _inside_ it is the Stage 2 kernel. The layout below is kept as written.
+
 ```
 transcribe-fork/
 ├── vendor/
@@ -357,7 +401,13 @@ private:
 
 ---
 
-### 6.2 Stage 2 (Option B): Pure C++23 Clean-Room minGRU Kernel
+### 6.2 Stage 2 (Option B): Pure C++23 Clean-Room minGRU Kernel — **this is what shipped**
+
+> `transcribe-fork/src/transcribe-vad.cpp` describes itself as a
+> "clean-room C++23 kernel with 100% bit-exact parity to Earshot v1.2.2", and
+> includes `earshot-weights.inl` — i.e. §6.2's four steps below are the
+> implementation, not a proposal. Its constructor defaults (`prefill 450`,
+> `hangover 1200`, exit threshold 0.35) match §6.1's sketch.
 
 #### Motivation:
 
@@ -388,9 +438,14 @@ Stage 1 provides 100% feature parity immediately. Stage 2 eliminates the Rust/Ca
 
 While native VAD integration proceeds, `Handy_V2` can immediately fix 4 critical performance bottlenecks in its existing Rust audio pipeline:
 
-### Point A: Eliminate Double-Traversal Frame Validation in `earshot.rs`
+> **All four points have landed.** Each is marked below with where the code
+> actually is today. The "current issue" blocks are kept as the record of what
+> the code looked like.
 
-- **Location**: `Handy_V2/src-tauri/src/audio_toolkit/vad/earshot.rs:56-63`
+### Point A: Eliminate Double-Traversal Frame Validation in `earshot.rs` — **done**
+
+- **Location**: `Handy_V2/src-tauri/src/audio_toolkit/vad/earshot.rs` (the
+  `push_frame` clamp, and `is_frame_active` at the bottom of the file)
 - **Current Issue**:
   ```rust
   // CURRENT: 2 full passes over every 256-sample frame!
@@ -418,9 +473,9 @@ While native VAD integration proceeds, `Handy_V2` can immediately fix 4 critical
 
 ---
 
-### Point B: Eliminate Per-Frame Heap Allocation in `smoothed.rs`
+### Point B: Eliminate Per-Frame Heap Allocation in `smoothed.rs` — **done, with a different shape**
 
-- **Location**: `Handy_V2/src-tauri/src/audio_toolkit/vad/smoothed.rs:56-64`
+- **Location**: `Handy_V2/src-tauri/src/audio_toolkit/vad/smoothed.rs`
 - **Current Issue**:
   ```rust
   // CURRENT: Allocates a new Vec<f32> on the heap EVERY 16 milliseconds!
@@ -459,11 +514,19 @@ While native VAD integration proceeds, `Handy_V2` can immediately fix 4 critical
   }
   ```
 
+  The goal was met; the layout was not used verbatim. `SmoothedVad` today holds
+  `buffer_samples: Vec<f32>` + `buffer_slots: Vec<BufferedSlot>` sized
+  `prefill_frames + 2` at construction, with `head_idx` / `buffered_count` as the
+  ring cursors and `ensure_capacity` reallocating only when the wrapped
+  detector's frame size changes. A `Vec` rather than a fixed-size `Box` array
+  because the capacity tracks the prefill the detector was built with, and
+  `BufferedSlot { emitted, voiced }` rather than two `[bool; N]` arrays because
+  the two flags are always read together.
   - Replaces $62.5\ \text{allocs/sec}$ with **exactly 0 allocations/sec**.
 
 ---
 
-### Point C: Enable AVX2/FMA in `Handy_V2/.cargo/config.toml`
+### Point C: Enable AVX2/FMA in `Handy_V2/.cargo/config.toml` — **done**
 
 Add to `Handy_V2/.cargo/config.toml`:
 
@@ -473,12 +536,21 @@ rustflags = ["-C", "target-cpu=native"]
 ```
 
 - Instantly activates 256-bit SIMD across resamplers, RNNoise denoiser, FFT analysis, and Earshot minGRU.
+- Shipped in **both** `.cargo/config.toml` files (repo root and `src-tauri/`), so
+  a cargo invocation from either directory picks it up. That file holds only
+  this line.
 
 ---
 
-### Point D: Sub-Microsecond Energy Pre-Gating in Audio Capture
+### Point D: Sub-Microsecond Energy Pre-Gating in Audio Capture — **done, in a different file**
 
-In `Handy_V2/src-tauri/src/audio_toolkit/audio/recorder.rs`, insert an RMS pre-check before VAD processing:
+The helper is verbatim as proposed, but it landed next to the detector rather
+than in `audio/recorder.rs`: it is `is_frame_active` in
+`audio_toolkit/vad/earshot.rs`, called from `EarshotVad::push_frame` **before**
+`predict_f32`, and only while the detector is not already in speech
+(`!self.last_voiced && !is_frame_active(frame, -45.0)`). A frame it scores out
+gets the synthetic score `0.0`, which is what the live VAD test's "raw score"
+column then shows.
 
 ```rust
 #[inline(always)]
@@ -493,6 +565,11 @@ fn is_frame_active(frame: &[f32], threshold_dbfs: f32) -> bool {
 ```
 
 - Skips 75% of silence frames without running minGRU inference.
+- **The threshold is −45.0 dBFS here, not the engine's −42.0.** These are two
+  different gates and they are not interchangeable: this one decides what the
+  app's decoder ever sees, so it must not clip a quiet speaker, and its missed
+  frames are gone for good. The engine's (`transcribe-activity.cpp`) only
+  decides whether a slice already handed to the session is worth decoding.
 
 ---
 
@@ -502,7 +579,7 @@ fn is_frame_active(frame: &[f32], threshold_dbfs: f32) -> bool {
    - Verify `CMAKE_CXX_STANDARD 23` compiles cleanly under MSVC 19.40+ (VS 2026) and Clang 18+.
    - Confirm GGML C++ targets (`ggml-cpu.cpp`, `ggml-vulkan.cpp`) compile with `/std:c++latest`.
    - Confirm CUDA nvcc targets compile with `-std=c++20 -Xcompiler=/Zc:preprocessor`.
-   - Confirm all 20 architecture plugins (`transcribe-arch-*`), tests, and examples inherit and compile with C++23.
+   - Confirm every architecture under `src/arch/` (**19** of them, not 20), tests, and examples inherit and compile with C++23. These are compiled into the library, not shipped as loadable modules — ZER0's `arch-dl` split is off.
 2. **Overlay & Speaking Telemetry Verification**:
    - Start recording in Handy ZER0.
    - Verify floating overlay turns active when speech starts and remains solid during natural inter-word pauses.

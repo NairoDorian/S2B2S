@@ -1,6 +1,6 @@
 // scripts/build-options.ts
 //
-// Tunable build posture options for zer0 (Handy_V2).
+// Tunable build posture options for the native transcribe.cpp build.
 //
 // Separates the configuration for `fast` (local machine dev/release) and `full`
 // (distribution release / multi-arch matrix), allowing each to be customized
@@ -16,8 +16,12 @@ import { FULL_MODEL_SET } from "./lib/cpu-lane";
 export interface PostureOptions {
   /**
    * Target CUDA architecture policy:
-   * - "auto": auto-probes the local machine's GPU (e.g. sm_89 for RTX 4070)
-   * - "default": builds the full multi-arch distribution matrix (sm_50..sm_90)
+   * - "auto": auto-probes the local machine's GPU (e.g. sm_89 for an RTX 4070)
+   *   for a fast single-arch nvcc compile.
+   * - "default": hands the architecture list to ggml-cuda's own CMake default,
+   *   the full distribution matrix (sm_50 upward, extended to Blackwell on
+   *   toolkits new enough to add it — so the exact list tracks the CUDA
+   *   toolkit installed, not this file).
    * - Explicit semicolon-delimited list: e.g. "75;80;86;89"
    */
   cudaArchitectures: string;
@@ -48,11 +52,14 @@ export interface PostureOptions {
 /**
  * Options for the `fast` build posture (`--fast`, `dev:fast`, `build:fast`).
  *
- * Configured specifically for rapid iteration and maximum performance on this
+ * Configured specifically for rapid iteration and maximum performance on the
  * host machine:
- * - Single CUDA arch (auto-detected, sm_89) for fast nvcc compilation.
- * - CUDA Flash Attention enabled across all quants.
- * - Native host CPU acceleration (i9-13900H: AVX2, FMA, AVX-VNNI int8 acceleration).
+ * - Single CUDA arch, auto-probed from the local GPU, for fast nvcc compilation.
+ * - The conservative x86 ISA floor lifted (`TRANSCRIBE_X86_CONSERVATIVE=OFF`,
+ *   `GGML_NATIVE=ON`) so the host's AVX2 / FMA / AVX-VNNI are used.
+ * - Flash Attention left at ggml's default: the kernels for the F16 KV cache
+ *   transcribe.cpp actually runs are compiled, the extra quantized-KV ones are
+ *   not (see the note in `cmakeArgs` below).
  */
 export const FAST_BUILD_OPTIONS: PostureOptions = {
   cudaArchitectures: "auto",
@@ -77,9 +84,11 @@ export const FAST_BUILD_OPTIONS: PostureOptions = {
  *
  * Configured for multi-architecture release and distribution packages:
  * - Multi-architecture CUDA matrix (`default` covers all supported NVIDIA GPUs).
- * - Conservative host CPU floor (TRANSCRIBE_X86_CONSERVATIVE=ON) so binaries run
- *   on any x86_64 CPU without crashing on missing ISA instructions (SIGILL).
- * - Flash Attention enabled for all supported GPU architectures.
+ * - Conservative host CPU floor (TRANSCRIBE_X86_CONSERVATIVE=ON, which
+ *   `dynamic-backends` forces on x86 anyway) so binaries run on any x86_64 CPU
+ *   without crashing on missing ISA instructions (SIGILL).
+ * - Flash Attention compiled in for the F16 KV cache on every architecture in
+ *   the matrix; the extra quantized-KV kernels stay off (see `cmakeArgs`).
  *
  * Edit this object to change or add any options specific to `build:full`.
  */

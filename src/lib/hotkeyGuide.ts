@@ -4,8 +4,10 @@ import type { SidebarSection } from "@/components/Sidebar";
 /**
  * Which hotkeys the cheat-sheet sidebar lists, grouped, and where each one is
  * configured. Kept as one table so the sidebar and the anchor links cannot
- * drift apart. Adapted from AIVORelay's hotkey guide manifest for this fork's
- * four bindings.
+ * drift apart. Adapted from AIVORelay's hotkey guide manifest for the four
+ * bindings the settings page records — the two runtime-only ones (`vad_test`,
+ * `recall_dictate`) are deliberately absent, since they have no control to
+ * jump to.
  */
 interface HotkeyGuideEntry {
   id: string;

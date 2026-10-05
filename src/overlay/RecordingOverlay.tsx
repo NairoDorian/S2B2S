@@ -746,8 +746,12 @@ const RecordingOverlay = () => {
       commands
         .overlayStreamTextHeight(stepped, width)
         .then((max) => {
-          // 0 means the backend has no streaming card on screen (the overlay is
-          // fading out): keep the cap we already have rather than collapsing.
+          // 0 means the backend has no cap to hand back yet — its cached cap
+          // starts at 0 and is only ever written from a real measurement, so
+          // this reply is the "no report has landed yet" case, not the
+          // "card is fading out" one (a card that is merely off screen gets its
+          // last cap back unchanged). Keep the cap we already have rather than
+          // collapsing the card to an unbounded height.
           if (typeof max === "number" && max > 0) setTextCap(max);
         })
         .catch(() => {

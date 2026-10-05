@@ -66,6 +66,12 @@ pub fn play_feedback_sound_blocking(app: &AppHandle, sound_type: SoundType) {
     }
 }
 
+/// Play the settings page's preview sound, synchronously.
+///
+/// The one entry point that does *not* consult `audio_feedback`: it exists to
+/// audition a theme or a custom file, so it must be audible even when the
+/// feedback itself is switched off. Callers run it on the blocking pool
+/// (`commands::audio::play_test_sound`).
 pub fn play_test_sound(app: &AppHandle, sound_type: SoundType) {
     let settings = settings::get_settings(app);
     if let Some(path) = resolve_sound_path(app, &settings, sound_type) {

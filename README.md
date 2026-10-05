@@ -50,15 +50,17 @@ This fork adds **Multi-STT** — run several speech-to-text models simultaneousl
 - **Dedicated shortcut**: Configurable `multi_stt_transcribe` binding separate from the standard transcription shortcut
 - **Performance mode** (optional): Simulate a "full power" keyboard shortcut while Multi-STT is decoding and a "normal" shortcut afterwards, so an external power-profile tool can boost the CPU only when needed
 
-**To enable:** Open Settings → Multi-STT, toggle on, select your second, third, and fourth models, set the Multi-STT hotkey in Settings → General, and optionally configure a merge prompt using the same post-processing LLM provider.
+**To enable:** Open Settings → Multi-STT, toggle on, size the list with the page's **Number of extra models** dropdown (1 to 8 slots, 3 on a fresh install), fill the slots you want, set the Multi-STT hotkey on that same page, and optionally configure a merge prompt using the same post-processing LLM provider.
 
-> **Note:** this fork ships **without** default transcription hotkeys (both `transcribe` and `multi_stt_transcribe` are empty on a fresh install, so the performance-mode simulated keys can never retrigger ZER0). Set them once in Settings → General → Shortcuts.
+> **Note:** this fork ships **without** default transcription hotkeys (both `transcribe` and `multi_stt_transcribe` are empty on a fresh install, so the performance-mode simulated keys can never retrigger ZER0). Set `transcribe` in Settings → General → Shortcuts and `multi_stt_transcribe` on the Multi-STT page.
 
 ### Other Fork Additions
 
 - **Transcribe Files**: batch-transcribe audio files or whole folders to `.txt` / `.md`, cut into segments at quiet points, with plain, post-processed, Multi-STT and Multi-STT + post-processing modes
 - **Live Mode**: keep the microphone open indefinitely — session audio is saved as chunked WAV files and the live transcription is mirrored into a text file while you speak
+- **Multi-STT streaming-first** (experimental): the primary model's live text becomes the transcript, and at every pause the extra models re-decode a bounded window (the closed chunk plus a configurable amount of context) and an LLM rewrites that chunk in place, so the text you watch gets more accurate as you speak instead of the session being re-decoded at the end. A nested **Multi Streaming STT** mode merges the extras' own live streams instead of re-decoding
 - **Live FFT**: a real-time spectrum analyser for the microphone (log / mel / ERB / bark scales, EQ, windows, A/C/468 weighting, ballistics, waterfall), plus a miniature analyser built into the recording overlay
+- **Recall**: a plain-folder Markdown note vault with tags, optional Argon2id + XChaCha20-Poly1305 encryption, "Save to Recall" on any history entry, and a dictate-to-caret mode for writing into a note
 - **Local LLM (llama.cpp)**: download and supervise a local llama.cpp server from within the app for post-processing and Multi-STT merging — no API key needed
 - **Help page and shortcut cheat sheet**: every page links its settings to a searchable Help anchor, and a keyboard button in the window corner shows all assigned shortcuts
 - **Noise suppression (RNNoise)**: optional pure-Rust RNNoise on the microphone before voice detection and transcription, with a live VAD test next to the threshold slider to hear-and-see the difference
@@ -67,7 +69,7 @@ This fork adds **Multi-STT** — run several speech-to-text models simultaneousl
 - **Speech stats in the overlay**: speaking/paused indicator, a timer that only runs while you talk, and live words-per-minute with streaming models
 - **Direct streaming paste**: type the live transcript character by character into the target app as it is committed, with a speed control. Plain transcription only — with post-processing or Multi-STT the live stream is shown in the Live overlay as a preview and the processed result is pasted once with Ctrl+V
 - **Raw uncompressed audio saving**: keep recordings at the captured sample rate and format (32-bit float, 24-bit or 16-bit PCM) before resampling and VAD filtering, with no latency impact
-- **CUDA GPU backend** on Windows x86_64 and Linux (via the `NairoDorian/transcribe.cpp` fork) instead of Vulkan; `bun run build:fast` compiles kernels for your GPU only
+- **CUDA _and_ Vulkan GPU backends** on Windows x86_64 and Linux (via the `NairoDorian/transcribe.cpp` fork) — one binary serves an NVIDIA GPU through CUDA and an AMD or Intel iGPU through Vulkan, so a machine with no NVIDIA GPU is not stuck on the CPU; `bun run build:fast` compiles CUDA kernels for your GPU only
 - **Status-bar model controls**: switch models, pick a quantization (with an in-place benchmark against your latest recording), and choose a native streaming latency preset
 - **History tools**: delete all recordings, vacuum the database, open the models folder
 - **Accent colour palette**, configurable microphone idle timeout, append-trailing-newline option
@@ -166,6 +168,16 @@ zer0 --list-models                            # installed model ids
 zer0 --list-devices                           # compute devices (CPU and GPU) with their indices
 ```
 
+`--stream-chunk-ms` replays the same WAV through a model's **native streaming**
+path instead of the batch one, which is how the streaming latency presets are
+benchmarked headlessly:
+
+```bash
+zer0 -f recording.wav --stream-chunk-ms 320          # feed the stream in 320 ms slices
+zer0 -f recording.wav --stream-chunk-ms 320 --stream-att-right 2   # Nemotron right context
+zer0 -f recording.wav --stream-chunk-ms 320 --stream-r2t2-chunk-ms 160  # R2T2 decode chunk
+```
+
 Flags can be combined for autostart scenarios:
 
 ```bash
@@ -200,23 +212,26 @@ If you switch between a MacBook keyboard and an external one, pick a shortcut bu
 
 For reliable text input on Linux, install the appropriate tool for your display server:
 
-| Display Server | Recommended Tool | Install Command                                    |
-| -------------- | ---------------- | -------------------------------------------------- |
-| X11            | `xdotool`        | `sudo apt install xdotool`                         |
-| Wayland        | `wtype`          | `sudo apt install wtype`                           |
-| Both           | `dotool`         | `sudo apt install dotool` (requires `input` group) |
+| Display Server | Recommended Tool | Install Command                                         |
+| -------------- | ---------------- | ------------------------------------------------------- |
+| X11            | `xdotool`        | `sudo apt install xdotool`                              |
+| Wayland        | `wtype`          | `sudo apt install wtype`                                |
+| Wayland on KDE | `kwtype`         | `sudo apt install kwtype`                               |
+| Either         | `dotool`         | `sudo apt install dotool` (requires `input` group)      |
+| Either         | `ydotool`        | `sudo apt install ydotool` (requires a ydotoold daemon) |
 
 - **X11**: Install `xdotool` for both direct typing and clipboard paste shortcuts
 - **Ubuntu 26.04**: Has Wayland display server by default. `wtype` does not work, you need to install `ydotool` and configure systemd as described [in the upstream project](https://github.com/cjpais/Handy/pull/557#issuecomment-3781249267).
-- **Wayland**: Install `wtype` (preferred) or `dotool` for text input to work correctly
-- **dotool setup**: Requires adding your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in)
+- **Wayland**: Install `wtype` (preferred) or `dotool` for text input to work correctly. `wtype` needs the `zwp_virtual_keyboard_manager_v1` protocol, which KDE Plasma and GNOME do not implement — on those, install `kwtype` (KDE's Fake Input protocol) instead
+- **dotool / ydotool setup**: Requires adding your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in)
+- **Picking one by hand**: Settings → Advanced → Typing Tool, shown when the paste method is **Direct**. Leave it on **Auto** and ZER0 probes the tools above in order for your session type
 
 Without these tools, ZER0 falls back to enigo which may have limited compatibility, especially on Wayland.
 
 **Wayland Support (Linux):**
 
 - Limited support for Wayland display server
-- Requires [`wtype`](https://github.com/atx/wtype) or [`dotool`](https://sr.ht/~geb/dotool/) for text input to work correctly (see [Linux Notes](#linux-notes) below for installation)
+- Requires [`wtype`](https://github.com/atx/wtype) or [`dotool`](https://sr.ht/~geb/dotool/) for text input to work correctly (see [Linux Notes](#linux-notes) above for installation)
 
 **Other Notes:**
 
@@ -232,8 +247,7 @@ Without these tools, ZER0 falls back to enigo which may have limited compatibili
   - For building from source on Ubuntu/Debian, you may also need `libgtk-layer-shell-dev`.
 
 - The recording overlay is disabled by default on Linux (**Settings > Overlay**, **"Overlay"** set to **"None"**) because certain compositors treat it as the active window. When the overlay is visible it can steal focus, which prevents ZER0 from pasting back into the application that triggered transcription. If you enable the overlay anyway, be aware that clipboard-based pasting might fail or end up in the wrong window.
-- If you are having trouble with the app, running with the environment variable `WEBKIT_DISABLE_DMABUF_RENDERER=1` may help
-- If ZER0 fails to start reliably on Linux, see [Troubleshooting → Linux Startup Crashes or Instability](#linux-startup-crashes-or-instability).
+- ZER0 already sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` for itself on Linux before the webview is created, so that workaround is always on. If ZER0 fails to start reliably on Linux, see [Troubleshooting → Linux Startup Crashes or Instability](#linux-startup-crashes-or-instability).
 - **Global keyboard shortcuts (Wayland):** On Wayland, system-level shortcuts must be configured through your desktop environment or window manager. Use the [CLI flags](#cli-parameters) as the command for your custom shortcut.
 
   **GNOME:**
@@ -293,9 +307,11 @@ Without these tools, ZER0 falls back to enigo which may have limited compatibili
 
 ### Platform Support
 
-- **macOS (both Intel and Apple Silicon)**
-- **x64 Windows**
-- **x64 Linux**
+- **macOS** (both Intel and Apple Silicon)
+- **Windows** on x64 and on ARM
+- **Linux** on x64 and on ARM (aarch64)
+
+Windows on ARM is CPU-only — transcribe.cpp is linked without a GPU backend there, since the CUDA and Vulkan backends are x86_64-only.
 
 ### System Requirements/Recommendations
 
@@ -304,14 +320,15 @@ The following are recommendations for running ZER0 on your own machine. If you d
 **For Whisper Models:**
 
 - **macOS**: M series Mac, Intel Mac
-- **Windows**: Intel, AMD, or NVIDIA GPU
+- **Windows**: Intel, AMD, or NVIDIA GPU (CUDA for NVIDIA, Vulkan for AMD/Intel)
 - **Linux**: Intel, AMD, or NVIDIA GPU
   - Ubuntu 22.04, 24.04
+- **Windows on ARM**: CPU only — there is no GPU backend on that target
 
 **For Parakeet / Moonshine / Canary (GGUF) models:**
 
 - Same requirements as Whisper: they run through transcribe.cpp on the GPU when one is available, otherwise on the CPU
-- Parakeet V3 auto-detects the language across 25 European languages
+- Parakeet TDT 0.6B v3 auto-detects the language across 25 European languages
 
 ## Roadmap & Active Development
 
@@ -363,17 +380,19 @@ If you're behind a proxy, firewall, or in a restricted network environment where
 
 #### Step 1: Find Your App Data Directory
 
-1. Open ZER0 settings
+1. Open ZER0's settings window
 2. Navigate to the **About** section
-3. Copy the "App Data Directory" path shown there, or use the shortcuts:
-   - **macOS**: `Cmd+Shift+D` to open debug menu
-   - **Windows/Linux**: `Ctrl+Shift+D` to open debug menu
+3. Copy the "App Data Directory" path shown there, or open it straight from that row
 
 The typical paths are:
 
 - **macOS**: `~/Library/Application Support/com.nairodorian.zer0/`
 - **Windows**: `C:\Users\{username}\AppData\Roaming\com.nairodorian.zer0\`
 - **Linux**: `~/.local/share/com.nairodorian.zer0/` (under `$XDG_DATA_HOME` when it is set)
+
+> A `portable` file next to the executable moves all of this into a `Data/`
+> directory beside the binary instead — on such an install the About page shows
+> the path that install actually uses.
 
 #### Step 2: Create Models Directory
 
@@ -394,12 +413,13 @@ New-Item -ItemType Directory -Force -Path "$env:APPDATA\com.nairodorian.zer0\mod
 
 Download the models you want from below
 
-**Whisper Models (single .bin files):**
+**Legacy Whisper models (single `.bin` files):**
 
 - Small (487 MB): `https://blob.handy.computer/ggml-small.bin`
 - Medium (492 MB): `https://blob.handy.computer/whisper-medium-q4_1.bin`
 - Turbo (1600 MB): `https://blob.handy.computer/ggml-large-v3-turbo.bin`
 - Large (1100 MB): `https://blob.handy.computer/ggml-large-v3-q5_0.bin`
+- Breeze ASR: `https://blob.handy.computer/breeze-asr-q5_k.bin` (Taiwanese Mandarin, with code-switching)
 
 **Parakeet Unified EN 0.6B (single `.gguf` file, recommended):**
 
@@ -408,6 +428,12 @@ Download the models you want from below
 **Parakeet TDT 0.6B v3 (single `.gguf` file, multilingual):**
 
 - Q8_0: `https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf`
+
+Every `.gguf` the in-app catalog offers is downloadable straight from its
+Hugging Face repository, and the model's id in ZER0 _is_ that repo slug plus the
+quant's filename — `handy-computer/parakeet-unified-en-0.6b-gguf/parakeet-unified-en-0.6b-Q8_0.gguf`.
+`zer0 --list-models` prints the ids, so any quant can be fetched by hand the
+same way the catalog would.
 
 #### Step 4: Install Models
 
@@ -462,13 +488,7 @@ If ZER0 fails to start reliably on Linux — for example, it crashes shortly aft
 
 **1. Install (or reinstall) `gtk-layer-shell`**
 
-ZER0 uses `gtk-layer-shell` for its recording overlay and links against it at runtime. A missing or broken installation is the most common cause of startup failures and can manifest as a crash or a hang well before any window is shown. Make sure the runtime package is installed for your distro:
-
-| Distro        | Package to install    | Example command                        |
-| ------------- | --------------------- | -------------------------------------- |
-| Ubuntu/Debian | `libgtk-layer-shell0` | `sudo apt install libgtk-layer-shell0` |
-| Fedora/RHEL   | `gtk-layer-shell`     | `sudo dnf install gtk-layer-shell`     |
-| Arch Linux    | `gtk-layer-shell`     | `sudo pacman -S gtk-layer-shell`       |
+ZER0 uses `gtk-layer-shell` for its recording overlay and links against it at runtime. A missing or broken installation is the most common cause of startup failures and can manifest as a crash or a hang well before any window is shown. Make sure the runtime package named under **Other Notes** in [Linux Notes](#linux-notes) is installed for your distro (`libgtk-layer-shell0` on Ubuntu/Debian, `gtk-layer-shell` on Fedora/RHEL and Arch).
 
 If it is already installed and you still see startup problems, try reinstalling it (e.g. `sudo pacman -S gtk-layer-shell` again) in case the library files were corrupted by a partial upgrade.
 
@@ -480,13 +500,13 @@ If installing the library does not help, you can skip `gtk-layer-shell` initiali
 ZER0_NO_GTK_LAYER_SHELL=1 zer0
 ```
 
-**3. Disable WebKit DMA-BUF renderer (`WEBKIT_DISABLE_DMABUF_RENDERER`)**
+**3. `WEBKIT_DISABLE_DMABUF_RENDERER` is already set for you**
 
-On some GPU/driver combinations the WebKitGTK DMA-BUF renderer can cause the window to fail to render or to crash. Try:
-
-```bash
-WEBKIT_DISABLE_DMABUF_RENDERER=1 zer0
-```
+On some GPU/driver combinations the WebKitGTK DMA-BUF renderer can crash the
+window or fail to render, so ZER0 exports `WEBKIT_DISABLE_DMABUF_RENDERER=1`
+itself on Linux before the webview is created. There is nothing to set by hand:
+if startup still fails with it already on, the cause is one of the two steps
+above.
 
 **Making a workaround permanent**
 
@@ -523,13 +543,13 @@ $env:ZER0_KEEP_VULKAN_IMPLICIT_LAYERS = "1"
 
 Adjust the executable path if needed. This override only applies to apps launched from that PowerShell session, not the Start menu. The app also preserves any existing `VK_LOADER_LAYERS_DISABLE` value.
 
-This fork runs inference through CUDA and never loads the Vulkan loader, so the setting changes nothing about acceleration here; it is kept so the process environment matches upstream.
+The setting matters whenever the **Vulkan** backend is the one serving a model — an AMD or Intel iGPU with no NVIDIA GPU, or a model pinned to Vulkan / Vulkan (NVIDIA) / Vulkan (Intel) in the status-bar backend picker. A CUDA-only run never loads the Vulkan loader at all, which is why the flag can appear to do nothing on an NVIDIA machine.
 
 ### ZER0 Starts or Stops Recording on Its Own (Linux)
 
-Handy 0.9.4 and earlier listened for `SIGUSR1` as a remote-control trigger. WebKitGTK — the webview engine embedded in Handy on Linux — uses that same signal internally to coordinate JavaScript garbage collection, so GC cycles were misread as hotkey presses: recordings started on their own, or real dictations were cut off mid-sentence (typically ~2 minutes in). See upstream issue #1660.
+Handy 0.9.4 and earlier — the upstream releases this fork inherited the behaviour from — listened for `SIGUSR1` as a remote-control trigger. WebKitGTK, the webview engine embedded in the app on Linux, uses that same signal internally to coordinate JavaScript garbage collection, so GC cycles were misread as hotkey presses: recordings started on their own, or real dictations were cut off mid-sentence (typically ~2 minutes in). See upstream issue #1660.
 
-Update to a newer release, and replace any `pkill -USR1 -n zer0` keybindings with `zer0 --toggle-post-process`.
+ZER0 registers only `SIGUSR2` (toggle transcription) on Linux and leaves `SIGUSR1` to WebKitGTK. Update to a newer release if you are on an old build, and replace any `pkill -USR1 -n zer0` keybindings with `zer0 --toggle-post-process`.
 
 ### How to Contribute
 

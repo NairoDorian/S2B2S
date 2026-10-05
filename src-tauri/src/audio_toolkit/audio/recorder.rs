@@ -1193,6 +1193,10 @@ impl CaptureProcessor {
         speech_clock_total: Arc<AtomicU64>,
         stream_running_at: Instant,
     ) -> Self {
+        // A recorder built without a detector falls back to 480 samples (30 ms)
+        // per frame. Only the tests do that: every real recorder goes through
+        // `AudioRecorder::with_vad`, so a production frame is always the
+        // detector's `frame_samples()` (256 for Earshot).
         let frame_samples = vad.as_ref().map_or(
             (constants::WHISPER_SAMPLE_RATE * 30 / 1000) as usize,
             |cfg| cfg.frame_samples,

@@ -4,6 +4,19 @@ What happens to Confucius4-R2T2's streaming speed as its latency (the decode
 chunk size) goes from 80 to 2000 ms, why the speed looked irregular, and which
 settings are genuinely fast.
 
+> **What kind of document this is: a dated measurement report, not a
+> recommendation.** Every number below is from one machine (RTX 4070 Laptop,
+> i9-13900H), one recording, one model file and **one transcribe.cpp pin** —
+> `ba949120`, measured against `145c96a6`. Treat the absolute speeds as a record
+> of that run; only the shape of the curve and the completeness rule are meant
+> to travel. `Cargo.lock` still pins `ba949120` as of this writing, so the
+> "after" column is still what the current build does — but
+> `scripts/check-transcribe-deps.ts` will move the pin when the fork's `main`
+> advances, and when it does, re-run the sweep before quoting a number.
+>
+> Nothing here is pending work. The fork-side fixes (`f2de3264`, `ba949120`)
+> shipped and are what the current pin contains.
+
 **Short answer.** The irregular speeds, including the 50–153× "fast" settings,
 were not fast decoding: at those chunk sizes transcribe.cpp stopped handing
 R2T2 audio, so the model decoded less and lost words, sometimes the whole

@@ -1,3 +1,22 @@
+//! Synthetic keyboard and mouse input, through the one `enigo` instance the app
+//! keeps in Tauri state.
+//!
+//! Two things are worth knowing before adding a path here:
+//!
+//! - **Layout independence.** A chord is sent as virtual key codes, not as typed
+//!   characters, so Ctrl+V pastes on a Russian, AZERTY or Dvorak layout too. The
+//!   macOS V key is the exception that proves it: `kVK_ANSI_V` is wrong on most
+//!   non-Latin layouts, so `resolve_command_v_keycode` asks the *current* layout
+//!   which physical key macOS reads as `v` with Command held, and only falls back
+//!   to the ANSI code when it cannot.
+//! - **Enigo is not `Sync`,** hence `EnigoState`'s mutex. Holding it across a
+//!   chord is what keeps two simulated keystrokes from interleaving; see
+//!   `clipboard::with_enigo`, the one place that lock is taken.
+//!
+//! Modifier chords go through `send_chord`, which releases what it pressed even
+//! when a press or a click fails — a latched Ctrl is far worse than a failed
+//! paste.
+
 use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
 use log::warn;
 use std::sync::Mutex;

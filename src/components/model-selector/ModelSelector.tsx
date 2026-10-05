@@ -452,15 +452,15 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     return result && result.modelId === displayModelId() ? result : null;
   };
 
+  /** Audio horizon of the first text, or a dash when it only came at finalize. */
+  const formatFirstText = (ms: number | null): number | string =>
+    ms == null ? "—" : Math.round(ms);
+
   /**
    * The latency the run was measured at, in the same ms the latency slider
    * shows, so a result always says which setting it timed. `null` when the
    * model has no latency control, so there is nothing to name.
    */
-  /** Audio horizon of the first text, or a dash when it only came at finalize. */
-  const formatFirstText = (ms: number | null): number | string =>
-    ms == null ? "—" : Math.round(ms);
-
   const streamLatencyLabel = (latencyMs: number | null): string | null =>
     latencyMs == null
       ? null

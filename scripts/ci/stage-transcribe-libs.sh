@@ -18,6 +18,12 @@
 #   <src-lib-dir>  the transcribe-cpp-sys install lib dir (contains
 #                  libtranscribe.so* + libggml*.so* + transcribe-link.json)
 #   <dest-dir>     where to place them (e.g. an AppImage's usr/lib)
+#
+# NOTE: nothing invokes this script today — the packaging in src-tauri/build.rs
+# (stage_transcribe_runtime_libs) does the same job in Rust, per target, from
+# cargo's own DEP_TRANSCRIBE_CPP_* metadata. Kept as the shell equivalent; see
+# docs/KNOWN_ISSUES.md. If you wire it up, delete this note; if you do not,
+# delete the script.
 set -euo pipefail
 
 SRC="${1:?usage: stage-transcribe-libs.sh <src-lib-dir> <dest-dir>}"

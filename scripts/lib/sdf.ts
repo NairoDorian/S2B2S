@@ -1,8 +1,9 @@
 /**
  * A tiny signed-distance-field rasteriser.
  *
- * The brand mark is made of four primitives — a rounded box, an ellipse, a
- * segment and a circle — so it does not need an SVG engine to become pixels.
+ * The brand mark is a rounded box, an ellipse and a segment, and the tray's
+ * state badge adds a circle — four primitives, so none of them needs an SVG
+ * engine to become pixels.
  * Each primitive is expressed as a signed distance to its *centreline*; a
  * stroke is then simply "everything within half a stroke width of that
  * centreline", and a fill is "everything the distance says is inside".

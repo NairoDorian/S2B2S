@@ -43,10 +43,14 @@ pub fn disable_accelerators_now(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Release-only wrapper around [`disable_accelerators_now`], for the overlay
+/// windows: the accelerators are disabled only in a release build, so a debug
+/// run keeps F12 available. A no-op on every other platform.
 #[cfg(all(target_os = "windows", not(debug_assertions)))]
 pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
     disable_accelerators_now(window);
 }
 
+/// The no-op twin of the release-only build: a debug build keeps F12.
 #[cfg(any(not(target_os = "windows"), debug_assertions))]
 pub fn disable_browser_accelerator_keys(_window: &tauri::WebviewWindow) {}

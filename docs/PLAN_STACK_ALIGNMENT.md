@@ -1,6 +1,9 @@
 # Plan: Stack alignment — improvements grounded in the mirrored upstream docs
 
-_Status: proposed 2026-09-14. Source of every claim: the `docs/vendor/` mirror
+_Status: proposed 2026-09-14. **Still a live plan**, but several Phase 0 and 1
+items have since landed by other routes; the "landed" markers below are the only
+things that changed in this file, and the bodies are otherwise as written on
+2026-09-14. Source of every claim: the `docs/vendor/` mirror
 (`bun run docs:fetch`, refreshed 2026-09-14) plus per-tech audits that verified
 each finding against this working tree. Items carry the doc page and the app
 file that ground them. When a phase lands, delete its items; when the plan is
@@ -12,6 +15,13 @@ of them verified in code. This plan orders them by user-visible value and
 risk, under this project's own rules: real-time budget (docs/PERFORMANCE.md),
 gates green before anything ships, no version pinning of dependencies._
 
+_Read the "Tauri 2" items against that word, not the present tense._ The app is
+on Tauri **3** alpha (`tauri 3.0.0-alpha.2`) and Solid **2**; the Tauri findings
+below were audited against the mirrored **Tauri 2** docs, so re-check any of
+them you intend to act on against `docs/vendor/tauri/`'s current major before
+trusting the page reference. `docs/vendor/` is refreshed by `bun run docs:fetch`,
+so re-run it rather than trusting the 2026-09-14 snapshot.
+
 ---
 
 ## Phase 0 — correctness and security fixes (high severity, low risk)
@@ -19,19 +29,15 @@ gates green before anything ships, no version pinning of dependencies._
 **Solid 2 — three user-visible reactivity bugs** (docs/vendor/solidjs/
 concepts/reactivity.md, components-and-jsx.md):
 
-1. `AccessibilityPermissions.tsx` reads signals in the once-run body
-   (`hasAccessibility()`, `buttonConfig[permissionState()]`), so the macOS
-   permission banner can never clear once granted and its button stays frozen
-   on "request". Fix: `<Show when={isMacOS && !hasAccessibility()}>` +
-   accessor-based config, the pattern `SecureInputWarning.tsx` already uses.
-2. `useQuantBenchmark.ts:155` — `isBusy` is a mount-time boolean: the
-   double-run guard never fires (concurrent benchmark commands clobber each
-   other), the spinner branch is dead, buttons never disable. Fix: make it an
-   `Accessor<boolean>`; read `isBusy()` in guards and JSX.
-3. `QuantizationPanel.tsx:24-33` destructures live props while mounted —
-   download progress, "fastest" badge and speed bars freeze while the panel
-   is open. Fix: read `props.*` at use sites; derive `fastestMs`/`fastestId`
-   as memos.
+1. ~~`AccessibilityPermissions.tsx` reads signals in the once-run body~~ **Landed.**
+   `<Show when={isMacOS && !hasAccessibility()}>` and an accessor-based
+   `buttonConfig()` are what the file does now.
+2. ~~`useQuantBenchmark.ts` — `isBusy` is a mount-time boolean~~ **Landed.**
+   `isBusy` is declared `Accessor<boolean>` and read as `isBusy()` in the guards
+   and the JSX.
+3. ~~`QuantizationPanel.tsx` destructures live props while mounted~~ **Landed.**
+   The panel reads `props.*` at every use site, with `downloadedIds` and the
+   family results as memos.
 
 **Tauri 2 — security hardening** (docs/vendor/tauri/security/csp.md,
 asset-protocol.md, capabilities.md; plugin/store.md):
@@ -47,10 +53,13 @@ asset-protocol.md, capabilities.md; plugin/store.md):
    `prefers-color-scheme`, not the app's `data-theme` — forced themes break
    them. Fix: `@custom-variant dark (&:where([data-theme="dark"], …))` +
    three-way system resolution in `applyTheme`.
-10. `flex-grow` / `flex-shrink-0` are removed v3 utilities that generate no
-    CSS in v4 — the Slider doesn't stretch, the VAD meter doesn't fill.
-    Replace with `grow` / `shrink-0` (`Slider.tsx:54`, `VadMeter.tsx:136,159`,
-    `TextDisplay.tsx:67`, a component since deleted as dead code).
+   **Still open** — no `@custom-variant dark` exists, and the mechanism the app
+   actually uses for its own tokens is explicit `:root[data-theme="…"]`
+   overrides in `styles/theme.css`, which is a different answer than the one
+   proposed here.
+10. ~~`flex-grow` / `flex-shrink-0`~~ **Landed.** `Slider.tsx` uses `grow`,
+    `VadMeter.tsx` uses `grow` / `shrink-0` throughout. (`TextDisplay.tsx`,
+    the third site, was deleted as dead code.)
 
 **Oxlint** (docs/vendor/oxlint/guide/usage/linter/config.md):
 
@@ -59,12 +68,19 @@ asset-protocol.md, capabilities.md; plugin/store.md):
     `perf: warn`) + `options.maxWarnings: 0`, then clear the three existing
     unused-import warnings. Add the native `jsx-a11y` plugin (re-listing the
     default set; no `react` plugin — this is Solid).
+    **Partly landed**: `.oxlintrc.json` carries those three `categories` and the
+    `jsx-a11y` plugin. `options.maxWarnings: 0` is still absent, and
+    `oxlint`'s own `maxWarnings` is not a config key the way the ESLint
+    equivalent was — the gate is `bun run lint` in `precommit`, which treats a
+    non-zero exit as failure.
 
 **Bun** (docs/vendor/bun/test/\*, pm/cli/install.md):
 
 13. Add `bun install --frozen-lockfile --dry-run` as a gate step ("lockfile in
     sync") so package.json↔bun.lock drift fails locally instead of on the
-    7-platform CI matrix.
+    7-platform CI matrix. **Still open as a gate** — the three JS workflows do
+    install with `--frozen-lockfile`, so drift fails on CI, but nothing runs it
+    locally before a commit.
 
 ## Phase 1 — architecture and the native pipeline (high value, medium effort)
 
@@ -104,14 +120,20 @@ asset-protocol.md, capabilities.md; plugin/store.md):
 ## Phase 2 — modernization sweeps (mechanical, low risk)
 
 **Solid 2** (migration/from-solid-1.md): 21. Codemod ~51 `createEffect(() => undefined, …)` mount-effects →
-`onSettled`; 10 effect-local `onCleanup`s → returned cleanup. 22. Props-destructure sweep (`WhatsNewModal`, `LatencyPanel`,
-`ModelDropdown`, `HotkeyGroup`, `ModelSelector.onError`,
+`onSettled`; 10 effect-local `onCleanup`s → returned cleanup. 22. Props-destructure sweep (`WhatsNewModal`, `StreamingLatencyControl`,
+`QuantizationPanel`, `ModelDropdown`, `HotkeyGroup`, `ModelSelector.onError`,
 `WhatsNewPreview`, static-config selectors), with `untrack` annotations
 for intentional snapshots (`OverlayScope.tsx:580`). 23. Wrap `renderSettingsContent` per-section (and footer) in the existing
 `ErrorBoundary` with a visible fallback — today any settings-page throw
 blanks the window. 24. Pilot conversions: one effect-fetch → async memo under `Loading`;
 `updateBinding` → `action` + optimistic primitives (pattern-setters; no
 wholesale store rewrite).
+
+> **Correction to item 22's file list.** The audit named `LatencyPanel`, which
+> does not exist in this tree. The R2T2 / preset latency control is
+> `src/components/model-selector/StreamingLatencyControl.tsx`, and
+> `QuantizationPanel.tsx` was already converted under Phase 0 item 3 — the two
+> are named above because both are still live sweep targets.
 
 **Tailwind 4 / Oxlint**: 25. Migrate semantic status colors to the registered `--color-warning` /
 `--color-error` tokens (+ add `--color-success`); ~60 occurrences, per
@@ -136,10 +158,20 @@ heading instead of falling back to the repo name.
 
 **transcribe.cpp integration**: 37. Latency presets for Voxtral Realtime (`num_delay_tokens`) and Moonshine
 Streaming (`min_decode_interval_ms`) — both documented and typed in the
-Rust API; the app's preset UI then covers every streaming family. 38. Re-anchor ParakeetBuffered presets to the fork's validated menu
+Rust API; the app's preset UI then covers every streaming family. **Partly
+done**: `nemotron-speech-streaming-en-0.6b` was since given its own
+`NemotronSpeechCacheAware` kind, so the catalog now has two Nemotron menus
+rather than one; Voxtral and the three Moonshine Streaming entries still resolve
+to no kind. 38. Re-anchor ParakeetBuffered presets to the fork's validated menu
 (chunk ≥ 500 ms; Fastest=500/500, Fast=500/1040, Balanced=1040/1040),
 measuring WER first via the fork's `scripts/wer/run.py` recipe before
-shipping any sub-500 ms tier. 39. Session thread budgeting for Multi-STT on CPU:
+shipping any sub-500 ms tier. **The numbers here are no longer the ones in the
+tree** — `parakeet_buffered_chunk_right_ms` ships
+Fastest=160/160, Fast=160/320, Balanced=560/560, Accurate=1040/1040, i.e. the
+menu went the _other_ way, to sub-500 ms chunks. Whatever the WER run said is
+not recorded in this file; treat the re-anchoring as done-by-another-route and
+re-read `managers/native_streaming_latency.rs` before acting on it. 39. Session
+thread budgeting for Multi-STT on CPU:
 `SessionOptions { n_threads: max(2, cpus / active_engine_count) }` per
 the integration guide — four concurrent engines currently each spawn
 `hardware_concurrency()` threads. 40. `kv_type: F16` on GPU-constrained devices; optional bounded `n_ctx` for
@@ -157,8 +189,11 @@ documented outlier) carried through the catalog into the quant chips.
   it). A key pair was generated (`~/.tauri/zer0.key`), the public key
   installed in `tauri.conf.json`, `createUpdaterArtifacts` turned on, and the
   in-app `downloadAndInstall()` flow kept. Local builds sign via the runner
-  reading `~/.tauri/zer0.key`; the GitHub secrets must be set before the next
-  release.
+  reading `~/.tauri/zer0.key`. The GitHub secret was still unset then; it was
+  created on 2026-09-22 as part of a key rotation (the private half had to be
+  regenerated — see §5a of
+  `2026-09-build-lanes-per-model-backends-and-multi-streaming.md`), so the
+  caveat is closed.
 - **transcribe.cpp floating `main` (part of 16's context):** the standing
   policy is no pins — keep `branch = "main"` and the guard script. Instead of
   pinning, add a post-bump smoke check that the Fastest preset

@@ -1,10 +1,10 @@
 // The app's `useTranslation()`.
 //
 // The React → Solid 2 migration (see CHANGELOG) replaced `react-i18next` with a
-// local hook, so the 106 files that imported that package import this path
+// local hook, so the 115 files that imported that package import this path
 // instead. Both windows are Solid now, so there is one implementation
 // (`./useTranslationSolid`) and this file is a re-export plus the one piece
-// `t()` cannot express. Keeping the path means not touching 106 imports.
+// `t()` cannot express. Keeping the path means not touching 115 imports.
 export { useTranslation, currentLanguage } from "./useTranslationSolid";
 
 /**

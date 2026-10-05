@@ -3,8 +3,30 @@
 **Target Project**: ZER0 (`Handy_V2`)  
 **Companion Core**: `transcribe.cpp` (fork at `c:\Users\Z\Downloads\PROJECTS\transcribe-fork`)  
 **Date**: 2026-09-24  
-**Revision**: 2.0 (Exhaustive Architectural Specification & Edge-Case Blueprint)  
-**Status**: Ready for Implementation
+**Revision**: 2.0 (Exhaustive Architectural Specification & Edge-Case Blueprint)
+
+> **Status: implemented.** Every tier below landed, with the symbols the
+> sections name. This is kept as the specification the code was written from,
+> not as pending work; the three places the tree went further are noted here
+> rather than folded into the bodies. A shorter companion sits at
+> [`dual_gpu_plan.md`](dual_gpu_plan.md).
+>
+> | Tier                 | Where it lives now                                                                                                                               |
+> | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+> | 1. Build system      | `"dynamic-backends", "cuda", "vulkan"` in the Windows x86_64 and Linux target tables of `src-tauri/Cargo.toml`                                   |
+> | 2. Settings schema   | `settings::ModelBackendSetting` with all eight variants, `as_str` / `from_wire`, `per_model_backends` (`settings.rs`)                            |
+> | 3. Device resolution | `resolve_model_backend`, `find_vulkan_device`, `VulkanTargetDevice`, `available_model_backends` (`managers/transcription.rs`)                    |
+> | 4. UI                | `src/components/model-selector/ModelBackendPanel.tsx`, `src/components/settings/multi-stt/ModelBackendDropdown.tsx`, `set_model_backend_setting` |
+>
+> Where it went further: `set_model_backend_setting` **refuses** at the command
+> boundary a backend `available_model_backends()` does not report (the engine has
+> no silent fallback), and stores `Auto` as an _absent_ key rather than a stored
+> `"auto"`; the write is mirrored onto the model id _and_ its base repo so a pin
+> survives a quant change, and `sanitize_per_model_settings` harmonises a store
+> written before that. `available_model_backends()` also reuses
+> `find_vulkan_device` for the vendor probes rather than re-scanning devices.
+> Gate 1 below was written as `bun run tauri dev:fast`, which is not a lane —
+> corrected to `bun run dev:fast`.
 
 ---
 
@@ -508,7 +530,7 @@ export type ModelBackendSetting =
 ### Gate 1: Build & DLL Verification
 
 ```bash
-bun run tauri dev:fast
+bun run dev:fast
 ```
 
 - Verify `ggml-cuda.dll` and `ggml-vulkan.dll` are compiled.

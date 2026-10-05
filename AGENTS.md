@@ -182,34 +182,35 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 
 **Maintenance scripts (`scripts/`):**
 
-| Script                             | Invoked by                                                                                     | Purpose                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tauri-runner.ts`                  | `bun run tauri`, `dev:cpu`, `dev:fast`, `dev:full`, `build:*`                                  | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; sets the build posture — `--fast` → `TRANSCRIBE_CUDA_ARCHITECTURES=auto`, `--full` → `=default`, `--cpu` → `TRANSCRIBE_CMAKE_ARGS=-DTRANSCRIBE_CUDA=OFF` plus a private cache root. Every lane packs the full family set                                                                             |
-| `check-transcribe-deps.ts`         | `tauri-runner.ts` (imported), or run directly                                                  | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` (`main`) and `tauri-plugin-*` (`tauri-apps/plugins-workspace`, `v3`) git pins in `Cargo.lock` when remote branches move; never fails, never blocks a build                                                                                                                                                       |
-| `prune-target.ts`                  | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]`                   | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `ZER0_NO_PRUNE=1` skips it                        |
-| `check-translations.ts`            | `bun run check:translations`, CI                                                               | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                          |
-| `check-nix-deps.ts`                | `postinstall`                                                                                  | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                    |
-| `update-deps.ts`                   | `bun run update-deps [--prerelease]`                                                           | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD) |
-| `update-rtk.ts`                    | `bun run update:rtk`                                                                           | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                       |
-| `gen_catalog.py`                   | manual                                                                                         | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                |
-| `app-meta.ts`                      | `meta:sync` / `meta:check` (gate, CI) / `meta:set <x.y.z>` / `meta:bump <major\|minor\|patch>` | The single source of identity and version. Rewrites the mirrors in `package.json`, `Cargo.toml` `[package]`, `Cargo.lock`'s root block, `tauri.conf.json`, `index.html`, `flake.nix` and `installer.nsi`, and generates `app_identity.rs`, `appIdentity.ts`, `nix/module.nix` and `nix/hm-module.nix`; `--check` fails on drift                                    |
-| `check-identity.ts`                | `check:identity` (gate)                                                                        | Scans tracked files for the legacy name / identifier and, in `src/` + `src-tauri/src/` code, a hand-written current name; per-file exemptions with reasons                                                                                                                                                                                                         |
-| `check-model-language-coverage.ts` | `check:model-languages` (CI code-quality; not in the gate)                                     | Every catalog model language code must map to exactly one frontend language intent                                                                                                                                                                                                                                                                                 |
-| `pre-commit.ts`                    | `precommit` / `precommit:full` / `precommit:routine`, `.githooks/pre-commit`                   | The gate described above; `--full` adds clippy + cargo test, `--routine` runs `update` first. Stages only the files it rewrote                                                                                                                                                                                                                                     |
-| `update-all.ts`                    | `bun run update [--dry-run]`                                                                   | `update:rtk` → `update-deps -- --prerelease` → `repomix`                                                                                                                                                                                                                                                                                                           |
-| `repomix.ts`                       | `repomix` (gate, last) / `repomix:check`                                                       | Packs the tree with a pinned `repomix` into the gitignored `repomix-output.xml`; `--check` compares mtimes                                                                                                                                                                                                                                                         |
-| `fetch-stack-docs.ts`              | `docs:fetch [--source <id>] [--limit N]`                                                       | Mirrors the stack's docs into the gitignored `docs/vendor/` and reports new / changed / removed pages ([docs/STACK_WATCH.md](docs/STACK_WATCH.md))                                                                                                                                                                                                                 |
-| `bench-stt.ts`                     | `bench:stt -- --exe … --wav … --output … [--model …] [--baseline …]`                           | Replays a WAV through the headless `--transcribe-file --repeat 3 --json` path per installed model × every compute device `--list-devices` reports (filtered by `--backend`); flags regressions and transcript changes against a baseline                                                                                                                           |
-| `gen-icons.ts`                     | `icons:generate [app\|tray]`                                                                   | App icons via `tauri icon` from an SVG built from `src/lib/brandMark.ts`; tray PNGs via the SDF rasteriser (`lib/sdf.ts`, `lib/png.ts`)                                                                                                                                                                                                                            |
-| `png-inspect.ts`                   | manual                                                                                         | Prints a PNG as ASCII coverage / luminance maps and a colour histogram (decoded by Playwright's Chromium)                                                                                                                                                                                                                                                          |
-| `cargo-cpu.ts`                     | manual (deliberately **not** `lint:backend` / `test:backend`)                                  | Runs a cargo subcommand in `src-tauri/` on the CPU-only posture, so a verification build pays no nvcc and does not flip the native configure away from `dev:cpu`'s. `bun scripts/cargo-cpu.ts clippy --all-targets`                                                                                                                                                |
-| `build-options.ts`                 | imported by `tauri-runner.ts`, `pre-commit.ts`, `update-deps.ts`                               | The build-lane vocabulary shared by the scripts that invoke the Tauri CLI or cargo — lane flags, which `Cargo.toml` feature each lane needs, and the `--fast` / `--full` / `--cpu` posture                                                                                                                                                                         |
-| `lib/cpu-lane.ts`                  | imported by `tauri-runner.ts`, `cargo-cpu.ts`, `build-options.ts`, `update-deps.ts`            | The CPU-only build posture (`TRANSCRIBE_CMAKE_ARGS=-DTRANSCRIBE_CUDA=OFF`, a private CMake cache root, the full model set) in one place, so every script that compiles for verification uses the same environment instead of drifting                                                                                                                              |
-| `lib/compiler-cache.ts`            | imported by `cargo-cpu.ts`, `tauri-runner.ts`                                                  | The shared sccache/compiler-cache configuration, layered on top of a lane's environment                                                                                                                                                                                                                                                                            |
-| `lib/png.ts`, `lib/sdf.ts`         | imported by `gen-icons.ts`                                                                     | A dependency-free PNG encoder and an SDF rasteriser, so tray icons are generated without an image library                                                                                                                                                                                                                                                          |
-| `lib/env-flag.ts`                  | imported                                                                                       | The `<PREFIX>` env-flag reader, mirroring `utils.rs` (legacy-prefix fallback with a warning)                                                                                                                                                                                                                                                                       |
-| `mirror_models.py`                 | manual (`uv run`)                                                                              | Mirrors the catalog's GGUF files to R2 blob storage (upstream tooling)                                                                                                                                                                                                                                                                                             |
-| `ci/stage-transcribe-libs.sh`      | nothing (see [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md))                                     | Linux runtime-library staging helper, currently unreferenced                                                                                                                                                                                                                                                                                                       |
+| Script                             | Invoked by                                                                                                   | Purpose                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tauri-runner.ts`                  | `bun run tauri`, `dev:cpu`, `dev:fast`, `dev:full`, `build:*`                                                | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; sets the build posture — `--fast` → `TRANSCRIBE_CUDA_ARCHITECTURES=auto`, `--full` → `=default`, `--cpu` → `TRANSCRIBE_CMAKE_ARGS=-DTRANSCRIBE_CUDA=OFF` plus a private cache root. Every lane packs the full family set                                                                                       |
+| `check-transcribe-deps.ts`         | `tauri-runner.ts` (imported), or run directly                                                                | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` (`main`) and `tauri-plugin-*` (`tauri-apps/plugins-workspace`, `v3`) git pins in `Cargo.lock` when remote branches move; never fails, never blocks a build                                                                                                                                                                 |
+| `prune-target.ts`                  | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]`                                 | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `ZER0_NO_PRUNE=1` skips it                                  |
+| `check-translations.ts`            | `bun run check:translations`, CI                                                                             | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                                    |
+| `check-nix-deps.ts`                | `postinstall`                                                                                                | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                              |
+| `update-deps.ts`                   | `bun run update-deps [--prerelease]`                                                                         | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD)           |
+| `update-rtk.ts`                    | `bun run update:rtk`                                                                                         | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                                 |
+| `track-aivorelay.ts`               | `bun run track:aivorelay`                                                                                    | Regenerates `docs/COUSIN_AIVORELAY_TRACKER.md` by diffing the sibling AIVORelay checkout against upstream Handy `main`. Maintainer tooling, and the sibling path is hardcoded, so it only runs on the maintainer's machine                                                                                                                                                   |
+| `gen_catalog.py`                   | manual                                                                                                       | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                          |
+| `app-meta.ts`                      | `meta:sync` / `meta:check` (gate, CI) / `meta:set <x.y.z>` / `meta:bump <major\|minor\|patch>`               | The single source of identity and version. Rewrites the mirrors in `package.json`, `Cargo.toml` `[package]`, `Cargo.lock`'s root block, `tauri.conf.json`, `index.html`, `flake.nix` and `installer.nsi`, and generates `app_identity.rs`, `appIdentity.ts`, `nix/module.nix` and `nix/hm-module.nix`; `--check` fails on drift                                              |
+| `check-identity.ts`                | `check:identity` (gate)                                                                                      | Scans tracked files for the legacy name / identifier and, in `src/` + `src-tauri/src/` code, a hand-written current name; per-file exemptions with reasons                                                                                                                                                                                                                   |
+| `check-model-language-coverage.ts` | `check:model-languages` (CI code-quality; not in the gate)                                                   | Every catalog model language code must map to exactly one frontend language intent                                                                                                                                                                                                                                                                                           |
+| `pre-commit.ts`                    | `precommit` / `precommit:full` / `precommit:routine`, `.githooks/pre-commit`                                 | The gate described above; `--full` adds clippy + cargo test, `--routine` runs `update` first. Stages only the files it rewrote                                                                                                                                                                                                                                               |
+| `update-all.ts`                    | `bun run update [--dry-run]`                                                                                 | `update:rtk` → `update-deps -- --prerelease` → `repomix`                                                                                                                                                                                                                                                                                                                     |
+| `repomix.ts`                       | `repomix` (gate, last) / `repomix:check`                                                                     | Packs the tree with a pinned `repomix` into the gitignored `repomix-output.xml`; `--check` compares mtimes                                                                                                                                                                                                                                                                   |
+| `fetch-stack-docs.ts`              | `docs:fetch [--source <id>] [--limit N]`                                                                     | Mirrors the stack's docs into the gitignored `docs/vendor/` and reports new / changed / removed pages ([docs/STACK_WATCH.md](docs/STACK_WATCH.md))                                                                                                                                                                                                                           |
+| `bench-stt.ts`                     | `bench:stt -- --exe … --wav … --output … [--model …] [--baseline …]`                                         | Replays a WAV through the headless `--transcribe-file --repeat 3 --json` path for each _selected_ installed model — a curated default set, or exactly the ids `--model` names, with streaming-capable ids also run through a stream — × every compute device `--list-devices` reports (filtered by `--backend`); flags regressions and transcript changes against a baseline |
+| `gen-icons.ts`                     | `icons:generate [app\|tray]`                                                                                 | App icons via `tauri icon` from an SVG built from `src/lib/brandMark.ts`; tray PNGs via the SDF rasteriser (`lib/sdf.ts`, `lib/png.ts`)                                                                                                                                                                                                                                      |
+| `png-inspect.ts`                   | manual                                                                                                       | Prints a PNG as ASCII coverage / luminance maps and a colour histogram (decoded by Playwright's Chromium)                                                                                                                                                                                                                                                                    |
+| `cargo-cpu.ts`                     | manual (deliberately **not** `lint:backend` / `test:backend`)                                                | Runs a cargo subcommand in `src-tauri/` on the CPU-only posture, so a verification build pays no nvcc and does not flip the native configure away from `dev:cpu`'s. `bun scripts/cargo-cpu.ts clippy --all-targets`                                                                                                                                                          |
+| `build-options.ts`                 | imported by `tauri-runner.ts`                                                                                | The posture each lane hands the Tauri runner — `FAST_BUILD_OPTIONS` (`--fast`) and `FULL_BUILD_OPTIONS` (`--full`): the CUDA architecture policy, the transcribe.cpp `cmakeArgs`, the model set, extra env and the banner text. Lane-flag _parsing_ lives in the runner, and `--cpu` is not here at all: it is the `lib/cpu-lane.ts` posture                                 |
+| `lib/cpu-lane.ts`                  | imported by `tauri-runner.ts`, `cargo-cpu.ts`, `build-options.ts`, `update-deps.ts`, `lib/compiler-cache.ts` | The CPU-only build posture (`TRANSCRIBE_CMAKE_ARGS=-DTRANSCRIBE_CUDA=OFF`, a private CMake cache root, the full model set) in one place, so every script that compiles for verification uses the same environment instead of drifting                                                                                                                                        |
+| `lib/compiler-cache.ts`            | imported by `cargo-cpu.ts`, `tauri-runner.ts`                                                                | The shared sccache/compiler-cache configuration, layered on top of a lane's environment                                                                                                                                                                                                                                                                                      |
+| `lib/png.ts`, `lib/sdf.ts`         | imported by `gen-icons.ts`                                                                                   | A dependency-free PNG encoder and an SDF rasteriser, so tray icons are generated without an image library                                                                                                                                                                                                                                                                    |
+| `lib/env-flag.ts`                  | imported                                                                                                     | The `<PREFIX>` env-flag reader, mirroring `utils.rs` (legacy-prefix fallback with a warning)                                                                                                                                                                                                                                                                                 |
+| `mirror_models.py`                 | manual (`uv run`)                                                                                            | Mirrors the catalog's GGUF files to R2 blob storage (upstream tooling)                                                                                                                                                                                                                                                                                                       |
+| `ci/stage-transcribe-libs.sh`      | nothing (see [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md))                                                   | Linux runtime-library staging helper, currently unreferenced                                                                                                                                                                                                                                                                                                                 |
 
 `scripts/` is outside `tsconfig`'s `include` and outside `oxlint src`, so
 neither `typecheck` nor `lint` reads it — read a script before trusting it
@@ -232,11 +233,16 @@ from the in-app catalog on first run.
 **Native build flags:** the two `.cargo/config.toml` files (root and
 `src-tauri/`, so a cargo invocation from either directory picks one up) set
 `rustflags = ["-C", "target-cpu=native"]` and nothing else — local builds use
-the host's AVX2/FMA and BMI rather than baseline x86-64. Windows x86_64 and
-Linux build the transcribe.cpp **`cuda`** feature (not upstream's `vulkan`),
-macOS `metal`, Windows aarch64 CPU only; `dev:cpu` turns CUDA off at configure
-time on top of that. Every lane packs the full family set:
-`TRANSCRIBE_MODEL_SET=full` is set by the runner, not by a config file.
+the host's AVX2/FMA and BMI rather than baseline x86-64. Windows x86*64 and
+Linux build transcribe.cpp with \*\*`dynamic-backends`, `cuda` \_and* `vulkan`\*\*
+(`dynamic-backends` builds each ggml backend as a loadable module, which is
+what lets one binary serve a CUDA and a CPU device in the same process);
+upstream ships `vulkan` alone, so the fork added `cuda` beside it rather than
+replacing it. macOS is `metal` and Windows aarch64 is CPU-only. `dev:cpu` turns
+CUDA off at configure time on top of that (`-DTRANSCRIBE_CUDA=OFF` — the `cuda`
+cargo feature cannot be dropped, it lives in the target table; Vulkan stays in
+the build). Every lane packs the full family set: `TRANSCRIBE_MODEL_SET=full` is
+set by the runner, not by a config file.
 
 For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
@@ -275,7 +281,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   - `audio/` - Device enumeration, recording, resampling, WAV read/write
     (`utils.rs`: `save_wav_file`, `save_raw_wav_file`, `read_wav_samples`,
     `verify_wav_file`). There is no level-meter path: the overlay draws the
-    Live FFT scope
+    Live FFT scope.
     - `device.rs` resolves the system default to the concrete endpoint
       (`default_input_endpoint` / `default_output_endpoint`) for the recorder,
       the channel query and the feedback sounds. cpal 0.18's virtual default
@@ -423,7 +429,10 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
 - `catalog/` - Bundled model catalog (`catalog.json`)
 - `utils.rs` - Platform detection helpers, `cancel_current_operation`, the
   `app_env_var` / `app_env_flag` readers
-- `tests/vad_speech_clock_probe.rs` - Opt-in VAD regression probe (`ZER0_PROBE_WAV`)
+- `tests/vad_speech_clock_probe.rs` - Opt-in VAD regression probe (`ZER0_PROBE_WAV`);
+  `tests/default_endpoint_probe.rs` - opt-in default-microphone probe
+  (`ZER0_PROBE_MIC=1`), which resolves the concrete endpoint, reads its config
+  and captures from it
 
 ### Frontend Structure (src/)
 
@@ -476,6 +485,9 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
       canvas + waterfall (`SpectrumCanvas.tsx`, `SpectrogramCanvas.tsx`),
       presets and every analyser parameter group (`ParamSlider.tsx`,
       `liveFftMath.ts`, `liveFftPresets.ts`)
+    - `recall/RecallPage.tsx` - Recall page (fork feature): the note list, the
+      Markdown editor and the encryption controls; `stores/recallStore.ts` holds
+      its state outside the page for the same reason the two fork stores above do
     - `VadSensitivity.tsx` - Threshold slider for the Earshot VAD (fork)
   - `model-selector/` - Status-bar model controls (footer). Three mutually
     exclusive popovers: model switcher, quantization picker
@@ -484,11 +496,16 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
     native streaming latency (`StreamingLatencyControl.tsx`: one slider in ms
     for every family — continuous for R2T2, snapping to the trained settings
     for Nemotron / Parakeet Unified; the ms table is `lib/streamingLatency.ts`,
-    mirroring `native_streaming_latency::latency_point`). The same control is
-    each streaming-capable extra slot's latency on the Multi-STT page.
+    mirroring `native_streaming_latency::latency_point`). The same control sets
+    each streaming-capable extra slot's latency on the Multi-STT page, as the
+    slot's own override rather than the shared per-model entry.
     There is deliberately no benchmark settings page — the benchmark lives
     beside the quant list it compares.
   - `onboarding/` - First-run experience
+  - `live-canvas/` - The "Live Canvas" the Sidebar's button opens over Live Mode
+    (`LiveCanvas.tsx`), replacing the whole settings window: the overlay scope,
+    the session controls and the live transcript, read from
+    `stores/liveModeStore.ts`
   - `whats-new/` - Release-notes modal (`releaseNotes.ts` globs
     `src/content/release-notes/*.md`)
   - `update-checker/` - App update notifications (`portableInstaller.ts`)
@@ -504,7 +521,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   maps, `keyboard_implementation`, `per_model_backends`,
   `multi_stt_extra_models`); those are persisted by that command and must stay
   out of the map, which is also why the warning is suppressed for
-  `selected_model`
+  `selected_model` (and for `bindings`, which is not a stored setting at all)
 - `stores/modelStore.ts` - Model store: lists, selects, downloads, cancels
   downloads and deletes models (loading is the backend's job)
 - `stores/fileTranscriptionStore.ts`, `stores/liveModeStore.ts` - Queue /
@@ -858,11 +875,10 @@ vad_grace}_setting`): `denoise_strength` (wet/dry mix), `denoise_vad_threshold`
   Live Mode
 - `overlay_scope` - One nested `OverlayScopeSettings` struct: which of the
   overlay's three views are drawn (spectrum, waveform, circular), the spectrum
-  style, the waveform window and
-  its edge fade in samples, the auto-gain floor and the view size; persisted
-  through `change_overlay_scope_settings`, which also refreshes the cached
-  window geometry (`overlay::update_overlay_scope_cache`) and hands the
-  waveform window to the running scope
+  style, the waveform window and its edge fade in samples, the auto-gain floor
+  and the view size; persisted through `change_overlay_scope_settings`, which
+  also refreshes the cached window geometry (`overlay::update_overlay_scope_cache`)
+  and hands the waveform window to the running scope
 - `live_fft` - One nested `LiveFftSettings` struct: the analyser
   parameters (source, raw bins, scale, warp + aggregation, output bins and
   their Auto/Fixed mode, window length, zero-padding, EQ, window & Kaiser β
@@ -1067,12 +1083,12 @@ WindowHidden`); the page stops the session on unmount; the worker notices
   block and circular-background instances share one poll) and maps
   `Float32Array` views onto the buffer. The scope computes at most 8192 bins
   (`OVERLAY_MAX_BINS`; a capped Raw grid becomes a peak-aggregated linear
-  axis) whatever the page asks for. The
-  spectrum is the page's spectrum: the scope engine runs the same
-  `SpectrumPipeline` on the same `Shared` settings snapshot (EQ shelves,
-  window, weighting, scale / warp, dB reference and range, ballistics,
-  source, update rate), and `scope_bins_equal_the_page_pipeline_for_the_same_settings`
-  asserts the bins are bit-identical. Only the picture follows
+  axis) whatever the page asks for. The spectrum is the page's spectrum: the
+  scope engine runs the same `SpectrumPipeline` on the same `Shared` settings
+  snapshot (EQ shelves, window, weighting, scale / warp, dB reference and range,
+  ballistics, source, update rate), and
+  `scope_bins_equal_the_page_pipeline_for_the_same_settings` asserts the bins
+  are bit-identical. Only the picture follows
   `overlay_scope` (Overlay page): which views, area / line / bars, the
   mirrored (centred) spectrum, peak hold, the waveform window and fade (the
   scope rebuilds its `WaveRing` when the setting changes), the auto-gain
@@ -1099,7 +1115,10 @@ WindowHidden`); the page stops the session on unmount; the worker notices
 
 `paste_method = direct_streaming` types the live transcript into the foreground
 app while the user speaks (`DirectStreamWriter`, driven by the stream worker in
-`managers/transcription.rs`). It applies to **plain transcription only**:
+`managers/transcription.rs`). It applies to **plain transcription only** — the
+exception is the experimental streaming-first mode below, whose coordinator owns
+the writer and types the composed text itself, so its `multi_stt_transcribe` row
+is the batch path's, not the streaming mode's:
 
 | Mode                              | Live stream                                                           | Final text                           |
 | --------------------------------- | --------------------------------------------------------------------- | ------------------------------------ |
@@ -1279,8 +1298,9 @@ close-gate defect described below, is in
 - **Overlay**: the mode's events carry `whole_session` (grow the card with the
   transcript) and `failed_chunks` (the badge). The card reports its height in
   24 px steps through `overlay_stream_text_height`, which `overlay.rs` adds to
-  the streaming window's height, clamped to 70 % of the monitor — past that the
-  card scrolls back, so the whole session stays readable, never hidden.
+  the streaming window's height, clamped to ~35 % of the monitor minus the card's
+  own chrome (160–280 px) — past that the card scrolls back, so the whole session
+  stays readable, never hidden.
   `whole_session` is set by exactly one emitter (`emit_composed_stream_text`,
   the coordinator's own path: the production view with an exclusive sink, or
   the Multi Streaming STT debug view's merged block on `MERGE_BLOCK_SLOT`), so
@@ -1381,27 +1401,29 @@ extras.
 ### Recall (fork addition)
 
 The **Recall** page is a note vault that is a plain folder, with no database.
-Backend: `recall/` + `commands/recall.rs`. The root is
-`settings.recall.output_dir`, or `<app data>/recall` by default.
+Backend: `recall/` + `commands/recall.rs`; frontend: `settings/recall/RecallPage.tsx`
 
-- **Layout**: each note is `notes/<YYYY-MM-DD-slug>.md` with a small
+- `stores/recallStore.ts`. The root is `settings.recall.output_dir`, or
+  `<app data>/recall` by default.
+
+* **Layout**: each note is `notes/<YYYY-MM-DD-slug>.md` with a small
   `key: value` frontmatter (title, created, updated, tags, source, audio) above
   a Markdown body. `index.json` is a disposable tag-count cache, rebuilt after
   every plain-vault mutation; `audio/` holds copies of the recordings behind
   notes.
-- **Save to Recall** on a History entry (`recall_save_transcription`) files the
+* **Save to Recall** on a History entry (`recall_save_transcription`) files the
   text as a new note and copies its WAV into `audio/`.
-- **Dictate** (`recall/dictate.rs`, `recall_dictate_start/stop/cancel`) records
+* **Dictate** (`recall/dictate.rs`, `recall_dictate_start/stop/cancel`) records
   under the `recall_dictate` binding, batch-transcribes with the primary model
   (post-processing when enabled; under 200 ms of speech is refused) and returns
   the text to the editor's caret. Nothing is pasted and no History row or
   statistics run is written; the cancel hotkey ends it through
   `cancel_current_operation`.
-- **Insertion mode** (`recall/insertion.rs`) is an atomic flag the page arms
+* **Insertion mode** (`recall/insertion.rs`) is an atomic flag the page arms
   while the editor has focus. While armed, the Transcribe and Multi-STT hotkeys
   emit `RecallInsertTextEvent` instead of pasting, write no History row, and
   move their WAV into the vault's `audio/`.
-- **Encryption** (`recall/crypto.rs`, optional and reversible): the passphrase
+* **Encryption** (`recall/crypto.rs`, optional and reversible): the passphrase
   goes through Argon2id (64 MiB, t=3, p=4; parameters, salt and a sealed
   verifier in `vault.json`) to a master key held only in process memory while
   unlocked. Every note and recording becomes `<name>.rcl` = magic ‖ per-file
@@ -1444,12 +1466,16 @@ render so no raw keys are painted.
 > - `jsPlugins` is an alpha oxlint API. If it ever stops loading the plugin,
 >   oxlint fails the config outright (exit 1) rather than silently skipping the
 >   rule, so a regression surfaces in CI instead of leaking hardcoded strings.
-> - `src/` carries **no `i18next/no-literal-string` suppressions at all**, and
->   it should stay that way. (The only suppressions are file-level `jsx-a11y`
->   ones on custom widgets — `ui/Dialog.tsx`, `ui/Select.tsx`,
+> - `src/` carries **no `i18next/no-literal-string` suppression on any settings
+>   page or setting component**, and it should stay that way; the only two are the
+>   Sidebar's "Live Canvas" label and the Live Canvas window's own chrome — fixed
+>   labels with no copy behind them (`Sidebar.tsx:1`,
+>   `live-canvas/LiveCanvas.tsx:1`). Every other suppression is file-level
+>   `jsx-a11y` on a custom widget — `ui/Dialog.tsx`, `ui/Select.tsx`,
 >   `ui/Toaster.tsx`, `Sidebar.tsx`, `HotkeySidebar.tsx`,
->   `onboarding/ModelCard.tsx` and the status-bar popovers — and one
->   `oxc/approx-constant` on `liveFftPresets.ts`.)
+>   `onboarding/ModelCard.tsx` and the status-bar popovers
+>   (`model-selector/StatusBarPopover.tsx`, `ModelBackendPanel.tsx`) — plus one
+>   `oxc/approx-constant` on `liveFftPresets.ts`.
 >   `// eslint-disable-next-line i18next/no-literal-string` is unreliable here
 >   anyway — oxlint honours it for JSX text on a single line but not when the
 >   flagged element spans multiple lines. For literal data (symbols, indices,
@@ -1515,9 +1541,10 @@ ZER0 supports command-line parameters on all platforms for integration with scri
 | `--debug`                                         | Accepted for compatibility: logging is always captured at Trace (see [docs/LOGGING.md](docs/LOGGING.md)); it only shows in the startup log line and does not turn on the in-app debug mode |
 | `-f`, `--transcribe-file <WAV>`                   | Headless: transcribe a mono WAV (16/24-bit PCM or 32-bit float, any rate) with the batch path and exit                                                                                     |
 | `--model <ID>`                                    | Headless: model to use instead of the selected one                                                                                                                                         |
-| `--device-index <N>`                              | Headless: GPU device index for GGUF models                                                                                                                                                 |
-| `--list-devices`, `--list-models`                 | Headless: print GPU devices / installed models and exit                                                                                                                                    |
+| `--device-index <N>`                              | Headless: compute-device registry index (as printed by `--list-devices`) to load on, instead of the persisted accelerator; applies to every model                                          |
+| `--list-devices`, `--list-models`                 | Headless: print the compute devices / installed models and exit                                                                                                                            |
 | `--stream-chunk-ms <N>`, `--stream-att-right <N>` | Headless: replay the WAV through native streaming in N-ms feeds (1–10000), with an optional Nemotron right context                                                                         |
+| `--stream-r2t2-chunk-ms <N>`                      | Headless: R2T2 decode chunk in ms (80–2000) for that same replay, overriding the persisted per-model value; requires `--stream-chunk-ms`                                                   |
 | `--repeat <N>`, `--json`                          | Headless: benchmark runs (must be 3: warm-up discarded, runs 2–3 averaged) / machine-readable output                                                                                       |
 
 **Key design decisions:**
@@ -1533,7 +1560,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no Authenticode code signing (`signCommand` removed from `tauri.conf.json`) but **signed updater artifacts** (`createUpdaterArtifacts` on, the project's own minisign key: private at `~/.tauri/zer0.key`, public in `plugins.updater.pubkey`; CI injects it via the `TAURI_SIGNING_PRIVATE_KEY` secrets, the tauri runner reads the local file), normal OS CPU scheduling (no affinity, core ranking, process/thread priority elevation, MMCSS registration or power-throttling override). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
+- **Windows**: CUDA acceleration on x86*64 (transcribe.cpp `cuda` \_and* `vulkan`, so an AMD or Intel iGPU can serve a model beside the NVIDIA one), CPU only on aarch64, no Authenticode code signing (`signCommand` removed from `tauri.conf.json`) but **signed updater artifacts** (`createUpdaterArtifacts` on, the project's own minisign key: private at `~/.tauri/zer0.key`, public in `plugins.updater.pubkey`; CI injects it via the `TAURI_SIGNING_PRIVATE_KEY` secrets, the tauri runner reads the local file), normal OS CPU scheduling (no affinity, core ranking, process/thread priority elevation, MMCSS registration or power-throttling override). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049) — a CUDA-only run never loads the Vulkan loader, but a `vulkan` / `vulkan_intel` backend does, so the flag is opt-out via `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
 - **Linux**: CUDA acceleration (upstream: OpenBLAS + Vulkan), limited Wayland support, overlay uses GTK layer shell (disable with `ZER0_NO_GTK_LAYER_SHELL=1`)
 - **Nix/NixOS**: the Nix package sets `ZER0_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
 

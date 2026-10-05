@@ -207,11 +207,14 @@ and the record is in three places.
 | `09edfe27` | Document what the mode is for.                                                                                                                                                                                                                                                          |
 | `b842345d` | Pin the direct-streaming backspace to the chunk it corrects.                                                                                                                                                                                                                            |
 | `a5cdef8c` | Log the primary streaming model per chunk, with its rate.                                                                                                                                                                                                                               |
+| `4bb774ca` | Landed the pending working tree as a commit — the same session, with the exact zero replaced by `STREAM_DRAIN_TOLERANCE_MS` and the `Chunk::live` half of the gate restored.                                                                                                            |
+| `d47f09cb` | Audit pass over the fix: the tolerance is capped at the configured pause, and a retired session reports `NotActive` so the action falls back instead of timing out on an empty slot.                                                                                                    |
 
-None of these is the defect. `ee291035` removed the text guard deliberately and
-correctly _for the design it was moving to_ — the guard belonged to a
-text-defined chunk. What it left behind was a close no longer gated on text at
-all, which is a real hole, and the hole is what was being fixed next.
+None of the first six is the defect. `ee291035` removed the text guard
+deliberately and correctly _for the design it was moving to_ — the guard
+belonged to a text-defined chunk. What it left behind was a close no longer
+gated on text at all, which is a real hole, and the hole is what the last two
+rows closed.
 
 ### The change that made it worse
 
@@ -219,11 +222,13 @@ The uncommitted work in the tree added the wait — and tested it against an
 **exact zero**:
 
 ```rust
-if text_lag_ms <= 0 { Close } else if paused_for >= pause + GRACE { Retire } else { Wait }
+if stream_drain_ms <= 0 { Close } else if paused_for >= pause + GRACE { Retire } else { Wait }
 ```
 
-`text_lag_ms` there was `input_received_ms − audio_committed_ms`, i.e. condition
-(a) read as though it were a text lag. Zero was unreachable, so:
+`stream_drain_ms` there was `input_received_ms − audio_committed_ms`, i.e.
+condition (a) read as though it were a text lag — and named for one, which is how
+an exact-zero test written for the _text_ ended up gating the audio's drain. Zero
+was unreachable, so:
 
 - every break waited out the grace,
 - every session retired,
@@ -325,14 +330,16 @@ No new dependency, no new poll.
 
 ## 7. Reading the log
 
-| Line                                                                                                                                                                  | Means                                                                                                                                                                                                                                             |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chunk n closed — … ms of audio, … chars, … ms of context, … ms of it left un-drained (tolerance … ms)`                                                               | A normal close. The un-drained figure is the same backlog the close gate tested, so it is always within the tolerance at a close (500 ms, capped at the pause): tens of ms is normal, a figure near the tolerance is the model barely keeping up. |
-| `chunk n was still owed its own text … after the last speech (the pause plus a grace of …) — … chars of it, and … ms of audio the stream decodes but has not drained` | The retire path. The two figures are the two conditions of §3; which one is large says whether the model is slow (drain) or committing nothing (chars).                                                                                           |
-| `Live preview perf`                                                                                                                                                   | The primary's own stream: `input_received`, `committed_audio`, `buffered`, revision, real-time factor.                                                                                                                                            |
-| `the audio tap is N samples ahead of the stream; the chunk's audio may not be exactly the audio the stream decoded (… ms)`                                            | A structural mismatch between the tap and the stream feed. One warning per session, and the correction is deliberately **not** applied — a worker-thread lag of a frame or two is indistinguishable from a real lead.                             |
-| `chunk n has no word in any slot, nothing to merge`                                                                                                                   | §5: the chunk's slots held nothing but punctuation, so no merge was dispatched. Not a failure, so no retry — the chunk keeps the streaming model's own text.                                                                                      |
-| `Multi-STT merge rejected: <reason>`                                                                                                                                  | §5: the model answered the prompt instead of the audio. The reason says which test caught it, and the reply is logged under `Multi-STT merge reply (rejected)` — the user gets the concatenation fallback instead.                                |
+| Line                                                                                                                                                                  | Means                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `chunk n closed — … ms of audio, … chars, … ms of context, … ms of it left un-drained (tolerance … ms)`                                                               | A normal close of a parent-mode chunk. The un-drained figure is the same backlog the close gate tested, so it is always within the tolerance at a close (500 ms, capped at the pause): tens of ms is normal, a figure near the tolerance is the model barely keeping up.             |
+| `chunk n closed — … ms of audio, … ms left un-drained (tolerance … ms), live texts [1: … chars, 2: … chars, …]`                                                       | The same close under the nested Multi Streaming STT mode, where nothing is re-decoded: there is no window and no decode to report, so the line carries each live model's own text for the chunk instead — the only way to see from outside that a second model contributed anything. |
+| `chunk n was still owed its own text … after the last speech (the pause plus a grace of …) — … chars of it, and … ms of audio the stream decodes but has not drained` | The retire path. The two figures are the two conditions of §3; which one is large says whether the model is slow (drain) or committing nothing (chars).                                                                                                                              |
+| `Live preview perf`                                                                                                                                                   | The primary's own stream: `input_received`, `committed_audio`, `buffered`, revision, frames fed, updates emitted, real-time factor.                                                                                                                                                  |
+| `chunk n model 1 (primary stream) transcribed …s of audio in …s (…x real-time): '…'`                                                                                  | The primary's contribution to one chunk, as it was **before** any merge touched it — the primary is never re-decoded, so its live text for the chunk is all there is to time and to show. Silent for a chunk that closed with no new audio behind it.                                |
+| `the audio tap is N samples ahead of the stream; the chunk's audio may not be exactly the audio the stream decoded (… ms)`                                            | A structural mismatch between the tap and the stream feed. One warning per session, and the correction is deliberately **not** applied — a worker-thread lag of a frame or two is indistinguishable from a real lead.                                                                |
+| `chunk n has no word in any slot, nothing to merge`                                                                                                                   | §5: the chunk's slots held nothing but punctuation, so no merge was dispatched. Not a failure, so no retry — the chunk keeps the streaming model's own text.                                                                                                                         |
+| `Multi-STT merge rejected: <reason>`                                                                                                                                  | §5: the model answered the prompt instead of the audio. The reason says which test caught it, and the reply is logged under `Multi-STT merge reply (rejected)` — the user gets the concatenation fallback instead.                                                                   |
 
 ---
 

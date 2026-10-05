@@ -5,9 +5,9 @@
 // `transcribe-cli --stream-chunk-ms`, one tick per line, for the two families
 // whose streaming the overlay serves: R2T2 (qwen3_asr, which re-decodes its
 // whole context every chunk and so moves the committed seam most) and Nemotron
-// (parakeet cache-aware). The functions under test are the ones the overlay
-// calls (src/overlay/RecordingOverlay.tsx), so "the spec holds" is about the
-// shipped overlay and not a copy of it.
+// Speech (a cache-aware FastConformer stream). The functions under test are the
+// ones the overlay calls (src/overlay/RecordingOverlay.tsx), so "the spec
+// holds" is about the shipped overlay and not a copy of it.
 import { test } from "bun:test";
 import assert from "node:assert";
 import {

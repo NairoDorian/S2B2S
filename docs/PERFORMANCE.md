@@ -13,16 +13,16 @@ dependency or a thread.**
 
 ## The budget
 
-| Path                            | Target                                           | Where it is measured                                                     |
-| ------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| Hotkey → first captured sample  | < 30 ms warm mic, < 150 ms cold open             | `first captured samples … after Cmd::Start` debug log                    |
-| Audio callback                  | allocation-free, lock-free, log-free             | `write_input_to_ring` — never touch it casually                          |
-| Consumer thread per 16 ms frame | ≪ 16 ms (VAD ≈ 30 µs, RNNoise ≈ 100 µs)          | `tests/vad_speech_clock_probe.rs`, debug timings                         |
-| Stop → text pasted (batch)      | model bound; everything else < 20 ms             | Statistics page latency distributions                                    |
-| Stream → overlay text           | one frame; events ≤ ~30 Hz                       | `StreamTextEvent`, `VadTestEvent` throttles                              |
-| LLM post-processing / merge     | provider bound; local llama.cpp, warm            | `post_processing_latency_ms` in history                                  |
-| Settings UI interaction         | no synchronous Tauri call on the main thread     | commands are `async` + `spawn_blocking`                                  |
-| Live FFT frame                  | ≤ 0.5 ms DSP at N = 32768 on the worker; 5–60 Hz | `dsp_us` in the `live_fft_frame` header, `dropped_samples` in the status |
+| Path                            | Target                                           | Where it is measured                                                                        |
+| ------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Hotkey → first captured sample  | < 30 ms warm mic, < 150 ms cold open             | `first captured samples … after Cmd::Start` debug log                                       |
+| Audio callback                  | allocation-free, lock-free, log-free             | `write_input_to_ring` — never touch it casually                                             |
+| Consumer thread per 16 ms frame | ≪ 16 ms (VAD ≈ 30 µs, RNNoise ≈ 100 µs)          | `tests/vad_speech_clock_probe.rs`, debug timings                                            |
+| Stop → text pasted (batch)      | model bound; everything else < 20 ms             | Statistics page latency distributions                                                       |
+| Stream → overlay text           | one update per changed feed                      | `StreamTextEvent` fires only when the stream's text changes; `VadTestEvent` is 1:2 (~31 Hz) |
+| LLM post-processing / merge     | provider bound; local llama.cpp, warm            | `post_processing_latency_ms` in history                                                     |
+| Settings UI interaction         | no synchronous Tauri call on the main thread     | commands are `async` + `spawn_blocking`                                                     |
+| Live FFT frame                  | ≤ 0.5 ms DSP at N = 32768 on the worker; 5–60 Hz | `dsp_us` in the `live_fft_frame` header, `dropped_samples` in the status                    |
 
 ## Rules
 
@@ -171,11 +171,13 @@ task, or override power throttling. Thread counts respect the CPUs available
 to the process without assigning work to particular cores.
 
 The STT benchmark policy is exactly three runs on one loaded model: discard
-run 1, then average runs 2 and 3. Both CPU and CUDA are measured. See
-[STT_BENCHMARKS.md](STT_BENCHMARKS.md) for per-model and installed-subset commands,
-regression budgets, raw evidence, and the distinction between unpaced replay
-and live microphone latency. No baseline should be collected concurrently
-with a build or another inference process.
+run 1, then average runs 2 and 3. Every compute device `--list-devices`
+reports is measured — CPU, CUDA and Vulkan alike, since the Windows x86_64 and
+Linux targets build both GPU backends. See
+[STT_BENCHMARKS.md](STT_BENCHMARKS.md) for per-model and installed-subset
+commands, regression budgets, raw evidence, and the distinction between
+unpaced replay and live microphone latency. No baseline should be collected
+concurrently with a build or another inference process.
 
 Capture metrics add two clock reads per drained chunk and two per output
 frame on the consumer thread, plus one summary at stop. Live stream queue

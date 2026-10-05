@@ -11,6 +11,12 @@ The directives behind part 4 — quoted verbatim, each mapped to the code that
 answers it — are in **`2026-09-multi-streaming-stt-directives.md`**. This note
 keeps the design; that one keeps the requirements.
 
+> **What kind of document this is: an implementation report.** All four parts
+> below landed on 2026-09-21 (§5a on 2026-09-22) and nothing here is pending
+> work. Sections written as "what is there today" / "as it stood before" are
+> kept as the record of the state each decision was taken against; §0.1 lists the
+> four places where the tree has since moved past them, with the current truth.
+
 ## 0. Status
 
 All four parts are implemented. Where the implementation departs from what this
@@ -76,6 +82,19 @@ check the earlier state could not run at all:
 build script owns and every machine already has. It is a path this app does not
 name, cannot rename, and must be a sibling of rather than a tree of its own. The
 exemption is one line-anchored pattern in `scripts/check-identity.ts`.
+
+### 0.1 Drift since this was written
+
+The bodies below that describe a "before" state were true on 2026-09-21 and are
+kept unchanged as the decision record. Where the tree has moved on since, this
+is the current truth:
+
+| §   | What the body says                                               | What is true now                                                                                                                                                          |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2   | one global backend setting; `create_engine` re-reads the globals | `per_model_backends` is keyed by model id and covers the primary and every Multi-STT slot (`settings.rs`, `settings::ModelBackendSetting`)                                |
+| 2   | `vulkan` is not compiled in, so a Vulkan choice would be hollow  | `vulkan` **is** built beside `cuda` on Windows x86_64 and Linux (`Cargo.toml` target tables), and `ModelBackendSetting` carries `Vulkan` / `VulkanNvidia` / `VulkanIntel` |
+| 4   | `STREAM_SLOTS = 4`, extras are "models 2, 3 and 4"               | `STREAM_SLOTS = 1 + MULTI_STT_MAX_EXTRA_MODELS` = **9**; extras are the 1–8 slots of `multi_stt_extra_models` (settings schema 7)                                         |
+| 4   | four streaming models in the catalog                             | **nine** `capabilities.streaming` entries (§4.5)                                                                                                                          |
 
 ## 1. The four build commands — what they really do
 
@@ -224,9 +243,9 @@ in `AGENTS.md`, `BUILD.md` and the runner itself.
 
 ## 2. Per-model backend selection (CUDA / Vulkan / CPU)
 
-### 2.1 What is there today
+### 2.1 What is there today — as of 2026-09-21, before part 2
 
-One global setting decides the backend for **every** model — the primary, all
+One global setting decided the backend for **every** model — the primary, all
 Multi-STT extras, and benchmark variants alike:
 
 - `settings.rs` `transcribe_accelerator: TranscribeAcceleratorSetting` — an enum
@@ -273,12 +292,17 @@ nothing changes for anyone who does not touch it:
   model cards, listing only what `devices()` / `backend_available()` reports as
   present on this machine, so an impossible choice cannot be selected.
 
-Shipping note: today only one accelerator feature is enabled per lane, so a
-"Vulkan" choice would be selectable but not actually compiled in on the current
-Windows build unless `vulkan` is added beside `cuda`. Since `dynamic-backends`
-builds each backend as a loadable module and silently skips the ones that fail
-to load, adding it is a one-word feature change plus the module's size — to be
-done when the feature is wanted, not before.
+Shipping note, as written: on 2026-09-21 only one accelerator feature was
+enabled per lane, so a "Vulkan" choice would have been selectable but not
+actually compiled in on the current Windows build unless `vulkan` was added
+beside `cuda`. Since `dynamic-backends` builds each backend as a loadable module
+and silently skips the ones that fail to load, adding it is a one-word feature
+change plus the module's size — to be done when the feature is wanted, not
+before. **That is what happened**: both features are in the `Cargo.toml` target
+tables for Windows x86_64 and Linux, and the enum grew the two vendor-specific
+variants with it (`ModelBackendSetting::VulkanNvidia` / `::VulkanIntel`,
+resolved by `find_vulkan_device`, with the dropdown listing only what
+`available_model_backends()` reports).
 
 ## 3. The experimental panel: rename, and a nested second mode
 
@@ -290,9 +314,10 @@ idea rather than the mechanism. Inside that group, gated on its toggle, a new
 that one is on it takes over: only streaming-capable models are loaded and
 used, and the non-streaming slots are ignored.
 
-The panel currently never checks `supports_streaming` — a user can enable the
-mode with a non-streaming primary and the session silently falls back to batch
-with a log warning. The nested toggle is where that surfaces instead.
+The panel never checked `supports_streaming` when this was written — a user
+could enable the mode with a non-streaming primary and the session silently
+fell back to batch with a log warning. The nested toggle is where that surfaces
+instead.
 
 Implementation notes that matter: the strings are i18n keys
 (`multiStt.streamingFirst.*`) whose **values** are still English in all 26
@@ -362,10 +387,16 @@ left exactly as it is — its feed, backlog coalescing, direct typing, statistic
 and finalize all untouched — with a second worker started beside it on the other
 slot.
 
-- `PRIMARY_STREAM_SLOT: u8 = 0`, `EXTRA_STREAM_SLOT: u8 = 1`, `STREAM_SLOTS = 4`
-  (`managers/transcription.rs`) — one slot per Multi-STT model slot, so a fourth
-  streaming model has somewhere to run. Stream slot _n_ carries
-  `multi_stt_model_{n+1}` (`multi_streaming::stream_slot_of`).
+- `PRIMARY_STREAM_SLOT: u8 = 0` (`managers/transcription.rs`) and
+  `STREAM_SLOTS = 1 + MULTI_STT_MAX_EXTRA_MODELS`, one slot per Multi-STT model
+  slot, so every extra has somewhere to run. Stream slot _n_ carries the
+  _n_-th entry of `multi_stt_extra_models` (`multi_streaming::stream_slot_of`
+  is `index + 1`). **The constants as first written were
+  `EXTRA_STREAM_SLOT: u8 = 1` and `STREAM_SLOTS = 4`**; `EXTRA_STREAM_SLOT` has
+  since been deleted (the manager compares against `PRIMARY_STREAM_SLOT` and
+  leaves every other index to its caller), and `STREAM_SLOTS` is now 9 because
+  settings schema 7 replaced the fixed `multi_stt_model_2/3/4` slots with a list
+  of up to `MULTI_STT_MAX_EXTRA_MODELS` = 8.
 - `active_stream_worker`, `active_engine_lease`, `stream_active` and
   `stream_attempt` become `Arc<[_; STREAM_SLOTS]>` — one entry per slot, each
   entry still held with exactly the same exclusivity as before.
@@ -408,9 +439,11 @@ second job _between_ breaks (re-decode the chunk with the extras, merge, replace
 the preview). This mode has no such job: both texts are the models' own, produced
 by the two workers, and no batch decode runs at all. What is left is plumbing:
 
-- **which extras**: every **streaming-capable** slot among models 2, 3 and 4, in
-  that order — the user's own list, read the way it is read everywhere else — one
-  stream per slot, up to three beside the primary. Non-streaming slots are
+- **which extras**: every **streaming-capable** entry of
+  `multi_stt_extra_models` — "Model 2" up to "Model 9" — in that order: the
+  user's own list, read the way it is read everywhere else — one
+  stream per slot, up to eight beside the primary. (Three extras, models 2–4,
+  when this was written; see §0.1.) Non-streaming slots are
   **skipped rather than loaded** — `streaming_slots` logs each one it skips — and
   the preload is narrowed to the same list (`MultiSttAction::start`), so the
   preload and the session cannot disagree about which models run.
@@ -429,9 +462,11 @@ by the two workers, and no batch decode runs at all. What is left is plumbing:
   a poll that times out, degrades honestly to a **one-column session** with a
   warning — the recording is unaffected.
 - **the second column's result**: `finish` returns the whole
-  `TrackedTranscription`, not just its text, and `task2` closes its statistics
-  attempt exactly the way the primary's is closed, so both columns are measured
-  in the same statistics run.
+  `TrackedTranscription`, not just its text, and each extra's task closes its
+  statistics attempt exactly the way the primary's is closed, so both columns are
+  measured in the same statistics run. (`task2` and its `task3`/`task4`
+  siblings were named per slot when there were three fixed slots; they are now
+  the entries of the `extra_tasks` vector built next to `task1`.)
 
 ### 4.3 Behaviour of the parent mode (`TextSource::ReDecode`)
 
@@ -457,8 +492,8 @@ With **Experimental Live Streaming Merge & Clean** on, and the nested toggle off
   is the result that is pasted** (or typed, when the mode owns the writer), with
   the per-slot texts kept for statistics and history.
 - The stop path also runs the Multi-STT extras' own batch decode
-  (`extra_model_2/3/4` → `task2/3/4`) unless the nested mode is active, which is
-  the ordinary batch path's behaviour and unchanged here.
+  (each configured extra → its own `extra_tasks` entry) unless the nested mode is
+  active, which is the ordinary batch path's behaviour and unchanged here.
 
 The nested toggle supersedes this: when it arms, the coordinator runs with
 `TextSource::Live` and the parent's own branch is not entered.
@@ -469,7 +504,8 @@ The nested toggle supersedes this: when it arms, the coordinator runs with
 source (see D1–D6 of `2026-09-multi-streaming-stt-directives.md` for the
 directives and the mapping; this is the design summary):
 
-- **Every streaming-capable Multi-STT slot** among models 2, 3 and 4 streams
+- **Every streaming-capable Multi-STT slot** — every entry of
+  `multi_stt_extra_models`, up to eight — streams
   beside the primary, one stream per slot (`multi_streaming::start`), each on its
   own engine lease for the whole session and its own worker. A non-streaming slot
   is not loaded at all, and the preload is narrowed to the same list.
@@ -480,7 +516,8 @@ directives and the mapping; this is the design summary):
 - **The extras are finalized before the session closes**, in the order the module
   docs make load-bearing: primary `finalize_stream()`, then
   `multi_streaming::finish_extras` (one `finalize_stream_on(slot)` per started
-  slot, each returning the `TrackedTranscription` that `task2/3/4` then close),
+  slot, each returning the `TrackedTranscription` that the extras' own tasks then
+  close),
   then `multi_stt_stream::finish(FINISH_TIMEOUT)`. Finalizing after the close
   would hand those models' last words to a coordinator with no chunk to put them
   in.
@@ -519,8 +556,8 @@ directives and the mapping; this is the design summary):
   never what is _produced_.
 - **No batch STT anywhere in the session**, and none at stop either: while the
   mode is active the extras are taken out of the list entirely
-  (`extra_model_2/3/4 = None`), so nothing decodes the recording and nothing
-  decodes a chunk.
+  (`extra_models[i] = None` for every slot), so nothing decodes the recording
+  and nothing decodes a chunk.
 - **Failure is per column, not per session.** A model that never loads, a wait
   that times out (`LOAD_WAIT`, 120 s) or a stream that fails leaves the merge one
   text short and the recording untouched; the log names the slot and the model.
@@ -535,9 +572,10 @@ pauses", which removed the batch decode from the loop entirely. What is left on
 the list is per-model backend selection for those extras (§2) and the merge's own
 cost, which is one brain round trip per pause.
 
-### 4.5 Which models this can run with today
+### 4.5 Which models this can run with
 
-`capabilities.streaming: true` in the catalog, four entries:
+At the time of writing `capabilities.streaming: true` covered four catalog
+entries:
 
 | Model                             | Latency kind           | Note                                  |
 | --------------------------------- | ---------------------- | ------------------------------------- |
@@ -546,18 +584,39 @@ cost, which is one brain round trip per pause.
 | `Voxtral-Mini-4B-Realtime-2602`   | _(none)_               | streams, but no latency extension     |
 | `Confucius4-R2T2` (`r2t2-q8_0`)   | `R2T2ChunkMs`          | the other half of the target pair     |
 
+**The catalog has grown: there are now nine.** Five more entries carry
+`capabilities.streaming`, and the latency kind is still resolved by id hint
+(`managers/model.rs::native_streaming_latency_kind`), so only the ones its four
+substring rules match get a control:
+
+| Model                                             | Latency kind               |
+| ------------------------------------------------- | -------------------------- |
+| `parakeet-unified-en-0.6b`                        | `ParakeetBuffered`         |
+| `nemotron-3.5-asr-streaming-0.6b`                 | `Nemotron35CacheAware`     |
+| `nemotron-speech-streaming-en-0.6b`               | `NemotronSpeechCacheAware` |
+| `Confucius4-R2T2`                                 | `R2T2ChunkMs`              |
+| `Voxtral-Mini-4B-Realtime-2602`                   | _(none)_                   |
+| `moonshine-streaming-tiny` / `-small` / `-medium` | _(none)_                   |
+| `multitalker-parakeet-streaming-0.6b-v1`          | _(none)_                   |
+
+A `(none)` row streams and can be merged, it just has no latency control — the
+same situation Voxtral was already in. The per-family millisecond tables live in
+`managers/native_streaming_latency.rs::latency_point`.
+
 Two notes. There is **no "Nemotron 3.5 ultra"** in the catalog — the entry is the
 0.6B streaming model; if an ultra build exists in the local HF cache it would
 have to be matched by its own slug. And R2T2 shares the `qwen3_asr` architecture
 with the _non-streaming_ `Qwen3-ASR-0.6B`, which is why streaming capability and
 latency kind are resolved by **id slug**, never by architecture — the guard test
 `r2t2_entry_is_wired_for_streaming_from_its_pinned_reference`
-(`catalog/mod.rs:312`) exists to keep that true.
+(`catalog/mod.rs`) exists to keep that true.
 
 In a session, the language each of these streams under is the one the Multi-STT
-panel pinned for **that** slot (`multi_stt_language_model_2/3/4`, applied per
-slot by `apply_extra_model_settings`), and for a prompt-conditioned model that
-pin is not a preference but an instruction: `nemotron-3.5-asr-streaming-0.6b` is
+panel pinned for **that** slot — `MultiSttExtraModel::language`, applied per
+slot by `apply_extra_model_settings` (settings schema 7 replaced the old
+`multi_stt_language_model_2/3/4` keys with that list) — and for a
+prompt-conditioned model that pin is not a preference but an instruction:
+`nemotron-3.5-asr-streaming-0.6b` is
 told which language to transcribe and returns **nothing** when the hint does not
 match the speech, while an unrelated hint can return the speech unchanged. Its
 own doc says a language must be provided. Verified against the fork's CLI on
@@ -567,6 +626,10 @@ never fills in is first a settings question, not a streaming one — which is wh
 §4.4's warning exists to say.
 
 ## 5. The installer: `build:fast` aborting in makensis
+
+> **Resolved.** Both endings of `build:fast` described below were fixed:
+> this one in the template, and the updater-signing exit-1 in §5a. `build:fast`
+> now ends at exit 0.
 
 `build:fast` compiled the app (7m50s), bundled the MSI, and then died in the NSIS
 step:

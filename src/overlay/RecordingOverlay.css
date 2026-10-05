@@ -64,7 +64,9 @@
                          center longer labels; shared by Live (collapsed) + minimal */
   --ov-stats-w: 308px; /* resting pill carrying speech stats (minimal, or Live
                           before it opens) -- fits the scope, "10:08 - 142 wpm"
-                          and cancel. Mirrored by OVERLAY_STATS_WIDTH in overlay.rs */
+                          and cancel. OVERLAY_STATS_BASE_W (198) in overlay.rs
+                          plus the default scope block (110). Not
+                          OVERLAY_STATS_WIDTH, which is the whole *window* (352) */
   --ov-open-w: 392px; /* Live panel, expanded */
   --ov-base-h: 40px; /* control-row height (.sbase) */
   --ov-cap-max-h: 64px; /* max height of the scrolling live-text region */

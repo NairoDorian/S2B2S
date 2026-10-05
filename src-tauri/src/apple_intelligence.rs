@@ -1,3 +1,14 @@
+//! Apple's on-device LLM, reached through the Swift half of the app
+//! (`post_process_transcription`'s Apple Intelligence branch).
+//!
+//! This is the one place in the crate where a pointer crosses the FFI boundary
+//! and comes back owned by the other side: [`process_text_with_system_prompt`]
+//! receives an [`AppleLLMResponse`] allocated by Swift and must hand it to
+//! [`free_apple_llm_response`] exactly once, which is why the call reads the
+//! fields first and frees afterwards rather than freeing in the branches. Both
+//! strings in the response are borrowed from that allocation, so neither outlives
+//! the call.
+
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 
@@ -29,7 +40,11 @@ unsafe extern "C" {
     ) -> *mut AppleLLMResponse;
 }
 
-/// Process text with Apple Intelligence using separate system prompt and user content
+/// Process text with Apple Intelligence using separate system prompt and user content.
+///
+/// `max_tokens` truncates the reply the framework returns, and comes from the
+/// provider's model field parsed as an integer — so a model entry that is not a
+/// number asks for 0, which means no truncation at all.
 pub fn process_text_with_system_prompt(
     system_prompt: &str,
     user_content: &str,

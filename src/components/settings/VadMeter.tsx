@@ -13,6 +13,21 @@ export interface VadFrames {
   stalled: Accessor<boolean>;
 }
 
+/**
+ * Subscribe to the `vad-test` event channel while `active()` is true, and own
+ * the two derived readings the meter draws.
+ *
+ * The subscription is gated on `active()` rather than opened on mount because
+ * the channel is shared: the Advanced page's live test and the Live FFT page's
+ * voice-detection view both feed it, and neither may hold a listener for a
+ * session that is not running. Going inactive clears the frame, so a stopped
+ * test leaves no stale score on screen.
+ *
+ * `peak` is the peak marker, decayed per *event* (`PEAK_DECAY`), not per
+ * millisecond — the channel arrives at a fixed cadence, so a per-event step is
+ * already rate-independent. `stalled` is the watchdog: no event for
+ * `STALL_MS` means the microphone is not delivering frames.
+ */
 export function useVadFrames(active: Accessor<boolean>): VadFrames {
   const [frame, setFrame] = createSignal<VadTestEvent | null>(null);
   const [peak, setPeak] = createSignal(0);

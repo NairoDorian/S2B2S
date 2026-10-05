@@ -11,7 +11,7 @@ import {
 
 // Auto-discover translation files using Vite's glob import. Deliberately not
 // `eager`: each locale is its own chunk, imported the first time that language
-// is used. Eager bundling put all 26 files (~2.9 MB of JSON) into the chunk
+// is used. Eager bundling put all 26 files (~2.8 MB of JSON) into the chunk
 // both windows parse at startup, for the one language that is ever read.
 const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
   "./locales/*/translation.json",

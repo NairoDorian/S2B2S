@@ -34,11 +34,12 @@ bun run update-deps -- --prerelease
 bun run docs:fetch      # refresh the mirrored stack docs (docs/STACK_WATCH.md)
 ```
 
-`bun run update-deps` **always** takes `--prerelease` here: this project tracks
-the newest published versions of its dependencies on purpose, so a release
-candidate is what the next release is tested against. `bun run update` wraps
-all three in the right order and is the command to run before starting a
-release.
+The `--prerelease` flag is not optional **in this project**: it tracks the newest
+published versions of its dependencies on purpose, so a release candidate is what
+the next release is tested against. A bare `bun run update-deps` with no flag
+still runs in stable mode, so type the flag yourself — `bun run update` always
+appends it and is the command to run before starting a release. Add `--dry-run`
+to either to see what would move without writing anything.
 
 All shell commands in this project go through **`rtk`** (the token-optimizing
 CLI proxy) with the single exception of `bun`, which is never proxied: `rtk bun
@@ -78,23 +79,32 @@ exactly like Apple Silicon (transcribe.cpp with Metal).
 
 - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 13.x — this fork
   builds transcribe.cpp with the **`cuda`** feature on Windows x86_64
-  (`src-tauri/Cargo.toml`), not upstream's Vulkan backend. `nvcc` must be on
-  `PATH` and must support your MSVC version. `bun run build:fast` compiles
-  kernels for the local GPU only (`TRANSCRIBE_CUDA_ARCHITECTURES=auto`);
-  `bun run build:full` builds the full architecture matrix. `bun run dev:cpu`
-  needs no CUDA toolkit at all — it configures the native build with
-  `TRANSCRIBE_CUDA=OFF` and runs on the CPU backend. Every lane compiles the
-  full set of model architectures in.
+  (`src-tauri/Cargo.toml`). `nvcc` must be on `PATH` and must support your
+  MSVC version. `bun run build:fast` compiles kernels for the local GPU only
+  (`TRANSCRIBE_CUDA_ARCHITECTURES=auto`); `bun run build:full` builds the full
+  architecture matrix. `bun run dev:cpu` needs no CUDA toolkit at all — it
+  configures the native build with `-DTRANSCRIBE_CUDA=OFF` and runs on the CPU
+  backend. Every lane compiles the full set of model architectures in.
 
-- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG — **only** if
-  you switch the feature back to `vulkan` (`vulkan-shaders-gen` needs the
-  SDK's headers and `glslc`):
+- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG. This is **not**
+  optional: the same Cargo target also asks for the **`vulkan`** feature, so
+  ggml-vulkan and its `vulkan-shaders-gen` host sub-build (which needs the SDK's
+  headers and `glslc`) are part of every build, including `--cpu`:
 
   ```powershell
   winget install KhronosGroup.VulkanSDK
   ```
 
-  Open a new terminal afterward so `VULKAN_SDK` is set.
+  Open a new terminal afterward so `VULKAN_SDK` is set. ggml-vulkan also does
+  `find_package(SPIRV-Headers CONFIG REQUIRED)`; the SDK normally satisfies
+  that, and when it does not, the header-only package via vcpkg does — see
+  [SPIRV-Headers not found](#spirv-headers-not-found-on-windows-x64) in
+  Troubleshooting.
+
+> [!NOTE]
+> **Windows on ARM is CPU-only.** `src-tauri/Cargo.toml` links transcribe.cpp
+> there with no features at all, so there is no CUDA, no Vulkan and no need for
+> either SDK on that target.
 
 > [!NOTE]
 > Windows' 260-character path limit used to break the native Vulkan build in
@@ -109,28 +119,42 @@ exactly like Apple Silicon (transcribe.cpp with Metal).
 
 - Build essentials
 - ALSA development libraries
-- This fork builds transcribe.cpp with the **`cuda`** feature on Linux (see
-  `src-tauri/Cargo.toml`), so the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
-  (`nvcc` on `PATH`) is required as well. The Vulkan packages below are only
-  needed if you switch the feature back to `vulkan`.
+- OpenBLAS development libraries (`libopenblas-dev` / `openblas-devel` /
+  `openblas`) — the deb and rpm bundles declare `libopenblas` as a runtime
+  dependency
+- X11 development libraries (`libx11-dev`, `libxtst-dev`, `libxrandr-dev` and
+  `libxkbcommon-dev`) for enigo's keyboard-simulation backend
+- The Vulkan toolchain (`vulkan-sdk` / `vulkan-headers` + `shaderc`, which
+  provides `glslc`) and the SPIR-V headers. This fork builds transcribe.cpp with
+  the **`cuda`** _and_ **`vulkan`** features on Linux (`src-tauri/Cargo.toml`),
+  so both the CUDA Toolkit (`nvcc` on `PATH`) and the Vulkan SDK are required;
+  release CI installs LunarG's `vulkan-sdk` from its own apt repository for
+  exactly this reason. `bun run dev:cpu` drops the CUDA half but keeps Vulkan.
 - Install with:
 
   ```bash
   # Ubuntu/Debian
   sudo apt update
-  sudo apt install build-essential clang libclang-dev libevdev-dev libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
+  sudo apt install build-essential clang libclang-dev libevdev-dev libasound2-dev pkg-config libssl-dev libopenblas-dev \
+    libx11-dev libxtst-dev libxrandr-dev libxkbcommon-dev \
+    libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools \
+    libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+    libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
 
   # Fedora/RHEL
   sudo dnf groupinstall "Development Tools"
-  sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel glslc \
+  sudo dnf install alsa-lib-devel openblas-devel pkgconf openssl-devel \
+    libX11-devel libXtst-devel libXrandr-devel libxkbcommon-devel \
+    vulkan-devel glslc spirv-headers-devel spirv-tools-devel glslang \
     clang clang-devel libevdev-devel \
-    spirv-headers-devel spirv-tools-devel glslang \
     gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
     gtk-layer-shell gtk-layer-shell-devel \
     cmake
 
   # Arch Linux
-  sudo pacman -S base-devel clang libevdev shaderc spirv-headers glslang alsa-lib pkgconf openssl vulkan-devel \
+  sudo pacman -S base-devel clang libevdev shaderc spirv-headers glslang \
+    alsa-lib openblas pkgconf openssl vulkan-devel \
+    libx11 libxtst libxrandr xkbcommon \
     gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
     cmake
   ```
@@ -153,7 +177,7 @@ bun install
 ### 3. Start Dev Server
 
 ```bash
-bun run tauri dev
+bun run dev:cpu
 ```
 
 `bun run tauri` goes through `scripts/tauri-runner.ts`, which first checks
@@ -164,6 +188,24 @@ whether the pinned `transcribe-cpp` commit is behind the
 `tauri-apps/plugins-workspace`'s `v3` branch. Neither check ever fails the
 build, even offline. There is no VAD model file to fetch — the detector is
 pure Rust — and speech models come from the in-app catalog on first run.
+
+### Build lanes
+
+Every lane packs the **full** model-architecture set; they differ on exactly one
+axis, the CUDA architecture policy:
+
+| Command                           | Native configure                            | Reach for it when                                                           |
+| --------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------- |
+| `bun run dev:cpu` / `build:cpu`   | `-DTRANSCRIBE_CUDA=OFF`, private cache root | the usual working loop — no CUDA toolkit needed                             |
+| `bun run dev:fast` / `build:fast` | `TRANSCRIBE_CUDA_ARCHITECTURES=auto`        | the change touches the GPU path (kernels, device selection, VRAM, a timing) |
+| `bun run dev:full` / `build:full` | `TRANSCRIBE_CUDA_ARCHITECTURES=default`     | anything release-shaped                                                     |
+
+A bare `bun run tauri dev` / `bun run tauri build` is the **fast** lane, not the
+CPU one. The lanes are mutually exclusive (`build --fast --cpu` is refused rather
+than silently resolved). Every lane still builds Vulkan — `--cpu` only turns CUDA
+off — so the Vulkan SDK is required either way. Pruning of stale
+`src-tauri/target` artifacts runs automatically before each one
+(`scripts/prune-target.ts`); set `ZER0_NO_PRUNE=1` to skip it for a shell.
 
 ### 4. Build for Production
 
@@ -244,7 +286,7 @@ The raw binary (`src-tauri/target/release/zer0`) cannot run standalone — it ne
 
 ```bash
 cd /tmp
-ar x /path/to/ZER0/src-tauri/target/release/bundle/deb/ZER0_*_amd64.deb data.tar.gz
+ar x /path/to/ZER0/src-tauri/target/release/bundle/deb/ZER0_*_amd64.deb data.tar.gz  # `_arm64.deb` on aarch64
 tar xzf data.tar.gz
 sudo cp usr/bin/zer0 /usr/bin/
 sudo cp -a usr/lib/. /usr/lib/
@@ -262,7 +304,58 @@ sudo mkdir -p /usr/lib/ZER0
 sudo cp -a src-tauri/transcribe-libs/. /usr/lib/ZER0/
 ```
 
+`src-tauri/build.rs` stages those libraries during the cargo build, and
+`tauri.conf.json` bundles them into `/usr/lib/ZER0` for the deb and rpm and into
+`/usr/lib` for the AppImage — so a bundled install needs neither step. CI's
+AppImage path runs the same copy as a checked script,
+`scripts/ci/stage-transcribe-libs.sh <install-lib-dir> <dest>`, which fails
+loudly if `libtranscribe.so` or a `libggml-cpu*.so` backend module is missing.
+
 Resources only need re-copying if they change upstream (new icons, sounds, models, etc.).
+
+## Nix / NixOS
+
+`flake.nix` packages ZER0 for Linux (`x86_64` and `aarch64`) and provides
+modules for NixOS and home-manager. On Nix the native dependency set is declared
+in the flake rather than installed from your distro, so nothing above is needed:
+
+```bash
+nix build .#zer0            # build the package (~25 min cold; CI caches to Cachix)
+nix develop                 # dev shell: rustc, cargo, bun, cargo-tauri, cmake, Vulkan headers
+nix eval .#packages.x86_64-linux.zer0.drvPath   # fast syntax/eval check
+```
+
+`.nix/bun.nix` holds the per-package Bun fetch hashes generated from `bun.lock`
+by `bun2nix`. `bun install` regenerates it through the `postinstall` hook
+(`scripts/check-nix-deps.ts`), and CI fails when it is out of sync — re-run
+`bun scripts/check-nix-deps.ts` on a Nix machine if you ever edit `package.json`
+without running `bun install`.
+
+Two deliberate differences from a source build:
+
+- **The updater is force-disabled.** The package sets `ZER0_DISABLE_UPDATER=1`
+  in its wrapper: self-update cannot work against an immutable `/nix/store` path.
+  Updater artifacts are not signed from Nix either — the flake patches
+  `bundle.createUpdaterArtifacts` off, since the signing key is not available
+  inside the sandbox.
+- **Global hotkeys need `/dev/uinput`.** The NixOS module adds the udev rule that
+  opens it to the `input` group; add yourself to that group as well. The
+  home-manager module instead ships a systemd _user_ service that autostarts the
+  app with `graphical-session.target`:
+
+  ```nix
+  inputs.zer0.url = "github:NairoDorian/S2B2S";
+
+  # NixOS — system package + the udev rule
+  nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+    modules = [ zer0.nixosModules.default { programs.zer0.enable = true; } ];
+  };
+  users.users.you.extraGroups = [ "input" ];
+
+  # home-manager — a systemd user service that autostarts it
+  imports = [ zer0.homeManagerModules.default ];
+  services.zer0.enable = true;
+  ```
 
 ## Troubleshooting
 
@@ -324,6 +417,27 @@ bun run tauri build -- --bundles deb
 ```
 
 Then install using the deb extraction method above.
+
+### SPIRV-Headers not found on Windows x64
+
+ggml-vulkan (built whenever the `vulkan` feature is on, which is every Windows
+x86_64 build) does `find_package(SPIRV-Headers CONFIG REQUIRED)` for
+`<spirv-headers/spirv.hpp>`. ggml's CMake appends `$VULKAN_SDK` to
+`CMAKE_PREFIX_PATH` first, so a normal LunarG SDK install satisfies it — but some
+installs (and the CI SDK install among them) do not expose a findable
+`SPIRV-HeadersConfig.cmake`, and the configure fails. Provide the header-only
+package through vcpkg and put its prefix on `CMAKE_PREFIX_PATH`, which the cmake
+crate forwards to CMake:
+
+```powershell
+vcpkg install spirv-headers:x64-windows
+$prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+$env:CMAKE_PREFIX_PATH = if ($env:CMAKE_PREFIX_PATH) { "$prefix;$env:CMAKE_PREFIX_PATH" } else { $prefix }
+bun run tauri dev
+```
+
+It is a CONFIG package and header-only, so no vcpkg toolchain file is needed.
+x86_64 only — the Windows ARM64 build is CPU-only and never builds ggml-vulkan.
 
 ### Windows build fails with path-limit errors (`MSB3491` / `FTK1011` / `MSB6003`)
 

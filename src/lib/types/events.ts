@@ -1,6 +1,11 @@
 /**
  * Model lifecycle notification (`model-state-changed`).
  *
+ * `event_type` is one of `loading_started`, `loading_completed`,
+ * `loading_failed`, `unloaded`, `multi_stt_model_loaded`,
+ * `multi_stt_model_load_failed` or `multi_stt_model_unloaded` — the last three
+ * covering an extra Multi-STT slot rather than the primary model.
+ *
  * The three `Option` fields are `| null`, not optional: the Rust struct carries
  * no `skip_serializing_if`, so the keys are always present and arrive as `null`
  * when unset. A `?: string` would type them as possibly *absent* and let
@@ -17,9 +22,12 @@ export interface ModelStateEvent {
  * Live progress from a quantization benchmark run.
  *
  * `event_type` is one of `benchmark_started`, `variant_started`,
- * `warmup_completed`, `run_completed`, `variant_completed`, `variant_error` or
- * `benchmark_completed`. Every other field is populated only for the events
- * that carry it.
+ * `warmup_completed`, `run_completed`, `variant_completed`, `variant_error`,
+ * `benchmark_completed` or `benchmark_failed`. Every other field is populated
+ * only for the events that carry it. `benchmark_failed` is the terminal event
+ * for a run that aborted before it could report per-variant progress, so an
+ * event-only listener can clear its in-progress state; it carries `error` and
+ * nothing else.
  *
  * `warmup_completed` marks the end of the first pass, which is always
  * discarded and never averaged; `run_index` is 0 for it.

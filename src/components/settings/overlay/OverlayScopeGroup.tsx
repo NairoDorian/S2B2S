@@ -21,10 +21,11 @@ const P = "settings.overlay.scope";
 
 /**
  * The picture the recording overlay draws of the microphone: which of the
- * three views to show (spectrum, waveform, circular), how the spectrum is drawn, how much raw audio the
- * waveform covers and how it is faded and scaled, and the size of the views.
- * The analysis behind the spectrum (scale, window, EQ, weighting, dB, update
- * rate) is the Live FFT page's; this group only shapes the display.
+ * three views to show (spectrum, waveform, circular), how the spectrum is
+ * drawn, how much raw audio the waveform covers and how it is faded and
+ * scaled, and the size of the views. The analysis behind the spectrum (scale,
+ * window, EQ, weighting, dB, update rate) is the Live FFT page's; this group
+ * only shapes the display.
  */
 export const OverlayScopeGroup = () => {
   const { t } = useTranslation();

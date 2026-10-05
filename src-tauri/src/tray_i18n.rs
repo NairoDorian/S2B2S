@@ -4,6 +4,7 @@
 //! frontend locale files (src/i18n/locales/*/translation.json).
 //!
 //! The English translation.json is the single source of truth:
+//!
 //! - TrayStrings struct fields are derived from the English "tray" keys
 //! - All languages are auto-discovered from the locales directory
 //!
@@ -21,7 +22,9 @@ include!(concat!(env!("OUT_DIR"), "/tray_translations.rs"));
 /// Get localized tray menu strings based on the app language setting
 /// (`app_language`).
 ///
-/// Lookup order: exact locale → Chinese script/region fallback → language code → English.
+/// Lookup order: the exact locale (case-insensitive, `_` normalized to `-`),
+/// then its language code — mapped for the Chinese variants and Cantonese, which
+/// resolve to `zh-TW` or `zh` — then English.
 pub fn get_tray_translations(locale: Option<String>) -> TrayStrings {
     let normalized = locale
         .as_deref()

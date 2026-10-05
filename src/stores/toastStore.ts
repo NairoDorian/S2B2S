@@ -1,3 +1,13 @@
+/**
+ * The live toast queue `components/ui/Toaster.tsx` renders.
+ *
+ * It is a plain Solid store rather than a `createSolidStore` one because nothing
+ * here needs actions: the app's own API is `lib/sessionToast.ts`, which wraps
+ * `show` / `dismiss` and additionally records errors and warnings for the Debug
+ * page. `id` is a module-level counter, never reused, so a dismissal can never
+ * remove a toast that arrived after it.
+ */
+
 import { createStore } from "solid-js";
 
 export type ToastLevel = "success" | "info" | "warning" | "error";

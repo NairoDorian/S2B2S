@@ -98,7 +98,8 @@ export const LiveCanvas = (props: LiveCanvasProps) => {
     setHudVisible(true);
     if (hudTimeout) clearTimeout(hudTimeout);
     hudTimeout = setTimeout(() => {
-      // Keep HUD hidden when speaking or idle unless hovered
+      // Auto-fade only while speech is running: in silence the HUD is the
+      // only thing showing the session is alive, so it stays up.
       if (speaking()) {
         setHudVisible(false);
       }

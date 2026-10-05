@@ -7,6 +7,17 @@ checks (downloads, per-backend runs, benchmarks) are still open. Written
 All facts below were checked against this tree and against the fork on that date.
 Line numbers are approximate; search for the quoted symbols.
 
+> **Still true of this file.** It is a plan with four of five parts done; §6's
+> checklist is the live to-do list. `Cargo.lock` still pins the
+> `ba949120` this plan set out to reach, so §1's prerequisite holds — but
+> `check-transcribe-deps.ts` moves that pin whenever the fork's `main` advances,
+> so re-read it before trusting any "the pin is at …" statement here. Two other
+> things drifted while the file was open: the R2T2 Q4_K_M fix landed by a
+> **per-file `repo`/`revision` override** rather than a second catalog entry
+> (§3), and the §4.2 build-flag clean-up is done (§4.2). The catalog's
+> ultra/redux scores are still the provisional ones below, and
+> `docs/STT_BENCHMARKS.md` still has no ultra/redux/R2T2-Q4 rows (§5.2–5.3).
+
 The work comes in five parts:
 
 1. Pull the new transcribe.cpp. Nothing else works until this is done.
@@ -23,17 +34,17 @@ entry works and why it matters.
 
 ## 0. Where things live (orientation)
 
-| Concern                                              | File                                                                                                                                                                                                           |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog baked into the binary                        | `src-tauri/src/catalog/catalog.json` (`include_str!`), loader `src-tauri/src/catalog/mod.rs`                                                                                                                   |
-| Catalog generator                                    | `scripts/gen_catalog.py`. `ORG = "handy-computer"` repos come from HF cards; third-party repos come from `AUTHORED_MODELS` (R2T2 is the only one today)                                                        |
-| Model discovery (downloads, `models/` dir, HF cache) | `src-tauri/src/managers/model.rs`: `discover_custom_transcribe_models`, `discover_hf_cache_models_in`, `native_streaming_latency_kind`                                                                         |
-| App models folder                                    | `%APPDATA%\com.nairodorian.zer0\models\` (`portable::app_data_dir(..).join("models")`). It currently holds `r2t2-q4_k_m.gguf`                                                                                  |
-| GGUF header probe (for uncatalogued files)           | `src-tauri/src/managers/gguf_meta.rs`. It reads the KV block only and never tensor infos, so the new ggml type id 96 used by redux is harmless here                                                            |
-| transcribe.cpp dependency                            | `src-tauri/Cargo.toml`: `transcribe-cpp`, git `NairoDorian/transcribe.cpp`, `branch = "main"`; features `dynamic-backends`, `cuda`, `vulkan` on Windows x64 and Linux                                          |
-| Pin refresh                                          | `scripts/check-transcribe-deps.ts`, run before every `bun run tauri dev*` / `build:*`. It `git ls-remote`s the fork and `cargo update -p transcribe-cpp -p transcribe-cpp-sys` when the fork's `main` is ahead |
-| Build lanes                                          | `scripts/tauri-runner.ts` + `scripts/build-options.ts` (`FAST_BUILD_OPTIONS`, `FULL_BUILD_OPTIONS`); native flags go to `transcribe-cpp-sys/build.rs` via `TRANSCRIBE_CMAKE_ARGS`                              |
-| Streaming chunk control (R2T2)                       | `NativeStreamingLatencyKind::R2T2ChunkMs`, chosen by id hint `"confucius4-r2t2"` in `native_streaming_latency_kind()`                                                                                          |
+| Concern                                              | File                                                                                                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog baked into the binary                        | `src-tauri/src/catalog/catalog.json` (`include_str!`), loader `src-tauri/src/catalog/mod.rs`                                                                                                                              |
+| Catalog generator                                    | `scripts/gen_catalog.py`. `ORG = "handy-computer"` repos come from HF cards; third-party repos come from `AUTHORED_MODELS` (as of 2026-09-26 that was R2T2 alone — ultra and redux have since been added, so it is three) |
+| Model discovery (downloads, `models/` dir, HF cache) | `src-tauri/src/managers/model.rs`: `discover_custom_transcribe_models`, `discover_hf_cache_models_in`, `native_streaming_latency_kind`                                                                                    |
+| App models folder                                    | `%APPDATA%\com.nairodorian.zer0\models\` (`portable::app_data_dir(..).join("models")`). It currently holds `r2t2-q4_k_m.gguf`                                                                                             |
+| GGUF header probe (for uncatalogued files)           | `src-tauri/src/managers/gguf_meta.rs`. It reads the KV block only and never tensor infos, so the new ggml type id 96 used by redux is harmless here                                                                       |
+| transcribe.cpp dependency                            | `src-tauri/Cargo.toml`: `transcribe-cpp`, git `NairoDorian/transcribe.cpp`, `branch = "main"`; features `dynamic-backends`, `cuda`, `vulkan` on Windows x64 and Linux                                                     |
+| Pin refresh                                          | `scripts/check-transcribe-deps.ts`, run before every `bun run dev:*` / `build:*`. It `git ls-remote`s the fork and `cargo update -p transcribe-cpp -p transcribe-cpp-sys` when the fork's `main` is ahead                 |
+| Build lanes                                          | `scripts/tauri-runner.ts` + `scripts/build-options.ts` (`FAST_BUILD_OPTIONS`, `FULL_BUILD_OPTIONS`); native flags go to `transcribe-cpp-sys/build.rs` via `TRANSCRIBE_CMAKE_ARGS`                                         |
+| Streaming chunk control (R2T2)                       | `NativeStreamingLatencyKind::R2T2ChunkMs`, chosen by id hint `"confucius4-r2t2"` in `native_streaming_latency_kind()`                                                                                                     |
 
 How a file becomes a model in the app:
 
@@ -56,6 +67,12 @@ card.
 
 ## 1. Pull the new transcribe.cpp (hard prerequisite)
 
+> **Done.** `Cargo.lock` now pins both crates at
+> `ba949120d60f29daaaa13eec65b9c28c2c2112a6`, which is the fork's `main` as of
+> 2026-09-26. The paragraph below records the `8a12cf66` state it started from;
+> the commit table is the changelog between the two, and `check-transcribe-deps.ts`
+> will keep moving the pin forward on its own.
+
 `src-tauri/Cargo.lock` pins `transcribe-cpp` at
 `8a12cf66146f12c992195aa23fdd4f010e29e556`. The fork's `main` is **16 commits
 ahead**, and none of this session's work is in the pin:
@@ -73,7 +90,7 @@ ahead**, and none of this session's work is in the pin:
 
 1. Stop any running ZER0 dev app. A running app locks `transcribe.dll`, and cargo
    then fails with os error 32.
-2. Run `bun run tauri dev:fast`. The pin refreshes automatically. Confirm that
+2. Run `bun run dev:fast`. The pin refreshes automatically. Confirm that
    `Cargo.lock` now shows the fork's current `main` SHA for both
    `transcribe-cpp` and `transcribe-cpp-sys`.
 3. Expect a full native rebuild (CUDA kernels included), which takes several
@@ -217,7 +234,7 @@ Checks while doing it:
 - **Mirrors:** `mirror_fallbacks()` would try `blob.handy.computer`, which does
   not host these repos. It 404s and falls back to HF; the sha256 still governs.
   This is the same situation as R2T2, so no change is needed.
-- **Catalog tests:** `cargo test -p <app crate> catalog` runs:
+- **Catalog tests:** `cargo test -p zer0 catalog` runs:
   - `ids_are_unique`
   - `scores_are_normalised_0_to_1`
   - `every_catalog_model_has_mirror_fallbacks_with_hashes`
@@ -294,6 +311,30 @@ fork).
 
 ## 3. R2T2: the Q4_K_M entry is broken; fix it
 
+> **Fixed — by the third option, not this one.** The Q4_K_M row stays on the
+> `davidxifeng/Confucius4-R2T2-gguf` entry and carries its own `repo` and
+> `revision` per file:
+>
+> ```json
+> {
+>   "filename": "r2t2-q4_k_m.gguf",
+>   "quant": "Q4_K_M",
+>   "size_bytes": 1186939968,
+>   "repo": "Nairod785/Confucius4-R2T2-Q4_K_M-GGUF",
+>   "revision": "b1ea19256fb77a8d8ab7b091dc75378e15952605",
+>   "sha256": "d740d6636f2ea2f3736800c3c88a6e22ecb6c0f26c567fe22b0572ae9c2c4ec8"
+> }
+> ```
+>
+> That keeps one model card for one model (the two-entry proposal below would
+> have produced two cards for two quants of the same weights), keeps the stored
+> model id unchanged — `davidxifeng/Confucius4-R2T2-gguf/r2t2-q4_k_m.gguf`,
+> which is what `catalog/mod.rs` asserts — and therefore needs **no settings
+> migration** at all. `r2t2_q4_is_a_sibling_quant_fetched_from_its_host_repo`
+> pins the behaviour: the same filename resolves to the model repo's id but the
+> host repo's bytes. The pinned revision is the host repo's, not the
+> `99cdc8b7…` proposed below.
+
 `catalog.json` lists `r2t2-q4_k_m.gguf` (1186939968 bytes, sha256 `d740d663…`)
 **under `davidxifeng/Confucius4-R2T2-gguf` @ `a8e6b385…`**. Downloads fetch
 `resolve/<revision>/<filename>` from the entry's own repo, and **that file does
@@ -306,8 +347,8 @@ not exist in davidxifeng's repo**. It exists only in the user's
 - **The row is not in `gen_catalog.py`'s `AUTHORED_MODELS`.** It was hand-added
   to the JSON, so the next regeneration silently deletes it.
 
-**Fix:** remove the Q4_K_M row from the davidxifeng entry. Add a second
-`AUTHORED_MODELS` entry:
+**Fix, as proposed at the time:** remove the Q4_K_M row from the davidxifeng
+entry. Add a second `AUTHORED_MODELS` entry:
 
 ```python
 {
@@ -344,7 +385,9 @@ Things that must keep working with the second entry:
   row have a stored model id under the davidxifeng repo. Map
   `davidxifeng/Confucius4-R2T2-gguf/r2t2-q4_k_m.gguf` (check the exact stored id
   format in `settings.rs`) to the new id on load. That keeps the selected model
-  and its chunk setting.
+  and its chunk setting. **Not needed in the end**: the per-file `repo` override
+  kept the stored id byte-identical. (A later schema bump, 9, rekeys settings for
+  the opposite problem — a model that _moved_ repos, `remap_moved_model_ids`.)
 - **Default quant.** Consider making the Q4 the recommended R2T2 on CUDA. With
   the new fork build it is the fastest configuration: arm M decode is ~1.6×
   faster than Q8_0 on CUDA, and multilingual screens pass (German is the
@@ -366,21 +409,25 @@ Things that must keep working with the second entry:
 
 ## 4. Build flags ("all the bells and whistles")
 
-### 4.1 What the lanes pass today (`scripts/build-options.ts`)
+### 4.1 What the lanes pass (`scripts/build-options.ts`)
 
 `FAST_BUILD_OPTIONS` (this machine; `dev:fast` / `build:fast`):
 
 ```
 cudaArchitectures: "auto"   → sm_89 only (RTX 4070)
 -DTRANSCRIBE_VULKAN=ON
--DGGML_CUDA_FA_QUANTS=all
 -DTRANSCRIBE_X86_CONSERVATIVE=OFF
 -DGGML_NATIVE=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_AVX_VNNI=ON
 modelSet: FULL_MODEL_SET
 ```
 
-`FULL_BUILD_OPTIONS` (distribution): `default` CUDA matrix, Vulkan, FA quants all,
-and a commented-out `// "-DGGML_CUDA_GRAPHS=ON"`.
+> `-DGGML_CUDA_FA_QUANTS=all` was in this list when the plan was written. It has
+> since been **removed** from both lanes, replaced by the comment explaining
+> why (§4.2's verdict was taken) — so the list above is the current one.
+
+`FULL_BUILD_OPTIONS` (distribution): `default` CUDA matrix, Vulkan, and — where
+the graphs comment used to be — a note that `GGML_CUDA_GRAPHS` is ON by default
+and `-DGGML_CUDA_GRAPHS=OFF` must never be added. FA quants all: gone, as above.
 
 The `-sys` crate adds, on Windows x64 with `dynamic-backends`:
 
@@ -393,6 +440,10 @@ The `-sys` crate adds, on Windows x64 with `dynamic-backends`:
 - **and now `GGML_CUDA_GRAPHS=ON` for every CUDA build** (fork `77895e09`)
 
 ### 4.2 Assessment and recommended edits
+
+> **Both clean-ups taken.** `FULL_BUILD_OPTIONS` now carries the graphs note and
+> neither lane passes `GGML_CUDA_FA_QUANTS`; each site explains why in a
+> comment. The rest of the table is unchanged and still stands.
 
 | Flag                                                                        | Verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -450,19 +501,22 @@ before recommending combinations.
 
 ## 6. Acceptance checklist
 
-- [ ] `Cargo.lock` pins the fork's current `main` (≥ `8e50b61f`) for both crates;
+Done items are ticked; the rest are the open work.
+
+- [x] `Cargo.lock` pins the fork's current `main` (≥ `8e50b61f`) for both crates;
       app builds with `dev:fast` and `build:fast`.
-- [ ] Catalog: ultra (5 files) and redux (3 files) entries in `AUTHORED_MODELS`
+- [x] Catalog: ultra (5 files) and redux (3 files) entries in `AUTHORED_MODELS`
       and in the regenerated `catalog.json`; catalog tests pass.
 - [ ] Download ultra Q8_0 and redux TQ1_Q4_K from the app. The sha256 check
       passes, and each transcribes the German and a French sample on CUDA, CPU
       and Vulkan.
 - [ ] Copy a non-default quant (e.g. ultra Q4_K_M) into `models/`. It appears
       with the catalog card, not as "Not officially supported".
-- [ ] R2T2 Q4_K_M: its own entry under `Nairod785/…`, downloadable (404 gone),
-      streaming chunk control present, old selection migrated, and streaming
-      acceptance re-run.
-- [ ] `build-options.ts` clean-up done (graphs comment; FA_QUANTS decision).
+- [x] R2T2 Q4_K_M: downloadable (404 gone) and streaming chunk control present —
+      by the per-file `repo`/`revision` override, so "its own entry under
+      `Nairod785/…`" and "old selection migrated" became "no migration needed".
+      Streaming acceptance re-run: see `R2T2_STREAMING_LATENCY_SWEEP.md`.
+- [x] `build-options.ts` clean-up done (graphs comment; FA_QUANTS decision).
 - [ ] Benchmarks: 3 runs, drop the first, average runs 2 and 3; CPU and CUDA.
 - [ ] Formatting: this repo's `format:check` hook fails tree-wide for unrelated
       files (41 files, CRLF locale JSONs). If it blocks the commit, commit with

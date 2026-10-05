@@ -1,5 +1,38 @@
-// Installed-model replay through the app's headless transcription entry point.
-// Exactly three runs share one loaded model. Run 1 is excluded from all scores.
+// scripts/bench-stt.ts
+//
+// Installed-model replay through the app's headless transcription entry point
+// (`--transcribe-file --repeat 3 --json`), so what is measured is the shipped
+// pipeline rather than a harness around it.
+//
+//   bun run bench:stt -- --exe <app exe> --wav <WAV> --output <dir>
+//                     [--model <installed id>]… [--backend <kind|tag>]…
+//                     [--baseline <summary.json>] [--max-regression <0.15>]
+//                     [--timeout <seconds>]
+//
+// The matrix is model × device × mode: every *selected installed* model, every
+// compute device `--list-devices` reports (Vulkan devices tagged by vendor, so
+// `--backend vulkan_nvidia` picks one card out of two), and — for a model whose
+// id says it streams — a batch case and a stream case, so the two can be read
+// side by side. `--model` replaces the curated default set with exactly the ids
+// named; without it the run covers the installed models matching one regex, so
+// a machine with a different selection still produces a comparable set.
+//
+// The scoring policy is fixed and asserted, not assumed: three runs share one
+// loaded model, run 1 is warm-up and is excluded, and runs 2 and 3 must both
+// produce the *same transcript* or the case fails. A silent text change is a
+// regression this benchmark is here to catch, so it is an error rather than a
+// number to read past.
+//
+// `--baseline` turns the run into a comparison: every case is matched against
+// the baseline by name, a configuration difference (backend, audio length, WAV
+// hash, language, stream chunk) is a hard failure, and anything slower than
+// `1 + --max-regression` times the baseline's score is reported as a timing
+// regression — as is a changed transcript, which is left for a human to judge.
+// Neither is a silent pass; both set the exit code.
+//
+// It is the only harness that needs the real GPU: the app is spawned once per
+// case, so nothing here warms or perturbs a model the way an in-process
+// benchmark would.
 import { parseArgs } from "node:util";
 import { resolve, dirname } from "node:path";
 import {

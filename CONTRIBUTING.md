@@ -1,10 +1,11 @@
 # Contributing to ZER0
 
 > **NOTE:** This is the `Handy_Multi_STT` fork. In addition to upstream Handy
-> features, this branch adds **Multi-STT** mode — running up to four
-> speech-to-text models in parallel with optional LLM-based merge. See
-> [AGENTS.md](AGENTS.md) for the full architecture. Contributions to
-> Multi-STT features are welcome.
+> features, this branch adds **Multi-STT** mode — running the primary model plus
+> 1 to 8 extra speech-to-text models in parallel, with optional LLM-based merge,
+> and an experimental streaming-first mode that merges at every pause. See
+> [AGENTS.md](AGENTS.md) for the full architecture. Contributions that harden or
+> extend what is already here are welcome; see the feature freeze below.
 
 Thank you for your interest in contributing to ZER0! This guide will help you get started with contributing to this open source speech-to-text application.
 
@@ -63,11 +64,17 @@ Before you begin, ensure you have the following installed:
    catalog on first run.
 
 6. **Run in development mode**:
+
    ```bash
-   bun run tauri dev
+   bun run dev:cpu        # no CUDA — the usual working loop
+   bun run tauri dev      # same thing as dev:fast: CUDA kernels for this GPU
    # On macOS if you encounter cmake errors:
    CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
    ```
+
+   `dev:cpu` / `dev:fast` / `dev:full` (and the matching `build:*`) are the three
+   build lanes; they differ only in the CUDA architecture policy, and every lane
+   builds Vulkan. See [BUILD.md](BUILD.md#build-lanes).
 
 For detailed platform-specific setup instructions, see [BUILD.md](BUILD.md).
 
@@ -126,6 +133,11 @@ ZER0 follows a clean architecture pattern:
 - `lib/types/events.ts` - Shared TypeScript event payload types
 - `stores/settingsStore.ts` - Settings store; every settings key needs a `settingUpdaters` entry
 - `stores/modelStore.ts` - Model store: list, select, download, cancel and delete models
+
+`src/bindings.ts` is generated from the backend's typed command list and settings
+struct. Adding or removing a `#[tauri::command]`, an event or a settings field
+means regenerating it (`bun run tauri dev` in a debug build does this) or editing
+it by hand to match — CI's `typecheck` fails otherwise.
 
 For more details, see the Architecture section in [README.md](README.md) or [AGENTS.md](AGENTS.md).
 
@@ -310,7 +322,7 @@ In your PR description, please include:
 
 **Manual Testing:**
 
-- Run the app in development mode: `bun run tauri dev`
+- Run the app in development mode: `bun run dev:cpu`
 - Test your changes with debug mode enabled
 - Verify on multiple platforms if possible
 - Test with different audio devices
@@ -319,23 +331,26 @@ In your PR description, please include:
 **Automated checks (CI runs these):**
 
 ```bash
-bun run typecheck            # tsc
+bun run typecheck            # tsc -b
 bun run test:unit            # bun test over *.test.ts under src/
 bun run lint                 # oxlint + i18next/no-literal-string
 bun run format:check         # prettier + cargo fmt
 bun run check:translations   # locale key parity with en
 bun run check:model-languages # catalog language codes map to the UI's languages
+bun run test:playwright      # browser suite in tests/ (needs a built frontend)
 cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 ```
 
 **Building for Production:**
 
 ```bash
+bun run build:cpu    # no CUDA — the cheap smoke build
 bun run build:fast   # local GPU only — quick release build for testing
 bun run build:full   # full multi-architecture CUDA matrix for distribution
 ```
 
-Test the production build to ensure it works as expected.
+Test the production build to ensure it works as expected. Every lane still builds
+the Vulkan backend; see [BUILD.md](BUILD.md) for what each one needs installed.
 
 ## 📝 Documentation Contributions
 
@@ -345,7 +360,7 @@ Documentation improvements are highly valued! You can contribute by:
 - Adding code comments and doc comments
 - Creating tutorials or guides
 - Improving error messages
-- Updating the project website content
+- Filling in the English strings this fork added that are still untranslated in the other locales (see [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md))
 
 ## 🤝 Community Guidelines
 

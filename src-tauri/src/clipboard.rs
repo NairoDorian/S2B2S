@@ -14,6 +14,15 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(target_os = "linux")]
 use crate::utils::{is_gnome_wayland, is_kde_wayland, is_wayland};
 
+/// Run `f` with the process-wide enigo instance, under its mutex.
+///
+/// Every synthetic keystroke in the app goes through here, so this lock is what
+/// serializes them: two overlapping chords interleave into unreadable input, and
+/// a modifier released by the wrong one stays latched for the user's next
+/// keystroke. It is held for as long as `f` takes, `f` included.
+///
+/// An uninitialized state is an error rather than a silent no-op, so a caller
+/// cannot mistake "no input happened" for "input succeeded".
 pub(crate) fn with_enigo<T>(
     app_handle: &AppHandle,
     f: impl FnOnce(&mut Enigo) -> Result<T, String>,
