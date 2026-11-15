@@ -373,6 +373,7 @@ pub(super) fn run_scope(
     engine: &mut ScopeEngine,
     mut consumer: Consumer<f32>,
     rm: &AudioRecordingManager,
+    canvas_active: &AtomicBool,
 ) -> Consumer<f32> {
     let started = Instant::now();
     let mut seen_recording = false;
@@ -382,6 +383,11 @@ pub(super) fn run_scope(
         }
         if rm.is_recording() {
             seen_recording = true;
+        } else if canvas_active.load(Ordering::Acquire) {
+            // Live Mode rotates capture between chunks; the mounted canvas
+            // keeps its analyser through that gap without a second worker.
+            thread::sleep(MAX_NAP);
+            continue;
         } else if seen_recording {
             debug!("Overlay scope: the recording ended; stopping");
             break;

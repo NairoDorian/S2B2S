@@ -15,28 +15,28 @@ colors:
   hairline: "rgba(230, 241, 243, 0.14)"
 typography:
   display:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "Libron, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
     fontSize: "1.75rem"
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.01em"
   headline:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "Libron, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
     fontSize: "1.25rem"
     fontWeight: 600
     lineHeight: 1.3
   title:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "Libron, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
     fontSize: "0.9375rem"
     fontWeight: 500
     lineHeight: 1.4
   body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: "Libron, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif"
     fontSize: "0.9375rem"
     fontWeight: 400
     lineHeight: 1.5
   label:
-    fontFamily: "'Cascadia Mono', 'JetBrains Mono', 'Fira Code', Consolas, monospace"
+    fontFamily: "Libron (follows interface; user-selectable code and numbers role)"
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.4
@@ -116,7 +116,8 @@ The application operates on an explicit dual-palette system (Dark / Light) drive
 Typographic hierarchy enforces the separation between natural human speech and machine telemetry:
 
 1. **Interface & Prose (`font-sans`)**:
-   - Stack: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+   - Default: bundled Libron v0.31. Choose installed or system families in **About → Fonts**. Menus, overlay chrome, transcripts and code/numbers have independent overrides and otherwise follow the interface font.
+   - Stack: `"Libron", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`
    - Weight: Regular (`400`) for body/settings labels; Medium (`500`) for section titles; Semibold (`600`) for top-level headers.
    - Size Scale:
      - Root `15px` with a `24px` line height (`src/App.css` `:root`).
@@ -125,9 +126,9 @@ Typographic hierarchy enforces the separation between natural human speech and m
      - Descriptions: `text-xs` / `text-sm` in `--color-mid-gray`.
 
 2. **Machine Telemetry & Tokens (`font-mono`)**:
-   - Stack: `"Cascadia Mono", "JetBrains Mono", "Fira Code", Consolas, "SF Mono", Menlo, monospace`
+   - Default: follows the interface family (Libron). **Code and numbers font** can select System monospace or any installed family. System monospace resolves to `ui-monospace, "Cascadia Mono", "SF Mono", Consolas, Menlo, monospace`.
    - Role: Numerical metrics (FFT dB bins, latency ms, memory usage %, VAD confidence, shortcut chips).
-   - Character: High legibility, tabular numbers, uppercase tags.
+   - Character: High legibility, tabular numbers, uppercase tags. Transcript regions use the independent `--app-font-transcript` token in both webviews. Native system menus retain platform typography.
 
 ---
 

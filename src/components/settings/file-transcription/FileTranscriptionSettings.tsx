@@ -180,7 +180,7 @@ const QueueRow = (props: QueueRowProps) => {
           <textarea
             readonly
             value={props.item.text}
-            class="w-full h-36 p-2.5 text-sm rounded-md bg-background border border-mid-gray/30 text-text resize-y focus:outline-none"
+            class="transcript-text w-full h-36 p-2.5 text-sm rounded-md bg-background border border-mid-gray/30 text-text resize-y focus:outline-none"
           />
           <div class="flex flex-wrap items-center gap-2 text-xs text-mid-gray">
             <Button variant="ghost" size="sm" onClick={copy}>

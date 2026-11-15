@@ -2,6 +2,7 @@ import { commands, type Theme } from "@/bindings";
 import { emit } from "@tauri-apps/api/event";
 import { readPref, writePref } from "@/lib/appIdentity";
 import { computeAccentPalette, DEFAULT_ACCENT_COLOR, parseHex } from "./color";
+import { applyTypography } from "@/lib/typography";
 
 /**
  * Appearance theme handling.
@@ -162,6 +163,7 @@ export const syncAppearanceFromSettings = async ({
     const result = await commands.getAppSettings();
     if (result.status !== "ok") return;
     applyTheme(result.data.theme ?? "system");
+    applyTypography(result.data.typography);
     applyAccentColor(
       result.data.custom_accent_color || DEFAULT_ACCENT_COLOR,
       false,

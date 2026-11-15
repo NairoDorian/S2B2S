@@ -322,7 +322,7 @@ export const Select = (props: SelectProps): JSX.Element => {
       ref={(el) => {
         rootRef = el;
       }}
-      class={`relative ${className()}`}
+      class={`app-menu relative ${className()}`}
       onBlur={handleBlur}
     >
       <div

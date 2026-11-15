@@ -1207,7 +1207,7 @@ const HistoryEntryComponent = ({
                       </button>
                     </div>
                     <p
-                      class={`text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-mid-gray/15 min-h-[2.5rem] ${
+                      class={`transcript-text text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-mid-gray/15 min-h-[2.5rem] ${
                         m.text.trim() ? "text-text/90" : "text-text/35 italic"
                       }`}
                     >
@@ -1266,7 +1266,7 @@ const HistoryEntryComponent = ({
                     <p class="text-[10px] text-text/50 mb-1 font-medium uppercase tracking-wider">
                       {t("settings.history.multiSttBrainCleanedOutput")}
                     </p>
-                    <p class="text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-amber-500/15 text-text/90">
+                    <p class="transcript-text text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-amber-500/15 text-text/90">
                       {brain().cleaned_output ||
                         t("settings.history.multiSttNoOutput")}
                     </p>
@@ -1287,7 +1287,7 @@ const HistoryEntryComponent = ({
                         {t("settings.history.multiSttBrainRawToggle")}
                       </button>
                       {showBrainRaw() && (
-                        <pre class="mt-1 p-2 rounded bg-background/90 text-[10px] text-text/65 border border-amber-500/20 whitespace-pre-wrap font-mono overflow-x-auto max-h-56 overflow-y-auto">
+                        <pre class="transcript-text mt-1 p-2 rounded bg-background/90 text-[10px] text-text/65 border border-amber-500/20 whitespace-pre-wrap font-mono overflow-x-auto max-h-56 overflow-y-auto">
                           {brain().raw_output}
                         </pre>
                       )}
@@ -1304,7 +1304,7 @@ const HistoryEntryComponent = ({
       {activeTab() !== "multi_stt_details" && (
         <div class="relative">
           <p
-            class={`text-sm select-text cursor-text whitespace-pre-wrap break-words rounded-md p-2.5 bg-card/40 border border-mid-gray/15 ${
+            class={`transcript-text text-sm select-text cursor-text whitespace-pre-wrap break-words rounded-md p-2.5 bg-card/40 border border-mid-gray/15 ${
               retrying() !== null
                 ? "text-text/40 animate-pulse"
                 : hasTranscription

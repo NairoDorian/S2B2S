@@ -28,7 +28,9 @@
     "llama": "Local LLM",
     "collapse": "Collapse",
     "expand": "Expand sidebar",
-    "resize": "Resize sidebar"
+    "resize": "Resize sidebar",
+    "liveCanvas": "Live Canvas",
+    "openLiveCanvas": "Open Live Canvas"
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -1816,6 +1818,56 @@
         "customArgs": "Custom arguments (advanced)",
         "customArgsDescription": "When not empty, replaces everything after llama-server. Use the preview above as a starting point."
       }
+    },
+    "liveCanvas": {
+      "open": "Open canvas",
+      "animation": "Character arrival",
+      "description": "One white particle carries each character from the analyzer. The character fades in after the particle is 75% faded out. Changes apply to the next character.",
+      "speed": {
+        "label": "Overall speed",
+        "description": "Scale all three stages together. Higher values make the animation faster."
+      },
+      "travel_ms": {
+        "label": "Particle travel",
+        "description": "Time from the analyzer center to the next character, at 1× speed."
+      },
+      "particle_fade_ms": {
+        "label": "Particle fade out",
+        "description": "Time for the point to expand and disappear after it arrives, at 1× speed."
+      },
+      "character_fade_ms": {
+        "label": "Character fade in",
+        "description": "Time for the character to become fully visible, at 1× speed."
+      },
+      "handoff": "Character fade begins after {{ms}} ms, with 25% of the particle remaining.",
+      "reset": "Reset animation",
+      "signal": "FFT signal",
+      "signal_scale": {
+        "label": "Signal scale",
+        "description": "Scale the circular FFT and its waveform from 0.1× to 4×. This changes only the visualizer, not recording or transcription."
+      },
+      "corrections": "Text corrections",
+      "correctionDescription": "Only changed characters fade in place. Corrections never replay particles or backspace.",
+      "correction_out_ms": {
+        "label": "Correction fade out",
+        "description": "Time to fade the changed characters before replacing them."
+      },
+      "correction_in_ms": {
+        "label": "Correction fade in",
+        "description": "Time to reveal the replacement characters. These timings are independent of particle speed."
+      },
+      "telemetry": {
+        "title": "Telemetry",
+        "words": "Words",
+        "wpm": "WPM",
+        "speech": "Speech",
+        "elapsed": "Elapsed"
+      },
+      "window": {
+        "minimize": "Minimize",
+        "maximize": "Maximize",
+        "restore": "Restore"
+      }
     }
   },
   "footer": {
@@ -2075,7 +2127,8 @@
     "advanced": "Noise suppression, voice detection with a live test, paste behaviour, and the settings that trade latency for accuracy.",
     "postprocessing": "Send the transcript through a language model to clean it up, using a prompt you write, before it is pasted.",
     "debug": "Diagnostics: recent errors, log level, live logs, keyboard checks, and the timing knobs behind pasting.",
-    "llama": "Run the llama.cpp server that post-processing and the Multi-STT merge talk to: install a build, pick the model files, tune the command, start it."
+    "llama": "Run the llama.cpp server that post-processing and the Multi-STT merge talk to: install a build, pick the model files, tune the command, start it.",
+    "liveCanvas": "A full-window Live Mode view with an animated transcript; this page tunes its animation and the analyser's signal scale."
   },
   "help": {
     "title": "Help",
@@ -2165,6 +2218,10 @@
       "llama": {
         "title": "Local LLM: the brain behind post-processing and merging.",
         "summary": "The Local LLM page runs llama.cpp for you. Install a build (CUDA, Vulkan or CPU) from the releases list or point {{app}} at a folder that already has llama-server, pick the model, its MTP draft and the optional mmproj, and press Start. The command line shown is exactly what runs. \"Use for post-processing & merge\" points the LLM provider at this server; with \"Start when needed\" on, the first post-process request starts it and waits. The status-bar brain shows Stopped / Starting / Ready / Error, next to the CPU, RAM, GPU and VRAM meters."
+      },
+      "liveCanvas": {
+        "title": "Live Canvas.",
+        "summary": "Live Canvas turns the whole window into a quiet view of a Live Mode session: a circular analyser, a microphone button and the live transcript, each character carried in from the analyser by a particle. Open it with the button at the top of the sidebar. The title bar is hidden while it is open: drag the top edge to move the window, use the minimize and maximize buttons at the top right, and press Esc or the exit button to come back. Ctrl+L clears the text on screen without touching the transcript file. This page sets the animation timings and the analyser's signal scale."
       }
     },
     "aiAssist": {
@@ -2175,5 +2232,42 @@
       "copied": "Copied",
       "copyFailed": "Could not copy"
     }
+  },
+  "fonts": {
+    "title": "Fonts",
+    "description": "Libron is included and works offline. Choose a font for each part of the app, or type the name of any font installed on your computer.",
+    "options": {
+      "inherit": "Follow interface font",
+      "libron": "Libron (bundled default)",
+      "sans": "System sans serif",
+      "serif": "System serif",
+      "mono": "System monospace"
+    },
+    "roles": {
+      "ui": {
+        "title": "Interface font",
+        "description": "Settings, labels, buttons and dialogs. Other areas follow this font unless you choose another."
+      },
+      "menus": {
+        "title": "Menu font",
+        "description": "Sidebar navigation, dropdowns and model menus. Native system menus use your operating system's font."
+      },
+      "overlay": {
+        "title": "Overlay font",
+        "description": "Recording status, controls and speech statistics in the floating overlay."
+      },
+      "transcript": {
+        "title": "Transcript font",
+        "description": "Live Canvas, overlay transcripts, history, file results and Recall notes. Pasted and exported text uses the destination app's formatting."
+      },
+      "mono": {
+        "title": "Code and numbers font",
+        "description": "Logs, code, keyboard shortcuts, metrics and chart labels. Choose System monospace for fixed-width text."
+      }
+    },
+    "useFont": "Use installed font “{{name}}”",
+    "preview": "A clear voice, a thought in writing. 0123456789",
+    "note": "Only Libron is bundled. Other named fonts must be installed; unavailable fonts fall back to Libron. Characters outside a font's coverage use system fallback fonts. Font changes apply immediately in both windows.",
+    "reset": "Reset fonts to Libron"
   }
 }

@@ -9,7 +9,12 @@ import {
   type AxisTick,
   type ColormapKind,
 } from "./liveFftMath";
-import { observeTheme, pageUnits, sameValues } from "./SpectrumCanvas";
+import {
+  observeTheme,
+  pageUnits,
+  sameValues,
+  readCanvasFont,
+} from "./SpectrumCanvas";
 
 interface SpectrogramCanvasProps {
   axisHz: ArrayLike<number>;
@@ -80,6 +85,7 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
       let height = 0;
       let sizeDirty = true;
       let colorsDirty = true;
+      let labelFont = readCanvasFont();
       let lut: Uint8ClampedArray = new Uint8ClampedArray(0);
       let lutKind: ColormapKind | null = null;
       let lutAccent = "";
@@ -183,8 +189,7 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
             );
           }
         }
-        ctx.font =
-          "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        ctx.font = labelFont;
         ctx.textBaseline = "middle";
         ctx.fillStyle = textColor;
         ctx.strokeStyle = textColor;
@@ -219,6 +224,7 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
           dirty = true;
         }
         if (colorsDirty) {
+          labelFont = readCanvasFont();
           textColor = cssColor("--color-text", "#e6e6e6");
           ensureLut();
           colorsDirty = false;

@@ -40,6 +40,7 @@ import { useSettings } from "./hooks/useSettings";
 import { commands, events } from "@/bindings";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { applyUiScale } from "@/lib/utils/theme";
+import { applyTypography, normalizeTypography } from "@/lib/typography";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
@@ -87,6 +88,16 @@ function App() {
   const { settings, updateSetting, refreshAudioDevices, refreshOutputDevices } =
     useSettings();
   const uiScale = () => settings()?.ui_scale ?? null;
+
+  createEffect(
+    () => {
+      const current = settings();
+      return current ? normalizeTypography(current.typography) : null;
+    },
+    (fonts) => {
+      if (fonts) applyTypography(fonts);
+    },
+  );
 
   createEffect(
     () => uiScale(),

@@ -13,6 +13,7 @@ export { FileTranscriptionSettings } from "./file-transcription/FileTranscriptio
 export { LiveModeSettings } from "./live-mode/LiveModeSettings";
 export { RecallPage } from "./recall/RecallPage";
 export { LiveFftSettings } from "./live-fft/LiveFftSettings";
+export { LiveCanvasSettings } from "./live-canvas/LiveCanvasSettings";
 export { OverlaySettings } from "./overlay/OverlaySettings";
 export { HelpSettings } from "./help/HelpSettings";
 export { LlamaSettings } from "./llama/LlamaSettings";

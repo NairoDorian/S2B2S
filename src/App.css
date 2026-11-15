@@ -3,6 +3,236 @@
    src-tauri/target (70k files) included, which cost 2 to 8 s per build. */
 @import "tailwindcss" source(".");
 @import "./styles/theme.css";
+@import "./styles/fonts.css";
+
+/* A transparent native webview, with an opaque black centre feathered over
+   33px on all four edges. Only the backdrop is masked: controls stay crisp. */
+html[data-live-canvas],
+html[data-live-canvas] body,
+html[data-live-canvas] #root {
+  background: transparent !important;
+}
+
+.live-canvas {
+  padding: 33px;
+  --s-accent: #1fe0ff;
+  --s-muted: #7c8a90;
+}
+
+.live-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #000;
+  pointer-events: none;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      black 33px,
+      black calc(100% - 33px),
+      transparent
+    ),
+    linear-gradient(
+      to bottom,
+      transparent,
+      black 33px,
+      black calc(100% - 33px),
+      transparent
+    );
+  mask-composite: intersect;
+}
+
+.live-canvas button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.live-canvas-particle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.live-canvas-arriving-letter {
+  opacity: 0;
+}
+
+/* Stops short of the window controls (3 × 36px buttons + gaps + padding). */
+.live-canvas .live-canvas-drag {
+  position: absolute;
+  inset: 33px 176px auto 33px;
+  height: 36px;
+  z-index: 2;
+}
+.live-canvas main {
+  position: absolute;
+  inset: 0;
+}
+.live-canvas-analyzer {
+  position: absolute;
+  top: 33.333%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.live-canvas-microphone {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #89979c;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+.live-canvas-microphone:hover,
+.live-canvas-microphone[aria-pressed="true"] {
+  color: #1fe0ff;
+}
+.live-canvas-transcript {
+  position: absolute;
+  top: 66.667%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, calc(100% - 96px));
+  max-height: 24vh;
+  overflow-y: auto;
+  text-align: center;
+  font-size: clamp(20px, 2.4vw, 26px);
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+}
+/* Minimize, maximize/restore and exit, revealed together on hover or focus:
+   the canvas hides the native title bar, so these replace its buttons. */
+.live-canvas-exit-zone {
+  position: absolute;
+  top: 33px;
+  right: 33px;
+  height: 56px;
+  padding: 0 10px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.live-canvas-exit {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid rgb(230 241 243 / 16%);
+  color: #89979c;
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 150ms ease,
+    color 150ms ease;
+}
+.live-canvas-exit-zone:hover .live-canvas-exit,
+.live-canvas-exit-zone:focus-within .live-canvas-exit {
+  opacity: 1;
+}
+.live-canvas-exit:hover {
+  color: #e6f1f3;
+}
+.live-canvas footer {
+  position: absolute;
+  bottom: 33px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+.live-canvas-tools {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.live-canvas-tools button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: #89979c;
+  cursor: pointer;
+}
+.live-canvas-tools button:hover,
+.live-canvas-tools button[aria-expanded="true"] {
+  color: #e6f1f3;
+}
+.live-canvas-tools button:first-child {
+  position: absolute;
+  right: calc(100% + 12px);
+}
+.live-canvas-telemetry {
+  position: absolute;
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 96px));
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding: 16px 24px;
+  background: #000;
+  border: 1px solid rgb(230 241 243 / 12%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #89979c;
+}
+.live-canvas-telemetry > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.live-canvas-telemetry strong {
+  color: #e6f1f3;
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.live-canvas-error {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100% - 96px));
+  text-align: center;
+  font-size: 13px;
+  color: #fca5a5;
+}
+@media (hover: none) {
+  .live-canvas-exit {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-canvas *,
+  .live-canvas *::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 
 /* The app's theme switch is `data-theme` on <html> (src/lib/utils/theme.ts),
    not prefers-color-scheme: a forced Light/Dark must win over the OS setting.
@@ -45,10 +275,9 @@
   --shadow-xl: 0 0 0 1px var(--color-hairline);
   --shadow-2xl: 0 0 0 1px var(--color-hairline);
 
-  /* Terminal-flavoured type for values, key chips and code. */
-  --font-mono:
-    "Cascadia Mono", "JetBrains Mono", "Fira Code", Consolas, "SF Mono", Menlo,
-    monospace;
+  --font-sans: var(--app-font-ui);
+  --font-serif: var(--app-font-ui);
+  --font-mono: var(--app-font-mono);
 }
 
 @layer utilities {

@@ -10,16 +10,22 @@ import {
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import { i18nReady } from "@/i18n";
+import { applyTypography, getStoredTypography } from "@/lib/typography";
+import type { TypographySettings } from "@/bindings";
 
 // A separate webview from the settings window, so the overlay has to set
 // `data-theme` and accent CSS properties on its own document: last-known theme/accent
 // before render (shared localStorage) to avoid a flash, reconcile with the persisted
 // setting in case the overlay booted first, then follow live changes.
 applyTheme(getStoredTheme());
+applyTypography(getStoredTypography());
 applyAccentColor(getStoredAccentColor());
 void syncAppearanceFromSettings({ uiScale: false });
 
 listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
+listen<TypographySettings>("typography-changed", (event) =>
+  applyTypography(event.payload),
+);
 listen<string>("accent-color-changed", (event) =>
   applyAccentColor(event.payload),
 );

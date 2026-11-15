@@ -339,7 +339,7 @@ export const LiveModeSettings = () => {
             ref={(el) => {
               previewRef = el;
             }}
-            class="h-64 overflow-y-auto rounded-lg border border-mid-gray/20 bg-background p-3 text-sm leading-relaxed whitespace-pre-wrap break-words font-mono"
+            class="transcript-text h-64 overflow-y-auto rounded-lg border border-mid-gray/20 bg-background p-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
           >
             {previewText() ? (
               store.viewing ? (

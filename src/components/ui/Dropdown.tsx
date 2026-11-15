@@ -65,7 +65,7 @@ export const Dropdown = (props: DropdownProps): JSX.Element => {
 
   return (
     <div
-      class={`relative ${props.class ?? ""}`}
+      class={`app-menu relative ${props.class ?? ""}`}
       ref={(el) => {
         dropdownRef = el;
       }}

@@ -1415,6 +1415,56 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
+/// Font families used only by the webviews. `inherit` follows the UI family.
+/// Container defaults also migrate partial settings from older app versions.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+#[serde(default)]
+pub struct TypographySettings {
+    pub ui: String,
+    pub menus: String,
+    pub overlay: String,
+    pub transcript: String,
+    pub mono: String,
+}
+
+impl Default for TypographySettings {
+    fn default() -> Self {
+        Self {
+            ui: "Libron".into(),
+            menus: "inherit".into(),
+            overlay: "inherit".into(),
+            transcript: "inherit".into(),
+            mono: "inherit".into(),
+        }
+    }
+}
+
+impl TypographySettings {
+    pub fn normalize(&mut self) {
+        let defaults = Self::default();
+        for (value, fallback) in [
+            (&mut self.ui, defaults.ui),
+            (&mut self.menus, defaults.menus),
+            (&mut self.overlay, defaults.overlay),
+            (&mut self.transcript, defaults.transcript),
+            (&mut self.mono, defaults.mono),
+        ] {
+            let trimmed = value.trim();
+            *value = if trimmed.is_empty()
+                || trimmed.chars().count() > 128
+                || trimmed.chars().any(char::is_control)
+            {
+                fallback
+            } else {
+                trimmed.to_owned()
+            };
+        }
+        if self.ui == "inherit" {
+            self.ui = "Libron".into();
+        }
+    }
+}
+
 /* still needed for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -1550,6 +1600,8 @@ pub struct AppSettings {
     pub app_language: String,
     #[serde(default = "default_theme")]
     pub theme: Theme,
+    #[serde(default)]
+    pub typography: TypographySettings,
     #[serde(default)]
     pub custom_accent_color: Option<String>,
     /// Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
@@ -2470,6 +2522,7 @@ pub fn get_default_settings() -> AppSettings {
         append_trailing_newline: false,
         app_language: default_app_language(),
         theme: default_theme(),
+        typography: TypographySettings::default(),
         custom_accent_color: None,
         ui_scale: default_ui_scale(),
         experimental_enabled: false,
@@ -3965,5 +4018,40 @@ mod tests {
 
         let parsed: AppSettings = serde_json::from_str("{}").expect("deserializes empty json");
         assert!(!parsed.multi_stt_performance_mode_trigger_on_start);
+    }
+
+    #[test]
+    fn typography_defaults_migrate_old_and_partial_settings() {
+        let old: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.typography, TypographySettings::default());
+        let partial: AppSettings = serde_json::from_value(serde_json::json!({
+            "typography": { "transcript": "Georgia" }
+        }))
+        .unwrap();
+        assert_eq!(partial.typography.ui, "Libron");
+        assert_eq!(partial.typography.transcript, "Georgia");
+        assert_eq!(partial.typography.overlay, "inherit");
+        let round_trip: AppSettings =
+            serde_json::from_value(serde_json::to_value(&partial).unwrap()).unwrap();
+        assert_eq!(round_trip.typography, partial.typography);
+    }
+
+    #[test]
+    fn typography_normalization_preserves_font_names_and_bounds_invalid_values() {
+        let mut fonts = TypographySettings {
+            ui: "inherit".into(),
+            menus: " Verdana ".into(),
+            overlay: "bad\u{85}font".into(),
+            transcript: "x".repeat(129),
+            mono: "".into(),
+        };
+        fonts.normalize();
+        assert_eq!(
+            fonts,
+            TypographySettings {
+                menus: "Verdana".into(),
+                ..TypographySettings::default()
+            }
+        );
     }
 }

@@ -79,8 +79,15 @@ export const observeTheme = (onChange: () => void): (() => void) => {
     attributes: true,
     attributeFilter: ["data-theme", "style", "class"],
   });
-  return () => observer.disconnect();
+  document.fonts.addEventListener("loadingdone", onChange);
+  return () => {
+    observer.disconnect();
+    document.fonts.removeEventListener("loadingdone", onChange);
+  };
 };
+
+export const readCanvasFont = (): string =>
+  `10px ${getComputedStyle(document.documentElement).getPropertyValue("--app-font-mono").trim()}`;
 
 const noop = () => {};
 
@@ -136,6 +143,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
       let height = 0;
       let sizeDirty = true;
       let colors = readColors();
+      let labelFont = readCanvasFont();
       let colorsDirty = false;
       let held = new Float32Array(0);
       let heldFrame: SpectrumFrame | null = null;
@@ -253,8 +261,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
         const plotW = Math.max(1, w - PAD_LEFT - PAD_RIGHT);
         const plotH = Math.max(1, h - PAD_TOP - PAD_BOTTOM);
         ctx.clearRect(0, 0, w, h);
-        ctx.font =
-          "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        ctx.font = labelFont;
         ctx.textBaseline = "middle";
 
         // One units pass per frame, shared with the waterfall.
@@ -470,6 +477,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
         }
         if (colorsDirty) {
           colors = readColors();
+          labelFont = readCanvasFont();
           colorsDirty = false;
           dirty = true;
         }

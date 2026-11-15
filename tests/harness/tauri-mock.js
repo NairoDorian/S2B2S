@@ -115,6 +115,9 @@
   // fixture, which `tests/harness/fixtures.ts` puts on `window` before this
   // script runs.
   var settings = window.__TAURI_MOCK_SETTINGS__ || {};
+  // The font tests exercise a saved setting across reloads and webviews.
+  var savedTypography = sessionStorage.getItem("test.typography");
+  if (savedTypography) settings.typography = JSON.parse(savedTypography);
 
   var RESPONSES = {
     get_app_settings: settings,
@@ -238,6 +241,18 @@
   window.__TAURI_INTERNALS__.invoke = async function (cmd, args) {
     window.__TAURI_CALLS__.push({ cmd: cmd, args: args || {} });
     if (cmd.startsWith("plugin:event|")) return handleEventPlugin(cmd, args);
+    if (cmd === "change_typography_setting") {
+      settings.typography = args.typography;
+      sessionStorage.setItem(
+        "test.typography",
+        JSON.stringify(args.typography),
+      );
+      handleEventPlugin("plugin:event|emit", {
+        event: "typography-changed",
+        payload: args.typography,
+      });
+      return null;
+    }
     if (Object.prototype.hasOwnProperty.call(RESPONSES, cmd)) {
       return RESPONSES[cmd];
     }

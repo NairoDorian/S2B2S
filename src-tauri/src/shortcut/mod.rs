@@ -725,6 +725,26 @@ pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String>
     Ok(())
 }
 
+/// Persist font changes on the blocking pool, then update both webviews once.
+/// No font install, polling, or work on the capture/inference paths.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_typography_setting(
+    app: AppHandle,
+    mut typography: settings::TypographySettings,
+) -> Result<(), String> {
+    typography.normalize();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut current = settings::get_settings(&app);
+        current.typography = typography.clone();
+        settings::write_settings(&app, current);
+        app.emit("typography-changed", &typography)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Applies the appearance setting to the native window chrome (title bar), which
 /// CSS `data-theme` cannot reach. `System` clears the override so the window
 /// follows the OS. Call this on startup and whenever the setting changes to keep

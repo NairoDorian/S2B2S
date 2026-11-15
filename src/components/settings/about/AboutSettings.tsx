@@ -9,6 +9,7 @@ import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ShowWhatsNewOnUpdate } from "../ShowWhatsNewOnUpdate";
 import { ThemeSelector } from "../ThemeSelector";
 import { AccentColorSelector } from "../AccentColorSelector";
+import { FontSettings } from "../FontSettings";
 import { LogDirectory } from "../debug";
 import { REPO_URL } from "@/lib/appIdentity";
 import { createSignal, createEffect } from "solid-js";
@@ -64,6 +65,8 @@ export const AboutSettings = () => {
         <AppDataDirectory descriptionMode="tooltip" grouped={true} />
         <LogDirectory grouped={true} />
       </SettingsGroup>
+
+      <FontSettings />
 
       <SettingsGroup title={t("settings.about.acknowledgments.title")}>
         <SettingContainer

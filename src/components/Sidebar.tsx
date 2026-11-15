@@ -1,4 +1,4 @@
-/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-interactions, i18next/no-literal-string */
+/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-interactions */
 import {
   createSignal,
   createEffect,
@@ -21,6 +21,7 @@ import {
   FileAudio,
   Radio,
   AudioLines,
+  Activity,
   FileText,
   PictureInPicture2,
   PanelLeftClose,
@@ -44,6 +45,7 @@ import {
   FileTranscriptionSettings,
   LiveModeSettings,
   LiveFftSettings,
+  LiveCanvasSettings,
   OverlaySettings,
   HelpSettings,
   LlamaSettings,
@@ -124,6 +126,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.liveFft",
     icon: AudioLines,
     component: LiveFftSettings,
+    enabled: () => true,
+  },
+  liveCanvasSettings: {
+    labelKey: "sidebar.liveCanvas",
+    icon: Activity,
+    component: LiveCanvasSettings,
     enabled: () => true,
   },
   overlay: {
@@ -252,7 +260,7 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <div
-      class="relative flex flex-col h-full shrink-0 border-e border-mid-gray/20 select-none"
+      class="app-menu relative flex flex-col h-full shrink-0 border-e border-mid-gray/20 select-none"
       style={{
         width: `${effectiveWidth()}px`,
         transition: resizing() ? "none" : "width 150ms ease-out",
@@ -270,11 +278,12 @@ export function Sidebar(props: SidebarProps) {
         <button
           type="button"
           onClick={() => setLiveCanvas(true)}
-          title="Open Minimal Live Canvas"
+          title={t("sidebar.openLiveCanvas")}
+          aria-label={t("sidebar.openLiveCanvas")}
           class="flex items-center justify-center gap-2 p-2 w-full border border-accent/40 bg-accent/10 hover:bg-accent/20 text-accent text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors"
         >
           <Radio width={18} height={18} class="shrink-0 text-accent" />
-          {!collapsed() && <span>Live Canvas</span>}
+          {!collapsed() && <span>{t("sidebar.liveCanvas")}</span>}
         </button>
       </div>
 

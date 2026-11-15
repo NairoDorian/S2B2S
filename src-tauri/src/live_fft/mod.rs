@@ -792,6 +792,7 @@ pub struct LiveFftManager {
     /// The recording overlay's miniature analyser (see `scope`).
     scope: Arc<ScopeShared>,
     scope_worker: Mutex<Option<thread::JoinHandle<()>>>,
+    canvas_active: Arc<AtomicBool>,
 }
 
 impl LiveFftManager {
@@ -805,6 +806,7 @@ impl LiveFftManager {
             worker: Mutex::new(None),
             scope: Arc::new(ScopeShared::new(overlay_scope)),
             scope_worker: Mutex::new(None),
+            canvas_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -906,13 +908,14 @@ impl LiveFftManager {
             .inner()
             .clone();
         let scope = Arc::clone(&self.scope);
+        let canvas_active = Arc::clone(&self.canvas_active);
         let handle = thread::Builder::new()
             .name("overlay-scope".into())
             .spawn(move || {
                 // Taken here, like the page worker does, so a failed spawn
                 // can never drop the ring's only consumer.
                 if let Some(consumer) = TAP.take_consumer() {
-                    let consumer = scope::run_scope(&mut engine, consumer, &rm);
+                    let consumer = scope::run_scope(&mut engine, consumer, &rm, &canvas_active);
                     TAP.return_consumer(consumer);
                 }
                 TAP.disarm();
@@ -940,6 +943,9 @@ impl LiveFftManager {
 
     /// Ask a running scope to stop; it ends within one nap.
     pub fn stop_overlay_scope(&self) {
+        if self.canvas_active.load(Ordering::Acquire) {
+            return;
+        }
         if self.scope.active.load(Ordering::Acquire) {
             self.scope.stop_requested.store(true, Ordering::Release);
         }
@@ -953,8 +959,30 @@ impl LiveFftManager {
 
     /// Stop the scope and wait for it, so the tap can be re-armed.
     fn stop_overlay_scope_and_join(&self) {
-        self.stop_overlay_scope();
+        self.scope.stop_requested.store(true, Ordering::Release);
         self.join_scope_worker();
+    }
+
+    /// The canvas shares the overlay analyser, never opens another microphone.
+    pub fn set_canvas_active(self: &Arc<Self>, active: bool) {
+        self.canvas_active.store(active, Ordering::Release);
+        if active {
+            // A fast stop/start can arrive before the previous worker's nap
+            // ends. Let that worker release the tap before starting again.
+            if self.scope.stop_requested.load(Ordering::Acquire) {
+                self.join_scope_worker();
+            }
+            self.start_overlay_scope();
+        } else {
+            let overlay_visible = self
+                .app
+                .get_webview_window("recording_overlay")
+                .and_then(|window| window.is_visible().ok())
+                .unwrap_or(false);
+            if !overlay_visible {
+                self.stop_overlay_scope();
+            }
+        }
     }
 
     /// The latest overlay frame, encoded (see `scope::encode_scope_frame`);

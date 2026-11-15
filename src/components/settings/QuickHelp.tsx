@@ -24,6 +24,10 @@ const QUICK_HELP: Partial<
   },
   liveMode: { copyKey: "quickHelp.liveMode", anchor: "help-live-mode" },
   liveFft: { copyKey: "quickHelp.liveFft", anchor: "help-live-fft" },
+  liveCanvasSettings: {
+    copyKey: "quickHelp.liveCanvas",
+    anchor: "help-live-canvas",
+  },
   overlay: { copyKey: "quickHelp.overlay", anchor: "help-overlay" },
   advanced: { copyKey: "quickHelp.advanced", anchor: "help-advanced" },
   llama: { copyKey: "quickHelp.llama", anchor: "help-llama" },

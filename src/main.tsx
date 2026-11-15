@@ -14,6 +14,8 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { useModelStore } from "./stores/modelStore";
 import type { Theme } from "@/bindings";
+import { applyTypography, getStoredTypography } from "@/lib/typography";
+import type { TypographySettings } from "@/bindings";
 
 // Set the platform before render so CSS can scope per-platform (e.g. the
 // macOS scrollbar rules in App.css key off `:root[data-platform="macos"]`).
@@ -25,6 +27,7 @@ document.documentElement.dataset.platform = platform();
 applyTheme(getStoredTheme());
 applyAccentColor(getStoredAccentColor());
 applyUiScale(getStoredUiScale());
+applyTypography(getStoredTypography());
 void syncAppearanceFromSettings({ uiScale: true });
 
 // Load the model catalog and register its event listeners. The Models page
@@ -33,6 +36,9 @@ void syncAppearanceFromSettings({ uiScale: true });
 void useModelStore().initialize();
 
 listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
+listen<TypographySettings>("typography-changed", (event) =>
+  applyTypography(event.payload),
+);
 listen<string>("accent-color-changed", (event) =>
   applyAccentColor(event.payload),
 );

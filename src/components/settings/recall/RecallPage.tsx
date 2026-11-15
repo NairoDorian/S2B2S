@@ -396,7 +396,7 @@ export const RecallPage = () => {
                     <Show
                       when={mode() === "write"}
                       fallback={
-                        <div class="h-80 overflow-y-auto rounded-lg border border-mid-gray/20 bg-background px-3 py-2">
+                        <div class="transcript-text h-80 overflow-y-auto rounded-lg border border-mid-gray/20 bg-background px-3 py-2">
                           <MarkdownContent markdown={store.draft.body} />
                         </div>
                       }
@@ -411,7 +411,7 @@ export const RecallPage = () => {
                         onBlur={() =>
                           void commands.recallSetInsertionMode(false)
                         }
-                        class="w-full h-80 resize-y rounded-lg border border-mid-gray/20 bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:border-accent/50"
+                        class="transcript-text w-full h-80 resize-y rounded-lg border border-mid-gray/20 bg-background px-3 py-2 text-sm focus:outline-none focus:border-accent/50"
                         placeholder={t("settings.recall.bodyPlaceholder")}
                         value={store.draft.body}
                         onInput={(e) =>

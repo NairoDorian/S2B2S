@@ -243,7 +243,11 @@ const RecordingOverlay = () => {
     const extras = Object.keys(extraTexts()).length;
     let base = 420;
     let max = 560;
-    if (extras >= 1 || debugStream()) {
+    // This accessor is also evaluated by an effect during setup, before the
+    // JSX helpers below are initialized. Read the signals directly here.
+    const hasMergedText =
+      mergeText().committed.length > 0 || mergeText().tentative.length > 0;
+    if (extras >= 1 || hasMergedText) {
       base = 560;
       max = 740;
     }

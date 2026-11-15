@@ -13,6 +13,7 @@ export const commands = {
 	changeAudioFeedbackVolumeSetting: (volume: number | null) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_volume_setting", { volume })),
 	changeSoundThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_sound_theme_setting", { theme })),
 	changeThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_theme_setting", { theme })),
+	changeTypographySetting: (typography: TypographySettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_typography_setting", { typography })),
 	changeCustomAccentColorSetting: (color: string | null) => typedError<null, string>(__TAURI_INVOKE("change_custom_accent_color_setting", { color })),
 	changeUiScaleSetting: (scale: number | null) => typedError<null, string>(__TAURI_INVOKE("change_ui_scale_setting", { scale })),
 	changeStartHiddenSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_start_hidden_setting", { enabled })),
@@ -390,6 +391,11 @@ export const commands = {
 	setClamshellMicrophone: (deviceName: string) => typedError<null, string>(__TAURI_INVOKE("set_clamshell_microphone", { deviceName })),
 	getClamshellMicrophone: () => typedError<string, string>(__TAURI_INVOKE("get_clamshell_microphone")),
 	isRecording: () => __TAURI_INVOKE<boolean>("is_recording"),
+	/**
+	 *  Window chrome and the shared analyser follow the mounted canvas. Joining a
+	 *  previous scope worker happens on the blocking pool, never the webview thread.
+	 */
+	setLiveCanvasActive: (active: boolean, recording: boolean) => typedError<null, string>(__TAURI_INVOKE("set_live_canvas_active", { active, recording })),
 	getMicrophoneChannels: (deviceName: string) => typedError<number, string>(__TAURI_INVOKE("get_microphone_channels", { deviceName })),
 	setSelectedChannel: (channel: number | null) => typedError<null, string>(__TAURI_INVOKE("set_selected_channel", { channel })),
 	setModelUnloadTimeout: (timeout: ModelUnloadTimeout) => __TAURI_INVOKE<void>("set_model_unload_timeout", { timeout }),
@@ -686,6 +692,7 @@ export type AppSettings_Deserialize = {
 	append_trailing_newline?: boolean,
 	app_language?: string,
 	theme?: Theme,
+	typography?: TypographySettings_Deserialize,
 	custom_accent_color?: string | null,
 	/**
 	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
@@ -1031,6 +1038,7 @@ export type AppSettings_Serialize = {
 	append_trailing_newline: boolean,
 	app_language: string,
 	theme: Theme,
+	typography: TypographySettings_Serialize,
 	custom_accent_color: string | null,
 	/**
 	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
@@ -3798,3 +3806,21 @@ function makeEvent<TListen, TEmit = TListen>(name: string, serialize?: (payload:
     return Object.assign(fn, base);
 }
 
+
+export type TypographySettings = TypographySettings_Serialize | TypographySettings_Deserialize;
+
+export type TypographySettings_Deserialize = {
+	ui?: string,
+	menus?: string,
+	overlay?: string,
+	transcript?: string,
+	mono?: string,
+};
+
+export type TypographySettings_Serialize = {
+	ui: string,
+	menus: string,
+	overlay: string,
+	transcript: string,
+	mono: string,
+};

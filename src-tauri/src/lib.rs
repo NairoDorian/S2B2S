@@ -802,6 +802,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_audio_feedback_volume_setting,
             shortcut::change_sound_theme_setting,
             shortcut::change_theme_setting,
+            shortcut::change_typography_setting,
             shortcut::change_custom_accent_color_setting,
             shortcut::change_ui_scale_setting,
             shortcut::change_start_hidden_setting,
@@ -967,6 +968,7 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::set_clamshell_microphone,
             commands::audio::get_clamshell_microphone,
             commands::audio::is_recording,
+            commands::live_fft::set_live_canvas_active,
             commands::audio::get_microphone_channels,
             commands::audio::set_selected_channel,
             commands::transcription::set_model_unload_timeout,
@@ -1236,6 +1238,7 @@ pub fn run(cli_args: CliArgs) {
                     .min_inner_size(1060.0, 720.0)
                     .resizable(true)
                     .maximizable(true)
+                    .transparent(true)
                     .visible(false);
 
             if let Some(data_dir) = portable::data_dir() {

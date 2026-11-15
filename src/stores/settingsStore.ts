@@ -15,6 +15,7 @@ import type {
   ModelUnloadTimeout,
   NativeStreamingLatencyPreset,
   ShortcutActivation,
+  TypographySettings,
 } from "@/bindings";
 import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
@@ -265,6 +266,8 @@ const settingUpdaters: {
     commands.changeAppendTrailingNewlineSetting(value as boolean),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   theme: (value) => commands.changeThemeSetting(value as string),
+  typography: (value) =>
+    commands.changeTypographySetting(value as TypographySettings),
   ui_scale: (value) => commands.changeUiScaleSetting(value as number),
   custom_accent_color: (value) =>
     commands.changeCustomAccentColorSetting((value as string | null) ?? null),

@@ -18,7 +18,7 @@ interface StatusBarPopoverProps {
 
 export const StatusBarPopover = (props: StatusBarPopoverProps): JSX.Element => {
   return (
-    <div class="relative shrink-0">
+    <div class="app-menu relative shrink-0">
       <button
         type="button"
         onClick={() => props.onToggle()}

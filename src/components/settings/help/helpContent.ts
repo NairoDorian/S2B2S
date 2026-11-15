@@ -91,6 +91,13 @@ export const HELP_SECTIONS: readonly HelpSectionDefinition[] = [
     "sidebar.liveMode",
   ),
   entry("liveFft", "help-live-fft", "liveFft", "liveFft", "sidebar.liveFft"),
+  entry(
+    "liveCanvas",
+    "help-live-canvas",
+    "liveCanvas",
+    "liveCanvasSettings",
+    "sidebar.liveCanvas",
+  ),
   entry("overlay", "help-overlay", "overlay", "overlay", "sidebar.overlay"),
   entry("history", "help-history", "history", "history", "sidebar.history"),
   entry(

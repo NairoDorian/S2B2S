@@ -7,6 +7,28 @@ use tauri::{AppHandle, Manager, State};
 use crate::live_fft::{LiveFftAxis, LiveFftManager, LiveFftStatus};
 use crate::settings::{LiveFftSettings, get_settings, write_settings};
 
+/// Window chrome and the shared analyser follow the mounted canvas. Joining a
+/// previous scope worker happens on the blocking pool, never the webview thread.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_live_canvas_active(
+    app: AppHandle,
+    active: bool,
+    recording: bool,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("Main window unavailable")?;
+    window.set_decorations(!active).map_err(|e| e.to_string())?;
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    window.set_shadow(!active).map_err(|e| e.to_string())?;
+    let manager = app.state::<Arc<LiveFftManager>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.set_canvas_active(active && recording))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Persist the page's parameters and hand them to the running analysis,
 /// which applies them on its next frame. A threading-mode or
 /// voice-detection (`show_vad`) change restarts the session, which can

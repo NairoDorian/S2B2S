@@ -1,38 +1,26 @@
-/* oxlint-disable i18next/no-literal-string */
-import { createSignal, onCleanup, onSettled, Show } from "solid-js";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "@/i18n/useTranslation";
-import { sessionToast as toast } from "@/lib/sessionToast";
-import { copyToClipboard } from "@/components/settings/history/clipboard";
-import { useSettings } from "@/hooks/useSettings";
-import { useLiveModeStore } from "@/stores/liveModeStore";
+import { isLiveActive, useLiveModeStore } from "@/stores/liveModeStore";
 import { OverlayScope } from "@/overlay/OverlayScope";
 import {
   OVERLAY_SCOPE_DEFAULTS,
   type ResolvedOverlayScope,
 } from "@/lib/overlayScope";
+import { joinStreamText } from "@/lib/streamReveal";
+import { commands, events, type StreamTextEvent } from "@/bindings";
+import { Mic, Activity } from "@/components/icons/lucide";
+import { useLiveCanvasMotionStore } from "@/stores/liveCanvasMotionStore";
+import { liveCanvasTiming } from "@/lib/liveCanvasMotion";
 import {
-  joinStreamText,
-  splitReveal,
-  finishReveal,
-  NO_REVEAL,
-  type StreamReveal,
-} from "@/lib/streamReveal";
-import type { StreamTextEvent } from "@/bindings";
-import {
-  Copy,
-  Trash2,
-  Cog,
-  ChevronUp,
-  ChevronDown,
-  Mic,
-  Activity,
-} from "@/components/icons/lucide";
+  CanvasTranscript,
+  stepCanvasText,
+  canvasCorrection,
+} from "@/lib/liveCanvasTranscript";
 
 interface LiveCanvasProps {
   onExit: () => void;
 }
-
 const LIVE_SCOPE_CONFIG: ResolvedOverlayScope = {
   ...OVERLAY_SCOPE_DEFAULTS,
   show_circular: true,
@@ -45,352 +33,598 @@ const LIVE_SCOPE_CONFIG: ResolvedOverlayScope = {
   circular_gain: 2.2,
   circular_floor: 0.1,
 };
-
-const fmtTime = (s: number) =>
-  `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+// Serialize native changes across rapid exits and re-entries.
+let windowUpdate: Promise<unknown> = Promise.resolve();
+// Window chrome follows the canvas; a failure throws so the caller reports it.
+const setCanvasWindow = async (active: boolean, recording: boolean) => {
+  const result = await commands.setLiveCanvasActive(active, recording);
+  if (result.status === "error") throw new Error(result.error);
+};
+// How long a burst of resize events is left to settle before the maximized
+// state is read back (a drag-resize fires one per frame).
+const MAXIMIZED_POLL_DEBOUNCE_MS = 150;
 
 export const LiveCanvas = (props: LiveCanvasProps) => {
   const { t } = useTranslation();
-  const { settings } = useSettings();
-
-  // Transcript state
+  const store = useLiveModeStore();
+  const motionStore = useLiveCanvasMotionStore();
+  const active = () => isLiveActive(store.status);
+  const [pending, setPending] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [visible, setVisible] = createSignal(!document.hidden);
+  const [telemetryOpen, setTelemetryOpen] = createSignal(false);
+  const [maximized, setMaximized] = createSignal(false);
+  const [primaryText, setPrimaryText] = createSignal<StreamTextEvent>({
+    committed: "",
+    tentative: "",
+  });
   const [streamText, setStreamText] = createSignal<StreamTextEvent>({
     committed: "",
     tentative: "",
   });
-  const [historyText, setHistoryText] = createSignal("");
-  const [speaking, setSpeaking] = createSignal(false);
-  const [elapsed, setElapsed] = createSignal(0);
-  const [wordCount, setWordCount] = createSignal(0);
-  const [speechMs, setSpeechMs] = createSignal(0);
-  const [recording, setRecording] = createSignal(false);
-
-  // UI interaction state
-  const [telemetryOpen, setTelemetryOpen] = createSignal(false);
-  const [hudVisible, setHudVisible] = createSignal(true);
-  const [copied, setCopied] = createSignal(false);
-
-  let hudTimeout: ReturnType<typeof setTimeout> | null = null;
-  let typewriterTimer: ReturnType<typeof setInterval> | null = null;
+  const [clearedPrefix, setClearedPrefix] = createSignal("");
+  const [arrival, setArrival] = createSignal<
+    { letter: string; removing?: boolean }[]
+  >([]);
+  const [shownPrefix, setShownPrefix] = createSignal("");
+  let surface: HTMLDivElement | undefined;
+  let analyzer: HTMLDivElement | undefined;
+  let particle: HTMLSpanElement | undefined;
+  let arrivalElement: HTMLSpanElement | undefined;
+  let paintFrame: number | null = null;
+  let flight: Animation | null = null;
+  let letterFade: Animation | null = null;
+  let typewriterTimer: ReturnType<typeof setTimeout> | null = null;
   let targetText: StreamTextEvent = { committed: "", tentative: "" };
-  let reveal: StreamReveal = NO_REVEAL;
-
-  const fullTranscript = () => {
-    const live = joinStreamText(
-      streamText().committed,
-      streamText().tentative,
-    ).trim();
-    if (historyText() && live) {
-      return `${historyText()}\n${live}`;
-    }
-    return historyText() || live;
+  let revealedText = "";
+  let deleting = false;
+  let correctionAnimations: Animation[] = [];
+  let correctionGeneration = 0;
+  let transcript = new CanvasTranscript();
+  const scopeConfig = (): ResolvedOverlayScope => ({
+    ...LIVE_SCOPE_CONFIG,
+    circular_signal_scale: motionStore.motion.signal_scale,
+    wave_signal_scale: motionStore.motion.signal_scale,
+  });
+  const wordsPerMinute = () => {
+    const elapsed = store.status.elapsed_ms ?? 0;
+    const settledCount = primaryText()
+      .committed.slice(clearedPrefix().length)
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+    return elapsed > 0 ? Math.round((settledCount * 60000) / elapsed) : 0;
   };
-
-  const wpm = () => {
-    if (speechMs() >= 2500 && wordCount() >= 3) {
-      return Math.round(wordCount() / (speechMs() / 60000));
-    }
-    return null;
+  const fullTranscript = () =>
+    joinStreamText(streamText().committed, streamText().tentative).trim();
+  const wordCount = () => fullTranscript().split(/\s+/).filter(Boolean).length;
+  const cancelArrival = () => {
+    correctionGeneration++;
+    for (const animation of correctionAnimations) animation.cancel();
+    correctionAnimations = [];
+    if (paintFrame !== null) cancelAnimationFrame(paintFrame);
+    paintFrame = null;
+    flight?.cancel();
+    letterFade?.cancel();
+    flight = null;
+    letterFade = null;
+    deleting = false;
   };
-
-  // Reset or bump HUD idle timer on mouse movement
-  const bumpUserActivity = () => {
-    setHudVisible(true);
-    if (hudTimeout) clearTimeout(hudTimeout);
-    hudTimeout = setTimeout(() => {
-      // Auto-fade only while speech is running: in silence the HUD is the
-      // only thing showing the session is alive, so it stays up.
-      if (speaking()) {
-        setHudVisible(false);
-      }
-    }, 3500);
-  };
-
-  const handleCopy = async () => {
-    const text = fullTranscript();
-    if (!text) return;
-    const ok = await copyToClipboard(text);
-    if (ok) {
-      setCopied(true);
-      toast.success(t("history.copied"));
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
   const handleClear = () => {
+    setClearedPrefix(
+      joinStreamText(primaryText().committed, primaryText().tentative),
+    );
     setStreamText({ committed: "", tentative: "" });
-    setHistoryText("");
-    setWordCount(0);
-    setSpeechMs(0);
-    setElapsed(0);
     targetText = { committed: "", tentative: "" };
-    reveal = NO_REVEAL;
+    revealedText = "";
+    cancelArrival();
+    setShownPrefix("");
+    setArrival([]);
+    if (typewriterTimer) clearTimeout(typewriterTimer);
+    typewriterTimer = null;
   };
-
+  const toggleRecording = async () => {
+    if (pending()) return;
+    setPending(true);
+    setError(null);
+    try {
+      if (!active()) {
+        transcript = new CanvasTranscript();
+        setClearedPrefix("");
+        setPrimaryText({ committed: "", tentative: "" });
+      }
+      const failure = await (active() ? store.stop() : store.start());
+      if (failure) setError(failure);
+    } catch (failure) {
+      setError(String(failure));
+    } finally {
+      setPending(false);
+    }
+  };
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
       props.onExit();
-    } else if (
-      (e.ctrlKey || e.metaKey) &&
-      e.key.toLowerCase() === "c" &&
-      !window.getSelection()?.toString()
-    ) {
-      e.preventDefault();
-      void handleCopy();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
       e.preventDefault();
       handleClear();
     }
   };
-
-  onSettled(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("mousemove", bumpUserActivity);
-
-    let unlistens: UnlistenFn[] = [];
-
-    const setupListeners = async () => {
-      // 1. Live stream text events from backend engine
-      const u1 = await listen<StreamTextEvent>("stream-text", (event) => {
-        targetText = event.payload;
-        // Direct reveal
-        reveal = finishReveal(
-          joinStreamText(targetText.committed, targetText.tentative),
-        );
-        setStreamText(splitReveal(reveal, targetText.committed.length));
-        bumpUserActivity();
+  const visibilityChanged = () => setVisible(!document.hidden);
+  // The canvas hides the native title bar, so it carries its own minimize and
+  // maximize controls; this keeps their icon in step with the window (a
+  // double-click on the drag strip maximizes too).
+  const refreshMaximized = () =>
+    getCurrentWindow()
+      .isMaximized()
+      .then(setMaximized)
+      .catch(() => {});
+  const minimizeWindow = () =>
+    getCurrentWindow()
+      .minimize()
+      .catch((failure) => setError(String(failure)));
+  const toggleMaximized = () =>
+    getCurrentWindow()
+      .toggleMaximize()
+      .then(refreshMaximized)
+      .catch((failure) => setError(String(failure)));
+  createEffect(
+    () => undefined,
+    () => {
+      let disposed = false;
+      document.documentElement.setAttribute("data-live-canvas", "");
+      window.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("visibilitychange", visibilityChanged);
+      void refreshMaximized();
+      let resizeSettle: ReturnType<typeof setTimeout> | null = null;
+      const resized = getCurrentWindow().onResized(() => {
+        if (resizeSettle) clearTimeout(resizeSettle);
+        resizeSettle = setTimeout(() => {
+          resizeSettle = null;
+          if (!disposed) void refreshMaximized();
+        }, MAXIMIZED_POLL_DEBOUNCE_MS);
       });
-
-      // 2. Speech stats
-      const u2 = await listen<{
-        speaking: boolean;
-        speech_ms: number;
-        word_count: number;
-      }>("speech-stats", (event) => {
-        setSpeaking(event.payload.speaking);
-        setSpeechMs(event.payload.speech_ms);
-        setWordCount(event.payload.word_count);
-      });
-
-      // 3. Recording lifecycle
-      const u3 = await listen("show-overlay", () => {
-        setRecording(true);
-      });
-
-      const u4 = await listen("recording-stopped", () => {
-        setRecording(false);
-        setSpeaking(false);
-        // Commit current text to history accumulator
-        const current = joinStreamText(
-          streamText().committed,
-          streamText().tentative,
-        ).trim();
-        if (current) {
-          setHistoryText((prev) => (prev ? `${prev} ${current}` : current));
-          setStreamText({ committed: "", tentative: "" });
+      void resized.catch(() => {});
+      // Raw primary hypotheses only: no extra slots, file headers or LLM output.
+      const subscription = events.streamTextEvent.listen(({ payload }) => {
+        if (!disposed && (payload.slot == null || payload.slot === 0)) {
+          setPrimaryText({
+            committed: transcript.stream(payload.committed, payload.tentative),
+            tentative: "",
+          });
         }
       });
-
-      unlistens = [u1, u2, u3, u4];
-    };
-
-    void setupListeners();
-
-    // Elapsed session counter
-    const timer = setInterval(() => {
-      if (
-        recording() ||
-        speaking() ||
-        useLiveModeStore().status.phase !== "idle"
-      ) {
-        setElapsed((e) => e + 1);
-      }
-    }, 1000);
-
-    onCleanup(() => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("mousemove", bumpUserActivity);
-      if (hudTimeout) clearTimeout(hudTimeout);
-      if (typewriterTimer) clearInterval(typewriterTimer);
-      clearInterval(timer);
-      for (const u of unlistens) u();
+      const finalizedSubscription = events.liveModeTranscriptEvent.listen(
+        ({ payload }) => {
+          if (!disposed && !payload.reset && payload.stable_appended)
+            setPrimaryText({
+              committed: transcript.finish(payload.stable_appended),
+              tentative: "",
+            });
+        },
+      );
+      void finalizedSubscription.catch((failure) => {
+        if (!disposed) setError(String(failure));
+      });
+      void subscription.catch((failure) => {
+        if (!disposed) setError(String(failure));
+      });
+      void store.initialize().catch((failure) => {
+        if (!disposed) setError(String(failure));
+      });
+      return () => {
+        disposed = true;
+        if (resizeSettle) clearTimeout(resizeSettle);
+        document.documentElement.removeAttribute("data-live-canvas");
+        window.removeEventListener("keydown", handleKeyDown);
+        document.removeEventListener("visibilitychange", visibilityChanged);
+        void resized.then((unlisten) => unlisten()).catch(() => {});
+        void subscription.then((unlisten) => unlisten()).catch(console.error);
+        void finalizedSubscription
+          .then((unlisten) => unlisten())
+          .catch(console.error);
+        windowUpdate = windowUpdate
+          .then(() => setCanvasWindow(false, false))
+          .catch(console.error);
+      };
+    },
+  );
+  createEffect(
+    () => active() && visible(),
+    (isRecording) => {
+      windowUpdate = windowUpdate
+        .then(() => setCanvasWindow(true, isRecording))
+        .catch((failure) => setError(String(failure)));
+    },
+  );
+  // One point, one arrival, no permanent animation loop. Read the actual glyph
+  // bounds after Solid paints so wrapping and window scaling stay accurate.
+  const animateArrival = () => {
+    cancelArrival();
+    paintFrame = requestAnimationFrame(() => {
+      paintFrame = null;
+      if (!surface || !analyzer || !particle || !arrivalElement) return;
+      const root = surface.getBoundingClientRect();
+      const source = analyzer.getBoundingClientRect();
+      const destination = arrivalElement.getBoundingClientRect();
+      const scale = root.width / surface.offsetWidth || 1;
+      const x0 = (source.x + source.width / 2 - root.x) / scale - 2;
+      const y0 = (source.y + source.height / 2 - root.y) / scale - 2;
+      const x1 = (destination.x + destination.width / 2 - root.x) / scale - 2;
+      const y1 = (destination.y + destination.height / 2 - root.y) / scale - 2;
+      const timing = liveCanvasTiming(motionStore.motion);
+      const { duration } = timing;
+      const landing = timing.travel / duration;
+      const disappeared = (timing.travel + timing.particleFade) / duration;
+      flight = particle.animate(
+        [
+          {
+            transform: `translate(${x0}px, ${y0}px) scale(1)`,
+            opacity: 1,
+            offset: 0,
+          },
+          {
+            transform: `translate(${x0 + (x1 - x0) * 0.12}px, ${y0 + (y1 - y0) * 0.12}px) scale(1)`,
+            opacity: 1,
+            offset: landing * 0.12,
+          },
+          {
+            transform: `translate(${x1}px, ${y1}px) scale(1)`,
+            opacity: 1,
+            offset: landing,
+          },
+          {
+            transform: `translate(${x1}px, ${y1}px) scale(2.4)`,
+            opacity: 0,
+            offset: disappeared,
+          },
+          {
+            transform: `translate(${x1}px, ${y1}px) scale(2.4)`,
+            opacity: 0,
+            offset: 1,
+          },
+        ],
+        { duration, easing: "linear" },
+      );
+      letterFade = arrivalElement.animate([{ opacity: 0 }, { opacity: 1 }], {
+        delay: timing.characterStart,
+        duration: timing.characterFade,
+        easing: "ease-out",
+        fill: "both",
+      });
+      flight.onfinish = () => {
+        flight = null;
+        const latest = joinStreamText(
+          targetText.committed,
+          targetText.tentative,
+        );
+        if (typewriterTimer === null && revealedText !== latest) {
+          typewriterTimer = setTimeout(tickReveal, 0);
+        }
+      };
     });
+  };
+  // Fade the glyphs at `indices` of the settled row; resolves when all finish.
+  const fade = (
+    indices: number[],
+    from: number,
+    to: number,
+    duration: number,
+  ) => {
+    const glyphs =
+      surface?.querySelectorAll(".live-canvas-prefix-letter") ?? [];
+    correctionAnimations = indices.flatMap((index) =>
+      glyphs[index]
+        ? [
+            glyphs[index].animate([{ opacity: from }, { opacity: to }], {
+              duration,
+              fill: "both",
+              easing: "linear",
+            }),
+          ]
+        : [],
+    );
+    return Promise.all(
+      correctionAnimations.map((animation) => animation.finished),
+    );
+  };
+  const animateCorrection = (
+    plan: NonNullable<ReturnType<typeof canvasCorrection>>,
+  ) => {
+    cancelArrival();
+    deleting = true;
+    const generation = correctionGeneration;
+    // Put the completed arrival into the normal glyph row before morphing.
+    setShownPrefix(revealedText);
+    setArrival([]);
+    paintFrame = requestAnimationFrame(() => {
+      paintFrame = null;
+      const motion = motionStore.motion;
+      void fade(plan.oldChanged, 1, 0, motion.correction_out_ms)
+        .then(() => {
+          if (generation !== correctionGeneration) return;
+          for (const animation of correctionAnimations) animation.cancel();
+          correctionAnimations = [];
+          revealedText = plan.corrected;
+          setShownPrefix(plan.corrected);
+          setStreamText({ committed: plan.corrected, tentative: "" });
+          paintFrame = requestAnimationFrame(() => {
+            paintFrame = null;
+            void fade(plan.newChanged, 0, 1, motion.correction_in_ms)
+              .then(() => {
+                if (generation !== correctionGeneration) return;
+                for (const animation of correctionAnimations)
+                  animation.cancel();
+                correctionAnimations = [];
+                deleting = false;
+                typewriterTimer = setTimeout(tickReveal, 0);
+              })
+              .catch(() => {});
+          });
+        })
+        .catch(() => {});
+    });
+  };
+  // One timeout only while a new primary hypothesis is being revealed.
+  const tickReveal = () => {
+    typewriterTimer = null;
+    // This canvas is an explicitly selected particle experience. OS reduced
+    // motion must not silently replace its user-tuned reveal with a text dump.
+    // Hidden windows pause the queue instead of flushing it in the background.
+    if (!visible()) return;
+    const full = joinStreamText(targetText.committed, targetText.tentative);
+    const correction = canvasCorrection(revealedText, full);
+    if (correction) {
+      animateCorrection(correction);
+      return;
+    }
+    const step = stepCanvasText(revealedText, full);
+    if (!step) return;
+    const previous = revealedText;
+    revealedText = step.next;
+    const { letter } = step;
+    setStreamText({
+      committed: step.next,
+      tentative: "",
+    });
+    const moving = !!letter.trim();
+    setShownPrefix(moving ? previous : step.next);
+    setArrival(moving ? [{ letter }] : []);
+    if (moving) animateArrival();
+    else {
+      cancelArrival();
+      if (revealedText !== full) typewriterTimer = setTimeout(tickReveal, 24);
+    }
+  };
+  createEffect(
+    () => [primaryText(), clearedPrefix(), visible()] as const,
+    ([primary, prefix]) => {
+      const full = joinStreamText(primary.committed, primary.tentative);
+      const offset = prefix && full.startsWith(prefix) ? prefix.length : 0;
+      targetText = {
+        committed: primary.committed.slice(
+          Math.min(offset, primary.committed.length),
+        ),
+        tentative: primary.tentative.slice(
+          Math.max(0, offset - primary.committed.length),
+        ),
+      };
+      // Take the newest hypothesis on the next edit without interrupting
+      // the current particle, glyph arrival or backspace fade.
+      if (
+        typewriterTimer === null &&
+        paintFrame === null &&
+        !deleting &&
+        flight?.playState !== "running"
+      )
+        tickReveal();
+    },
+  );
+  onCleanup(() => {
+    if (typewriterTimer) clearTimeout(typewriterTimer);
+    cancelArrival();
   });
-
-  const activeModel = () =>
-    settings()?.selected_model?.split("/").pop()?.replace(".gguf", "") ||
-    "Auto";
-
   return (
     <div
-      class="fixed inset-0 z-50 bg-[#0b0e11] text-[#e6f1f3] flex flex-col justify-between overflow-hidden select-none font-sans"
-      onMouseMove={bumpUserActivity}
+      ref={(el) => (surface = el)}
+      class="live-canvas fixed inset-0 z-50 text-[#e6f1f3] overflow-hidden select-none font-sans"
     >
-      {/* Top HUD bar (auto-fades during speech or idle) */}
-      <header
-        class={`flex items-center justify-between px-6 py-4 border-b border-[#e6f1f3]/10 transition-opacity duration-200 z-10 ${
-          hudVisible() ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-      >
-        {/* Left status cluster */}
-        <div class="flex items-center gap-3">
-          <div class="flex items-center gap-2 px-2.5 py-1 bg-[#1fe0ff]/10 border border-[#1fe0ff]/30 text-xs font-mono">
-            <span
-              class={`w-2 h-2 ${
-                speaking() || recording()
-                  ? "bg-[#1fe0ff] animate-pulse"
-                  : "bg-mid-gray/60"
-              }`}
-            />
-            <span class="text-[#e6f1f3] uppercase font-semibold">
-              {speaking()
-                ? t("overlay.listening")
-                : recording()
-                  ? t("overlay.processing")
-                  : "READY"}
-            </span>
-          </div>
-          <span class="text-xs font-mono text-mid-gray">
-            {fmtTime(elapsed())}
-          </span>
-          <span class="text-xs font-mono text-mid-gray/70 border-s border-mid-gray/20 ps-3">
-            {activeModel()}
-          </span>
-        </div>
-
-        {/* Right action controls */}
-        <div class="flex items-center gap-2">
+      <span
+        ref={(el) => (particle = el)}
+        class="live-canvas-particle"
+        aria-hidden="true"
+      />
+      <header data-tauri-drag-region class="live-canvas-drag" />
+      <div class="live-canvas-exit-zone">
+        <button
+          type="button"
+          onClick={minimizeWindow}
+          class="live-canvas-exit"
+          aria-label={t("settings.liveCanvas.window.minimize")}
+          title={t("settings.liveCanvas.window.minimize")}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={toggleMaximized}
+          class="live-canvas-exit"
+          aria-label={
+            maximized()
+              ? t("settings.liveCanvas.window.restore")
+              : t("settings.liveCanvas.window.maximize")
+          }
+          title={
+            maximized()
+              ? t("settings.liveCanvas.window.restore")
+              : t("settings.liveCanvas.window.maximize")
+          }
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <Show
+              when={maximized()}
+              fallback={<rect x="5" y="5" width="14" height="14" />}
+            >
+              <path d="M8 8V5h11v11h-3M5 8h11v11H5z" />
+            </Show>
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={props.onExit}
+          class="live-canvas-exit"
+          aria-label={t("common.close")}
+          title={`${t("common.close")} (Esc)`}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 3h7v7M21 3l-9 9M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6" />
+          </svg>
+        </button>
+      </div>
+      <main>
+        <div ref={(el) => (analyzer = el)} class="live-canvas-analyzer">
+          <OverlayScope
+            rateHz={30}
+            ready={active() && visible()}
+            quiet={!active()}
+            config={scopeConfig()}
+          />
           <button
             type="button"
-            onClick={handleCopy}
-            title={`${t("common.copy")} (Ctrl+C)`}
-            class="flex items-center gap-1.5 px-3 py-1 text-xs border border-mid-gray/30 bg-mid-gray/10 hover:border-[#1fe0ff] hover:text-[#1fe0ff] transition-colors cursor-pointer"
+            onClick={toggleRecording}
+            class="live-canvas-microphone"
+            aria-label={
+              active()
+                ? t("settings.liveMode.stop")
+                : t("settings.liveMode.start")
+            }
+            aria-pressed={active() ? "true" : "false"}
+            disabled={
+              pending() ||
+              store.status.phase === "starting" ||
+              store.status.phase === "stopping"
+            }
           >
-            <Copy width={13} height={13} />
-            <span>{copied() ? t("history.copied") : t("common.copy")}</span>
+            <Show when={!active()}>
+              <Mic width={24} height={24} />
+            </Show>
           </button>
-
+        </div>
+        <div class="live-canvas-transcript transcript-text select-text break-words">
+          <Show when={fullTranscript()}>
+            <div>
+              <span>
+                <For each={Array.from(shownPrefix())}>
+                  {(letter) => (
+                    <span class="live-canvas-prefix-letter">{letter}</span>
+                  )}
+                </For>
+              </span>
+              <For each={arrival()}>
+                {(glyph) => (
+                  <span
+                    ref={(el) => (arrivalElement = el)}
+                    class="live-canvas-arriving-letter"
+                    style={{ opacity: 0 }}
+                  >
+                    {glyph.letter}
+                  </span>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </main>
+      <Show when={error() || store.status.error}>
+        <p role="alert" class="live-canvas-error">
+          {error() || store.status.error}
+        </p>
+      </Show>
+      <footer>
+        <div class="live-canvas-tools">
           <button
             type="button"
             onClick={handleClear}
+            disabled={!fullTranscript()}
+            aria-label={t("common.clear")}
             title={`${t("common.clear")} (Ctrl+L)`}
-            class="flex items-center gap-1.5 px-3 py-1 text-xs border border-mid-gray/30 bg-mid-gray/10 hover:border-red-500/60 hover:text-red-400 transition-colors cursor-pointer"
           >
-            <Trash2 width={13} height={13} />
-            <span>{t("common.clear")}</span>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20.5 8A9 9 0 1 0 21 15M21 3v5h-5M9 9l6 6M15 9l-6 6" />
+            </svg>
           </button>
-
           <button
             type="button"
-            onClick={props.onExit}
-            title={`${t("settings.title")} (Esc)`}
-            class="flex items-center gap-1.5 px-3 py-1 text-xs border border-mid-gray/30 bg-mid-gray/10 hover:border-[#1fe0ff] hover:text-[#1fe0ff] transition-colors cursor-pointer ms-2"
+            onClick={() => setTelemetryOpen(!telemetryOpen())}
+            aria-label={t("settings.liveCanvas.telemetry.title")}
+            title={t("settings.liveCanvas.telemetry.title")}
+            aria-expanded={telemetryOpen() ? "true" : "false"}
+            aria-controls="live-canvas-telemetry"
           >
-            <Cog width={13} height={13} />
-            <span>ESC</span>
+            <Activity width={18} height={18} />
           </button>
         </div>
-      </header>
-
-      {/* Center Stage: Circular FFT Scope & Sound Geometry */}
-      <main class="flex-1 flex flex-col items-center justify-center relative px-6">
-        <div class="relative flex items-center justify-center">
-          {/* Circular Scope Canvas */}
-          <OverlayScope
-            rateHz={30}
-            ready={true}
-            quiet={!speaking()}
-            config={LIVE_SCOPE_CONFIG}
-          />
-
-          {/* Center microphone glyph when quiet */}
-          <Show when={!speaking()}>
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20 text-[#1fe0ff]">
-              <Mic width={32} height={32} />
-            </div>
-          </Show>
-        </div>
-
-        {/* Live Transcription Display Area */}
-        <div class="w-full max-w-4xl mx-auto mt-8 px-6 text-center z-10">
-          <div class="min-h-[100px] flex flex-col items-center justify-center">
-            <Show
-              when={fullTranscript().length > 0}
-              fallback={
-                <p class="text-lg md:text-xl text-mid-gray/50 italic font-light tracking-wide">
-                  {t("overlay.awaitingText")}
-                </p>
-              }
-            >
-              <div class="text-xl md:text-2xl font-sans tracking-wide leading-relaxed text-[#e6f1f3]">
-                <Show when={historyText()}>
-                  <span class="text-[#e6f1f3]/70 me-2">{historyText()}</span>
-                </Show>
-                <span class="text-[#e6f1f3] font-medium">
-                  {streamText().committed}
-                </span>
-                <span class="text-[#1fe0ff] ps-0.5">
-                  {streamText().tentative}
-                </span>
-                <span class="inline-block w-2 h-5 bg-[#1fe0ff] ms-1 align-middle animate-pulse" />
-              </div>
-            </Show>
-          </div>
-        </div>
-      </main>
-
-      {/* Collapsible Telemetry Drawer at Bottom */}
-      <footer class="flex flex-col items-center border-t border-[#e6f1f3]/10 bg-[#0b0e11] z-10">
-        {/* Drawer toggle handle */}
-        <button
-          type="button"
-          onClick={() => setTelemetryOpen(!telemetryOpen())}
-          class="flex items-center gap-1.5 px-4 py-1 text-[11px] font-mono text-mid-gray hover:text-[#1fe0ff] transition-colors cursor-pointer border-x border-b border-mid-gray/20 bg-mid-gray/5 -mt-[1px]"
-        >
-          <Activity width={11} height={11} />
-          <span>TELEMETRY</span>
-          <Show
-            when={telemetryOpen()}
-            fallback={<ChevronUp width={12} height={12} />}
-          >
-            <ChevronDown width={12} height={12} />
-          </Show>
-        </button>
-
-        {/* Telemetry drawer content */}
         <Show when={telemetryOpen()}>
-          <div class="w-full max-w-4xl px-8 py-3 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono text-mid-gray">
-            <div class="flex flex-col">
-              <span class="text-[10px] text-mid-gray/70 uppercase">Rate</span>
-              <span class="text-[#e6f1f3] text-sm font-semibold">
-                {wpm() ? `${wpm()} WPM` : "—"}
-              </span>
+          <div id="live-canvas-telemetry" class="live-canvas-telemetry">
+            <div>
+              <span>{t("settings.liveCanvas.telemetry.words")}</span>
+              <strong>{wordCount()}</strong>
             </div>
-
-            <div class="flex flex-col">
-              <span class="text-[10px] text-mid-gray/70 uppercase">Words</span>
-              <span class="text-[#e6f1f3] text-sm font-semibold">
-                {wordCount()}
-              </span>
+            <div>
+              <span>{t("settings.liveCanvas.telemetry.wpm")}</span>
+              <strong>{wordsPerMinute()}</strong>
             </div>
-
-            <div class="flex flex-col">
-              <span class="text-[10px] text-mid-gray/70 uppercase">Speech</span>
-              <span class="text-[#e6f1f3] text-sm font-semibold">
-                {speechMs() > 0 ? `${(speechMs() / 1000).toFixed(1)}s` : "0.0s"}
-              </span>
+            <div>
+              <span>{t("settings.liveCanvas.telemetry.speech")}</span>
+              <strong>
+                {`${((store.status.current_chunk_speech_ms ?? 0) / 1000).toFixed(1)}s`}
+              </strong>
             </div>
-
-            <div class="flex flex-col">
-              <span class="text-[10px] text-mid-gray/70 uppercase">Status</span>
-              <span
-                class={`text-sm font-semibold ${
-                  speaking() ? "text-[#1fe0ff]" : "text-mid-gray"
-                }`}
-              >
-                {speaking() ? "ACTIVE" : "SILENCE"}
-              </span>
+            <div>
+              <span>{t("settings.liveCanvas.telemetry.elapsed")}</span>
+              <strong>
+                {`${Math.floor((store.status.elapsed_ms ?? 0) / 1000)}s`}
+              </strong>
             </div>
           </div>
         </Show>
@@ -398,5 +632,4 @@ export const LiveCanvas = (props: LiveCanvasProps) => {
     </div>
   );
 };
-
 export default LiveCanvas;

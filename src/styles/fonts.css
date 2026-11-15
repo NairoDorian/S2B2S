@@ -1,0 +1,52 @@
+/* Official, unmodified Libron v0.31 webfonts. License and provenance ship
+   beside the files in public/fonts/libron. No network or OS install needed. */
+@font-face {
+  font-family: "Libron";
+  src: url("/fonts/libron/Libron-Regular.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Libron";
+  src: url("/fonts/libron/Libron-Bold.woff2") format("woff2");
+  font-weight: 600 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Libron";
+  src: url("/fonts/libron/Libron-Italic.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Libron";
+  src: url("/fonts/libron/Libron-BoldItalic.woff2") format("woff2");
+  font-weight: 600 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  --app-font-ui:
+    "Libron", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial,
+    sans-serif;
+  --app-font-menus: var(--app-font-ui);
+  --app-font-overlay: var(--app-font-ui);
+  --app-font-transcript: var(--app-font-ui);
+  --app-font-mono: var(--app-font-ui);
+}
+
+.app-menu {
+  font-family: var(--app-font-menus);
+}
+
+/* Shared by both webviews; the explicit role wins over legacy pre/mono rules. */
+.transcript-text {
+  font-family: var(--app-font-transcript);
+}

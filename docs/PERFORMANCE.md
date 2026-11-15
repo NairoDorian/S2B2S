@@ -89,6 +89,22 @@ Anything added to startup goes after that line or on its own thread.
 
 ## Known costs to keep in mind
 
+- Typography bundles four Libron WOFF2 faces (344,584 bytes total), loaded
+  locally and only when used by a webview. A font change writes CSS variables,
+  mirrors the preference for first paint, and persists on the existing blocking
+  pool with one `typography-changed` event to both windows. Chart labels reuse
+  the existing appearance observer and repaint once when a font finishes
+  loading; no new poll, dedicated thread, dependency or audio-path work.
+- Live Canvas adds no thread: it keeps the existing `overlay-scope` worker
+  alive across Live Mode's chunk gaps (it naps in 20 ms steps, `MAX_NAP`,
+  between two chunks of a session the visible canvas is showing; with no
+  session the worker stops as before) instead of starting a second analyser. Its text animation
+  runs one Web Animation per arriving character and one timeout while a new
+  hypothesis is revealed — no permanent animation loop. The maximize icon is
+  re-read once per settled burst of resize events (150 ms debounce). The main
+  window is now created transparent so the canvas can feather its edges; the
+  WebView2 composition cost of that with the canvas closed has not been
+  measured yet.
 - The Live FFT tap costs the audio consumer thread one atomic load per
   chunk while the page is closed and a `try_lock` + memcpy into a 768 KB ring
   while it runs (never a wait). The `live-fft` worker exists only during a
