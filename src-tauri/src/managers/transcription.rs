@@ -888,7 +888,11 @@ impl TranscriptionManager {
                 .as_ref()
                 .map(transcribe_device_label)
                 .unwrap_or_else(|| "automatic".to_string());
-            let model_options = ModelOptions { backend, device };
+            let model_options = ModelOptions {
+                backend,
+                device,
+                ..Default::default()
+            };
 
             let model = self
                 .load_transcribe_model(
@@ -910,7 +914,9 @@ impl TranscriptionManager {
             // loaded model's real ones (GGUF metadata) so badges/gating
             // reflect runtime truth, not the pre-download probe. The
             // load-completed event below triggers the frontend refresh.
-            let caps = session.model().capabilities();
+            let caps = session.model().capabilities().map_err(|e| {
+                anyhow::anyhow!("failed to read capabilities of model {model_id}: {e}")
+            })?;
             self.model_manager.set_runtime_capabilities(
                 model_id,
                 caps.supports_streaming,
@@ -1312,23 +1318,35 @@ impl TranscriptionManager {
         let (supports_streaming, supports_translate, languages) = match &engine {
             LoadedEngine::TranscribeCpp(session) => {
                 let model = session.model();
-                let caps = model.capabilities();
-                info!(
-                    "Live preview: model '{}' slot={} arch='{}' variant='{}' \
-                     supports_streaming={} supports_translate={} languages={:?}",
-                    model_id,
-                    slot,
-                    model.arch(),
-                    model.variant(),
-                    caps.supports_streaming,
-                    caps.supports_translate,
-                    caps.languages,
-                );
-                (
-                    caps.supports_streaming,
-                    caps.supports_translate,
-                    caps.languages,
-                )
+                match model.capabilities() {
+                    Ok(caps) => {
+                        info!(
+                            "Live preview: model '{}' slot={} arch='{}' variant='{}' \
+                             supports_streaming={} supports_translate={} languages={:?}",
+                            model_id,
+                            slot,
+                            model.arch(),
+                            model.variant(),
+                            caps.supports_streaming,
+                            caps.supports_translate,
+                            caps.languages,
+                        );
+                        (
+                            caps.supports_streaming,
+                            caps.supports_translate,
+                            caps.languages,
+                        )
+                    }
+                    Err(e) => {
+                        // This worker owns no Result to bubble into, and the
+                        // model is already loaded: report the failure the way a
+                        // non-streaming model is reported, so the branch below
+                        // restores the engine and the caller sees NeverStarted
+                        // instead of a worker panic.
+                        warn!("model '{model_id}' capabilities unavailable: {e}");
+                        (false, false, Vec::new())
+                    }
+                }
             }
         };
 
@@ -1671,7 +1689,9 @@ impl TranscriptionManager {
         let result = (|| -> Result<(String, serde_json::Value)> {
             let LoadedEngine::TranscribeCpp(session) = &mut engine;
             let model = session.model();
-            let caps = model.capabilities();
+            let caps = model
+                .capabilities()
+                .map_err(|e| anyhow::anyhow!("model capabilities: {e}"))?;
             let plan = transcribe_cpp_run_plan(
                 settings.translate_to_english,
                 &language,
@@ -2236,7 +2256,9 @@ impl TranscriptionManager {
             let (model_supports_translate, model_languages) = {
                 let LoadedEngine::TranscribeCpp(session) = &engine;
                 let model = session.model();
-                let caps = model.capabilities();
+                let caps = model
+                    .capabilities()
+                    .map_err(|e| anyhow::anyhow!("model capabilities: {e}"))?;
                 let model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
                 model_is_whisper = model.arch() == "whisper";
                 debug!(
@@ -3621,6 +3643,7 @@ impl TranscriptionManager {
         let benchmark_model_options = ModelOptions {
             backend: target_backend,
             device: target_device,
+            ..Default::default()
         };
         info!(
             "Benchmarking quantizations for '{}' using target backend {:?} (device: {:?}), {} timed runs after one discarded warmup",
@@ -3802,6 +3825,7 @@ impl TranscriptionManager {
         let benchmark_model_options = ModelOptions {
             backend: target_backend,
             device: target_device,
+            ..Default::default()
         };
         info!(
             "Benchmarking single quantization '{}' using target backend {:?} (device: {:?}), {} timed runs after one discarded warmup",
@@ -3892,7 +3916,9 @@ impl TranscriptionManager {
             effective_language_for_model(settings, self.model_manager.as_ref(), model_id);
         let LoadedEngine::TranscribeCpp(session) = engine;
         let model = session.model();
-        let caps = model.capabilities();
+        let caps = model
+            .capabilities()
+            .map_err(|e| anyhow::anyhow!("model capabilities: {e}"))?;
         let plan = transcribe_cpp_run_plan(
             settings.translate_to_english,
             &language,
@@ -4067,6 +4093,7 @@ impl TranscriptionManager {
         let model_options = ModelOptions {
             backend: target_backend,
             device: target_device,
+            ..Default::default()
         };
         info!(
             "Streaming benchmark for '{}' using target backend {:?} (device: {:?}) at latency '{}', {} timed runs of {} ms feeds after one discarded warmup",
@@ -4283,7 +4310,11 @@ impl TranscriptionManager {
         // Same resolution as the primary load, so a per-model backend override
         // applies to a Multi-STT extra exactly as it does to the primary model.
         let (backend, device) = resolve_model_backend(&get_settings(&self.app_handle), model_id);
-        let model_options = ModelOptions { backend, device };
+        let model_options = ModelOptions {
+            backend,
+            device,
+            ..Default::default()
+        };
         self.create_engine_with_options(model_id, model_path, &model_options)
     }
 }
@@ -4316,7 +4347,9 @@ fn transcribe_with_engine(
 
     let LoadedEngine::TranscribeCpp(session) = engine;
     let model = session.model();
-    let caps = model.capabilities();
+    let caps = model
+        .capabilities()
+        .map_err(|e| anyhow::anyhow!("model capabilities: {e}"))?;
     let model_supports_translate = caps.supports_translate;
     let supported_languages = caps.languages.clone();
     let model_is_whisper = model.arch() == "whisper";
