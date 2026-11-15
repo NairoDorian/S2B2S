@@ -22,6 +22,33 @@ Two consequences for every change you make here:
 > several speech-to-text models in parallel (the primary plus 1 to 8 extras) and
 > optionally merging their outputs via an LLM. See the Architecture Overview and Settings System sections below.
 
+## Paired development with transcribe.cpp
+
+ZER0 and `C:/Users/Z/Downloads/PROJECTS/transcribe-fork` are complementary
+projects. Before changing capture preprocessing, VAD/RNNoise, stream defaults,
+model capabilities, bindings or the engine integration, read
+[`docs/TRANSCRIBE_CPP_INTEGRATION.md`](docs/TRANSCRIBE_CPP_INTEGRATION.md), locate
+the engine's relevant worktree, and read its `AGENTS.md`,
+`docs/zer0-engine-integration.md` and current VAD plan. Check the C++ behavior
+against this app's real Rust call sites, including defaulted StreamOptions.
+
+Use `git worktree list` and inspect both branch/dirty states; the feature may be
+on `codex/vad-integration` while the canonical engine folder remains on main.
+Verify Cargo/native build provenance instead of assuming a local engine edit
+is loaded. Preserve unrelated work and update both integration notes when
+ownership or a shared contract changes. See the paired note for source maps
+and the capture, clock, FFT, history and Multi-STT compatibility requirements.
+
+The engine's November 2026 state (upstream 0.4.2 + ggml 1.0 sync, the language
+allowlist, the CPU Whisper fix, the VAD situation) and the pending app work it
+enables are in
+[`docs/2026-11-transcribe-fork-handoff.md`](docs/2026-11-transcribe-fork-handoff.md).
+The user asked for that work on 2026-11-15: the execution plan (engine bump,
+engine-owned VAD/denoise, "languages I speak", the upstream Handy intake through
+v0.10.1, Live Canvas, the llama.cpp CUDA fix) is
+[`docs/2026-11-zer0-update-master-plan.md`](docs/2026-11-zer0-update-master-plan.md).
+Follow its phase order and fill in its ledger as commits land.
+
 ## Performance first
 
 This is a real-time tool. Read [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
@@ -505,7 +532,21 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   - `live-canvas/` - The "Live Canvas" the Sidebar's button opens over Live Mode
     (`LiveCanvas.tsx`), replacing the whole settings window: the overlay scope,
     the session controls and the live transcript, read from
-    `stores/liveModeStore.ts`
+    `stores/liveModeStore.ts`. Each character is carried in from the analyser
+    by one particle and corrections fade in place (`lib/liveCanvasTranscript.ts`,
+    timings in `lib/liveCanvasMotion.ts` + `stores/liveCanvasMotionStore.ts`,
+    a localStorage pref tuned on the `settings/live-canvas/` page). While it is
+    mounted, `set_live_canvas_active` removes the window decorations and shadow
+    (the main window is created `transparent(true)` so the canvas can feather
+    its edges; `:root` paints the opaque theme background everywhere else) and
+    keeps the overlay scope worker running across Live Mode's chunk gaps
+    (`LiveFftManager::set_canvas_active`), so the canvas shares the overlay's
+    analyser instead of opening a second one. The canvas draws its own
+    minimize / maximize and exit controls and a drag strip
+    (`core:window:allow-{start-dragging,minimize,toggle-maximize}`)
+  - `settings/FontSettings.tsx` - About → Fonts: the five typography roles
+    (`AppSettings.typography`, `change_typography_setting`, `lib/typography.ts`,
+    bundled Libron in `public/fonts/libron/`); see `docs/TYPOGRAPHY.md`
   - `whats-new/` - Release-notes modal (`releaseNotes.ts` globs
     `src/content/release-notes/*.md`)
   - `update-checker/` - App update notifications (`portableInstaller.ts`)
@@ -780,6 +821,11 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `mic_idle_timeout_value` / `mic_idle_timeout_unit` / `mic_idle_infinite` - Lazy microphone close timeout (was a fixed 30 s upstream)
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
 - `custom_accent_color` - `#rrggbb` or `null` for the neon-cyan default; persisted through `change_custom_accent_color_setting`
+- `typography` - One nested `TypographySettings` struct (`ui`, `menus`,
+  `overlay`, `transcript`, `mono`; `inherit` follows the interface font, Libron
+  by default), normalized and persisted on the blocking pool by
+  `change_typography_setting`, which emits one `typography-changed` event to
+  both webviews; see `docs/TYPOGRAPHY.md`
 - `native_streaming_latency_presets` - Per-model latency preset (`fastest` →
   `accurate`) selecting one of the family's trained settings. The UI shows it
   in ms (`latency_point`): Nemotron 3.5 80 / 320 / 560 / 1120, Nemotron Speech
@@ -1466,11 +1512,10 @@ render so no raw keys are painted.
 > - `jsPlugins` is an alpha oxlint API. If it ever stops loading the plugin,
 >   oxlint fails the config outright (exit 1) rather than silently skipping the
 >   rule, so a regression surfaces in CI instead of leaking hardcoded strings.
-> - `src/` carries **no `i18next/no-literal-string` suppression on any settings
->   page or setting component**, and it should stay that way; the only two are the
->   Sidebar's "Live Canvas" label and the Live Canvas window's own chrome — fixed
->   labels with no copy behind them (`Sidebar.tsx:1`,
->   `live-canvas/LiveCanvas.tsx:1`). Every other suppression is file-level
+> - `src/` carries **no `i18next/no-literal-string` suppression at all**, and it
+>   should stay that way (the Sidebar's Live Canvas button and the Live Canvas
+>   chrome, the last two, moved to translation keys on 2026-11-15). Every
+>   suppression is file-level
 >   `jsx-a11y` on a custom widget — `ui/Dialog.tsx`, `ui/Select.tsx`,
 >   `ui/Toaster.tsx`, `Sidebar.tsx`, `HotkeySidebar.tsx`,
 >   `onboarding/ModelCard.tsx` and the status-bar popovers

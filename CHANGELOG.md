@@ -434,9 +434,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `src-tauri/src/managers/native_streaming_latency.rs`) — and the same control
   sets each streaming-capable **Multi-STT extra slot's** latency as that slot's
   own override. A native-streaming benchmark joins the quantization one.
-- **Live Canvas (2026-10-02).** A full-window surface the Sidebar opens over
-  Live Mode, replacing the settings window: the overlay scope, the session
-  controls and the live transcript, read from one store.
+- **Live Canvas (2026-10-02, finished 2026-11-15).** A full-window surface the
+  Sidebar opens over Live Mode, replacing the settings window: the overlay
+  scope, the session controls and the live transcript, read from one store.
+  Each character now arrives from the analyser on a particle and corrections
+  fade in place; a **Live Canvas** settings page tunes the timings and the
+  analyser's signal scale. The window drops its title bar while the canvas is
+  open and the canvas carries its own drag strip and minimize / maximize / exit
+  controls; it shares the overlay's analyser instead of opening a second
+  microphone, across Live Mode's chunk rotations too. Help and QuickHelp
+  describe it, and its labels are translated (no `no-literal-string`
+  suppression is left in `src/`).
+- **Font preferences (2026-11-15).** About → Fonts sets five roles — interface,
+  menus, overlay, transcripts, code and numbers — independently; the bundled
+  Libron (four WOFF2 faces, 345 KB, loaded locally) is the default and any
+  installed family can be typed in. Changes apply to both webviews at once.
+  See `docs/TYPOGRAPHY.md`.
 - **Headless STT benchmark harness (2026-09-20).** `scripts/bench-stt.ts`
   (`bun run bench:stt -- --exe … --wav … --output …`) replays a WAV through the
   headless path for each selected installed model × every device
@@ -446,6 +459,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **transcribe.cpp fork moved to `cfb07a12` (2026-11-15), crate 0.4.2.** The
+  engine now carries upstream 0.4.2 and ggml 1.0, the CPU Whisper fix (every
+  CPU Whisper transcript on the old engine was noise), the language allowlist
+  API and the native replacements for the app's VAD and noise suppression
+  (adopted in later steps of `docs/2026-11-zer0-update-master-plan.md`).
+  `Model::capabilities()` now returns a `Result`; `ModelOptions` gained
+  `no_mmap`, left at its default, so CPU weights are memory-mapped (RSS shows
+  less private memory; a loaded model's file cannot be replaced in place).
+  `log` and `serde_json` moved to the versions the engine requires.
 - **Dependencies moved to their newest prereleases (2026-10-05), and the Tauri
   core is now pinned rather than merely lagged.** A `bun run update-deps
 -- --prerelease` pass took `solid-js` / `@solidjs/web` 2.0.0-rc.9 → **rc.13**,
@@ -709,6 +731,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A dev run could silently stop compiling the transcribe.cpp fork
+  (2026-11-15).** `scripts/check-transcribe-deps.ts` moved the pin with
+  `cargo update -p transcribe-cpp`, which keeps every other crate locked. When
+  the fork's new tip needed a newer `log` than the lock held, cargo could not
+  apply the `[patch]`, recorded the fork under `[[patch.unused]]` and locked
+  crates.io's `transcribe-cpp` 0.4.1 instead — without an error, and the
+  script's own check then matched the hash inside the unused patch and reported
+  "up to date". The script now reads back the `[[package]]` entries, retries
+  with `--recursive` when the fork is not what got locked, and restores the
+  original lock with a warning when that fails too.
 - **`bun run typecheck` was red for the bun test files (2026-09-14).** The
   `*.test.ts` files under `src/` (migrated to `bun test` earlier) imported
   `bun:test` with no type package installed, so `tsc -b` failed tree-wide.
