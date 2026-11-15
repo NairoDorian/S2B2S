@@ -592,7 +592,10 @@ pub struct LlamaSettings {
     /// Start the server when a request targets it and it is not running.
     pub start_on_demand: bool,
     pub stop_on_exit: bool,
-    /// Preferred release asset: `auto`, `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`.
+    /// Preferred release asset: `auto` (NVIDIA GPU → `cuda`, else `cpu`),
+    /// `cuda` (the newest CUDA build of the release the driver supports), an
+    /// exact `cuda-X.Y` build, `vulkan` or `cpu`. See
+    /// `llama_releases::pick_asset`.
     pub backend: String,
     /// `latest`, `stable` or `nightly` for the release list.
     pub channel: String,
@@ -683,7 +686,9 @@ impl LlamaSettings {
         } else {
             alias.into()
         };
-        if !["auto", "cuda-13.4", "cuda-12.4", "vulkan", "cpu"].contains(&self.backend.as_str()) {
+        if !["auto", "cuda", "vulkan", "cpu"].contains(&self.backend.as_str())
+            && crate::llama_releases::cuda_build_version(&self.backend).is_none()
+        {
             self.backend = "auto".into();
         }
         if !["latest", "stable", "nightly"].contains(&self.channel.as_str()) {
@@ -1914,7 +1919,7 @@ fn default_model() -> String {
 /// carry it and no store ever arrives at it from below. The trailing
 /// `max(CURRENT_SETTINGS_SCHEMA_VERSION)` stamps the bump regardless, so a
 /// store can never replay a migration.
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 9;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 10;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -2964,6 +2969,14 @@ fn apply_settings_migrations(
     if stored_schema_version < 9 && remap_moved_model_ids(settings) {
         updated = true;
     }
+    // Schema 10: the llama.cpp backend list used to be the two fixed labels
+    // `cuda-13.4` / `cuda-12.4`. Releases now ship CUDA 13.5 (and will move
+    // again), so a stored label installs a build the driver or toolkit may not
+    // match — `cuda-12.4` needs `cudart64_12.dll`, which no CUDA 13 toolkit
+    // has. Both become `cuda`: the newest build the driver supports.
+    if stored_schema_version < 10 && migrate_llama_cuda_backend(&mut settings.llama) {
+        updated = true;
+    }
 
     settings.settings_schema_version = settings
         .settings_schema_version
@@ -3003,6 +3016,20 @@ fn legacy_multi_stt_extra_models(settings_value: &serde_json::Value) -> Vec<Mult
             ..Default::default()
         })
         .collect()
+}
+
+/// Schema 10: the retired fixed CUDA labels become `cuda`. Returns whether it
+/// changed anything.
+fn migrate_llama_cuda_backend(llama: &mut LlamaSettings) -> bool {
+    if matches!(llama.backend.as_str(), "cuda-13.4" | "cuda-12.4") {
+        info!(
+            "Schema 10 migration: llama.cpp backend '{}' -> 'cuda' (newest CUDA build the driver supports)",
+            llama.backend
+        );
+        llama.backend = "cuda".into();
+        return true;
+    }
+    false
 }
 
 /// Model ids that were renamed: `(old, new)`.
@@ -3239,6 +3266,59 @@ mod tests {
             Some(new)
         );
         assert!(!remap_moved_model_ids(&mut settings), "idempotent");
+    }
+
+    #[test]
+    fn schema_10_moves_fixed_cuda_labels_to_the_driver_aware_choice() {
+        for old in ["cuda-13.4", "cuda-12.4"] {
+            let mut llama = LlamaSettings {
+                backend: old.into(),
+                ..LlamaSettings::default()
+            };
+            assert!(migrate_llama_cuda_backend(&mut llama));
+            assert_eq!(llama.backend, "cuda");
+            assert!(!migrate_llama_cuda_backend(&mut llama), "idempotent");
+        }
+        // A choice made after the migration is the user's and stays.
+        let mut llama = LlamaSettings {
+            backend: "cuda-13.5".into(),
+            ..LlamaSettings::default()
+        };
+        assert!(!migrate_llama_cuda_backend(&mut llama));
+
+        // Through the store path: a schema 9 store is migrated once.
+        let stored = serde_json::json!({
+            "settings_schema_version": 9,
+            "llama": { "backend": "cuda-12.4" }
+        });
+        let mut settings: AppSettings = serde_json::from_value(stored.clone()).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(settings.llama.backend, "cuda");
+        let current = serde_json::json!({
+            "settings_schema_version": 10,
+            "llama": { "backend": "cuda-12.4" }
+        });
+        let mut settings: AppSettings = serde_json::from_value(current.clone()).unwrap();
+        apply_settings_migrations(&mut settings, &current);
+        assert_eq!(settings.llama.backend, "cuda-12.4");
+    }
+
+    #[test]
+    fn llama_backend_accepts_any_cuda_build_label() {
+        let norm = |b: &str| {
+            LlamaSettings {
+                backend: b.into(),
+                ..LlamaSettings::default()
+            }
+            .normalized()
+            .backend
+        };
+        for kept in ["auto", "cuda", "cuda-13.5", "cuda-12.4", "vulkan", "cpu"] {
+            assert_eq!(norm(kept), kept);
+        }
+        for dropped in ["cuda-13", "cuda-x.y", "rocm", ""] {
+            assert_eq!(norm(dropped), "auto", "{dropped}");
+        }
     }
 
     #[test]

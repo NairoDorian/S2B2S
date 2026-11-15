@@ -1732,12 +1732,12 @@
         "description": "Which llama-server binary runs. Install a release here (the same GitHub assets the download script fetched) or use a folder you already have.",
         "serverDir": "Server folder",
         "serverDirDescription": "Folder containing llama-server.exe.",
-        "serverDirPlaceholder": "…\\llama or <app data>\\llama_cpp\\cuda-13.4-b10630",
+        "serverDirPlaceholder": "…llama or <app data>llama_cppcuda-13.5-b12368",
         "detect": "Detect existing",
         "detectNone": "No existing llama.cpp folder found in the usual places.",
         "detectFound": "Using {{dir}}",
         "preferred": "Backend and channel",
-        "preferredDescription": "Asset to install: auto picks CUDA when nvidia-smi reports it (detected: {{detected}}), otherwise CPU. Channel: latest build, stable releases only, or nightly builds only.",
+        "preferredDescription": "Asset to install: auto takes CUDA when nvidia-smi finds an NVIDIA GPU (detected: {{detected}}), otherwise CPU. CUDA installs the newest CUDA build of the release that the driver supports (driver CUDA: {{driver}}); a numbered build installs exactly that build. Channel: latest build, stable releases only, or nightly builds only.",
         "channel": {
           "latest": "Latest build",
           "stable": "Stable",
@@ -1766,7 +1766,9 @@
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
-        "alreadyInstalled": "installed"
+        "alreadyInstalled": "installed",
+        "cudaNewest": "CUDA (newest the driver supports)",
+        "includeCudartMismatch": "The {{build}} build loads the CUDA {{major}} runtime, which toolkit {{version}} does not provide: turn this on before installing, or choose a build that matches the toolkit."
       },
       "model": {
         "title": "Model files",

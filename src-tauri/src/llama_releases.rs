@@ -3,8 +3,9 @@
 //!
 //! Releases come from the GitHub API (cached for ten minutes: the tab's
 //! refresh and every install would otherwise burn the 60 req/h unauthenticated
-//! budget). Asset selection follows the script: an exact backend match, then
-//! the fallbacks (any CUDA → Vulkan → CPU). SemVer releases that carry no
+//! budget). Asset selection follows the script: the build is read from the
+//! release's own file list — for `cuda`, the newest CUDA build the driver
+//! supports (`pick_asset`), never a hardcoded version. SemVer releases that carry no
 //! binaries are resolved to their backing nightly build through the
 //! `nightly-tag.txt` asset. Archives are streamed to disk with progress
 //! events and unpacked with the `zip` crate — no PowerShell, no console
@@ -31,7 +32,7 @@ pub struct LlamaReleaseAsset {
     pub name: String,
     pub size_bytes: f64,
     pub url: String,
-    /// `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name.
+    /// `cuda-13.5`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name.
     pub backend: String,
 }
 
@@ -277,72 +278,186 @@ async fn fetch_release_by_tag(tag: &str) -> Result<LlamaRelease, String> {
     Ok(to_release(&release))
 }
 
-/// The asset to install for `backend`, with the script's fallback order.
-pub fn pick_asset<'a>(release: &'a LlamaRelease, backend: &str) -> Option<&'a LlamaReleaseAsset> {
-    let order: Vec<&str> = match backend {
-        "cuda-13.4" => vec!["cuda-13.4", "cuda-", "vulkan", "cpu"],
-        "cuda-12.4" => vec!["cuda-12.4", "cuda-", "vulkan", "cpu"],
+/// `(major, minor)` of a CUDA build label (`cuda-13.5` → `(13, 5)`), `None`
+/// for anything else.
+pub fn cuda_build_version(label: &str) -> Option<(u32, u32)> {
+    let (major, minor) = label.strip_prefix("cuda-")?.split_once('.')?;
+    let all_digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    if !all_digits(major) || !all_digits(minor) {
+        return None;
+    }
+    Some((major.parse().ok()?, minor.parse().ok()?))
+}
+
+/// The asset to install for `backend` from this release's own file list —
+/// never from a fixed list of versions: llama.cpp changes its CUDA builds over
+/// time (13.4 → 13.5), and a fixed list once installed a CUDA 12 build that a
+/// CUDA 13 toolkit cannot run. `driver` is the highest CUDA version the
+/// NVIDIA driver supports (`detect_driver_cuda`), `None` when unknown.
+///
+/// - `cuda`: the newest CUDA build `<=` the driver (the newest of all when the
+///   driver version is unknown); with none the driver can run, Vulkan, then
+///   the CPU build.
+/// - `cuda-X.Y`: exactly that build, or an error naming the CUDA builds the
+///   release has — another CUDA version is never substituted.
+/// - `vulkan`: Vulkan, else CPU. `cpu`: the CPU build.
+///
+/// `auto` is resolved by the caller (`detect_backend`) before this runs.
+pub fn pick_asset<'a>(
+    release: &'a LlamaRelease,
+    backend: &str,
+    driver: Option<(u32, u32)>,
+) -> Result<&'a LlamaReleaseAsset, String> {
+    let named = |b: &str| release.assets.iter().find(|a| a.backend == b);
+    let first_of = |chain: &[&str]| chain.iter().find_map(|b| named(b));
+    let mut cuda: Vec<(&LlamaReleaseAsset, (u32, u32))> = release
+        .assets
+        .iter()
+        .filter_map(|a| cuda_build_version(&a.backend).map(|v| (a, v)))
+        .collect();
+    cuda.sort_by_key(|a| std::cmp::Reverse(a.1));
+    let cuda_list = cuda
+        .iter()
+        .map(|(a, _)| a.backend.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let builds = release
+        .assets
+        .iter()
+        .map(|a| a.backend.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    if backend == "cuda" {
+        if let Some((asset, _)) = cuda.iter().find(|(_, v)| driver.is_none_or(|d| *v <= d)) {
+            return Ok(asset);
+        }
+        let reason = match driver {
+            Some((major, minor)) if !cuda.is_empty() => format!(
+                "the driver supports CUDA {major}.{minor} but release {} only has {cuda_list}",
+                release.tag
+            ),
+            _ => format!("release {} has no CUDA build", release.tag),
+        };
+        return match first_of(&["vulkan", "cpu"]) {
+            Some(asset) => {
+                warn!(
+                    "llama.cpp: {reason}; installing the {} build",
+                    asset.backend
+                );
+                Ok(asset)
+            }
+            None => Err(format!("No usable Windows x64 build: {reason}")),
+        };
+    }
+    if cuda_build_version(backend).is_some() {
+        return named(backend).ok_or_else(|| {
+            format!(
+                "Release {} has no {backend} build (CUDA builds: {}). Choose \"CUDA (newest)\" to follow the driver.",
+                release.tag,
+                if cuda_list.is_empty() { "none" } else { &cuda_list }
+            )
+        });
+    }
+    let chain: Vec<&str> = match backend {
         "vulkan" => vec!["vulkan", "cpu"],
         "cpu" => vec!["cpu"],
         other => vec![other, "vulkan", "cpu"],
     };
-    for wanted in order {
-        if let Some(a) = release.assets.iter().find(|a| {
-            if wanted.ends_with('-') {
-                a.backend.starts_with(wanted)
-            } else {
-                a.backend == wanted
-            }
-        }) {
-            return Some(a);
-        }
-    }
-    None
+    first_of(&chain).ok_or_else(|| {
+        format!(
+            "Release {} has no Windows x64 {backend} build (builds: {builds})",
+            release.tag
+        )
+    })
 }
 
-/// `cuda-13.4` / `cuda-12.4` from `nvidia-smi`, else `cpu`. Cached.
-pub fn detect_backend() -> String {
-    static DETECTED: Mutex<Option<String>> = Mutex::new(None);
-    if let Some(b) = DETECTED.lock().unwrap().clone() {
-        return b;
-    }
-    let detected = detect_backend_uncached();
-    *DETECTED.lock().unwrap() = Some(detected.clone());
-    detected
+/// What `nvidia-smi` says about this machine. Cached for the process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GpuProbe {
+    /// `nvidia-smi` ran and succeeded: there is an NVIDIA GPU and driver.
+    nvidia: bool,
+    /// The highest CUDA version the driver supports, from its header.
+    driver_cuda: Option<(u32, u32)>,
 }
 
-fn detect_backend_uncached() -> String {
+fn gpu_probe() -> GpuProbe {
+    static PROBE: Mutex<Option<GpuProbe>> = Mutex::new(None);
+    if let Some(p) = *PROBE.lock().unwrap() {
+        return p;
+    }
+    let probe = probe_nvidia_smi();
+    *PROBE.lock().unwrap() = Some(probe);
+    probe
+}
+
+fn probe_nvidia_smi() -> GpuProbe {
     let mut cmd = std::process::Command::new("nvidia-smi");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(crate::llama_server::CREATE_NO_WINDOW);
     }
-    let Ok(output) = cmd.output() else {
-        return "cpu".into();
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let Some(pos) = text.find("CUDA Version:") else {
-        return if output.status.success() {
-            "cuda-13.4".into()
-        } else {
-            "cpu".into()
-        };
-    };
-    let version: String = text[pos + "CUDA Version:".len()..]
+    match cmd.output() {
+        Ok(output) if output.status.success() => GpuProbe {
+            nvidia: true,
+            driver_cuda: parse_driver_cuda(&String::from_utf8_lossy(&output.stdout)),
+        },
+        _ => GpuProbe {
+            nvidia: false,
+            driver_cuda: None,
+        },
+    }
+}
+
+/// The driver's CUDA version from the `nvidia-smi` header. Drivers print it as
+/// `CUDA Version: 13.4` or, since the 620 series, `CUDA UMD Version: 13.5`
+/// (next to `KMD Version`) — reading only the first form is what made every
+/// newer driver fall back to a hardcoded build.
+pub fn parse_driver_cuda(text: &str) -> Option<(u32, u32)> {
+    let after = ["CUDA UMD Version:", "CUDA Version:"]
+        .iter()
+        .find_map(|marker| text.find(marker).map(|pos| &text[pos + marker.len()..]))?;
+    let version: String = after
         .trim_start()
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.')
         .collect();
-    let mut parts = version.split('.');
-    let major: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-    let minor: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-    if major > 13 || (major == 13 && minor >= 4) {
-        "cuda-13.4".into()
-    } else if major >= 12 {
-        "cuda-12.4".into()
+    let (major, minor) = version.split_once('.')?;
+    Some((major.parse().ok()?, minor.parse().ok()?))
+}
+
+/// The highest CUDA version the NVIDIA driver supports, `None` without an
+/// NVIDIA GPU or when the header has no version. Runs `nvidia-smi` once.
+pub fn detect_driver_cuda() -> Option<(u32, u32)> {
+    gpu_probe().driver_cuda
+}
+
+/// What `auto` means on this machine: `cuda` with an NVIDIA GPU (the exact
+/// build is chosen from each release's files by `pick_asset`), else `cpu`.
+/// Runs `nvidia-smi` once.
+pub fn detect_backend() -> String {
+    if gpu_probe().nvidia {
+        "cuda".into()
     } else {
         "cpu".into()
+    }
+}
+
+/// The Local LLM page's view of the GPU: what `auto` installs and the driver
+/// CUDA version `pick_asset` compares the release's CUDA builds against.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct LlamaGpuInfo {
+    /// `cuda` with an NVIDIA GPU, else `cpu`.
+    pub backend: String,
+    /// The highest CUDA version the driver supports (`13.5`), when known.
+    pub driver_cuda: Option<String>,
+}
+
+pub fn detect_gpu() -> LlamaGpuInfo {
+    LlamaGpuInfo {
+        backend: detect_backend(),
+        driver_cuda: detect_driver_cuda().map(|(major, minor)| format!("{major}.{minor}")),
     }
 }
 
@@ -482,14 +597,14 @@ async fn install_inner(
         info!("Release {tag} resolves to nightly build {backing}");
         release = fetch_release_by_tag(&backing).await?;
     }
-    let asset = pick_asset(&release, backend)
-        .ok_or_else(|| {
-            format!(
-                "No Windows x64 asset for backend {backend} in {}",
-                release.tag
-            )
-        })?
-        .clone();
+    let driver = on_blocking_pool(|| Ok(detect_driver_cuda())).await?;
+    let asset = pick_asset(&release, backend, driver)?.clone();
+    info!(
+        "llama.cpp {}: backend {backend} -> {} (driver CUDA {})",
+        release.tag,
+        asset.backend,
+        driver.map_or_else(|| "unknown".to_string(), |(a, b)| format!("{a}.{b}"))
+    );
     let cudart = (include_cudart && asset.backend.starts_with("cuda")).then(|| {
         let ver = asset.backend.trim_start_matches("cuda-");
         format!("cudart-llama-bin-win-cuda-{ver}-x64.zip")
@@ -1035,6 +1150,10 @@ mod tests {
             Some("cuda-13.4")
         );
         assert_eq!(
+            parse_backend("llama-b12368-bin-win-cuda-13.5-x64.zip").as_deref(),
+            Some("cuda-13.5")
+        );
+        assert_eq!(
             parse_backend("llama-b10630-bin-win-vulkan-x64.zip").as_deref(),
             Some("vulkan")
         );
@@ -1053,32 +1172,84 @@ mod tests {
         assert_eq!(parse_backend("llama-b10630-bin-ubuntu-x64.tar.gz"), None);
     }
 
-    #[test]
-    fn picks_with_script_fallback_order() {
-        let mk = |b: &str| LlamaReleaseAsset {
-            name: b.into(),
-            size_bytes: 0.0,
-            url: String::new(),
-            backend: b.into(),
-        };
-        let release = LlamaRelease {
+    fn release_with(backends: &[&str]) -> LlamaRelease {
+        LlamaRelease {
             tag: "b1".into(),
             name: "b1".into(),
             published_at: String::new(),
             prerelease: true,
             build_number: 1,
-            assets: vec![mk("cpu"), mk("vulkan"), mk("cuda-12.4")],
+            assets: backends
+                .iter()
+                .map(|b| LlamaReleaseAsset {
+                    name: (*b).into(),
+                    size_bytes: 0.0,
+                    url: String::new(),
+                    backend: (*b).into(),
+                })
+                .collect(),
             backing_tag: None,
-        };
-        assert_eq!(
-            pick_asset(&release, "cuda-13.4").unwrap().backend,
-            "cuda-12.4"
-        );
-        assert_eq!(
-            pick_asset(&release, "cuda-12.4").unwrap().backend,
-            "cuda-12.4"
-        );
-        assert_eq!(pick_asset(&release, "vulkan").unwrap().backend, "vulkan");
-        assert_eq!(pick_asset(&release, "cpu").unwrap().backend, "cpu");
+        }
+    }
+
+    fn picked(release: &LlamaRelease, backend: &str, driver: Option<(u32, u32)>) -> String {
+        pick_asset(release, backend, driver)
+            .map(|a| a.backend.clone())
+            .unwrap_or_else(|e| format!("error: {e}"))
+    }
+
+    #[test]
+    fn parses_cuda_build_labels() {
+        assert_eq!(cuda_build_version("cuda-13.5"), Some((13, 5)));
+        assert_eq!(cuda_build_version("cuda-12.4"), Some((12, 4)));
+        assert_eq!(cuda_build_version("cuda-13.10"), Some((13, 10)));
+        assert_eq!(cuda_build_version("cuda"), None);
+        assert_eq!(cuda_build_version("cuda-13"), None);
+        assert_eq!(cuda_build_version("cuda-13.x"), None);
+        assert_eq!(cuda_build_version("vulkan"), None);
+    }
+
+    #[test]
+    fn reads_both_nvidia_smi_header_forms() {
+        // Driver 621.14 (2026-11): the form that broke detection.
+        let umd = "| NVIDIA-SMI 621.14                 KMD Version: 621.14        CUDA UMD Version: 13.5     |";
+        assert_eq!(parse_driver_cuda(umd), Some((13, 5)));
+        let classic = "| NVIDIA-SMI 581.57   Driver Version: 581.57   CUDA Version: 13.0     |";
+        assert_eq!(parse_driver_cuda(classic), Some((13, 0)));
+        assert_eq!(parse_driver_cuda("NVIDIA-SMI has failed"), None);
+    }
+
+    #[test]
+    fn cuda_takes_the_newest_build_the_driver_supports() {
+        // The release shape of November 2026: 13.5 and 12.4, no 13.4.
+        let release = release_with(&["cpu", "cuda-12.4", "cuda-13.5", "vulkan"]);
+        assert_eq!(picked(&release, "cuda", Some((13, 5))), "cuda-13.5");
+        assert_eq!(picked(&release, "cuda", Some((14, 0))), "cuda-13.5");
+        // A driver one minor short of 13.5 must not get the 13.5 build.
+        assert_eq!(picked(&release, "cuda", Some((13, 4))), "cuda-12.4");
+        // Unknown driver: the newest.
+        assert_eq!(picked(&release, "cuda", None), "cuda-13.5");
+        // Older than every CUDA build: Vulkan rather than a build that cannot run.
+        assert_eq!(picked(&release, "cuda", Some((11, 8))), "vulkan");
+    }
+
+    #[test]
+    fn an_exact_cuda_build_is_never_substituted() {
+        let release = release_with(&["cpu", "cuda-12.4", "cuda-13.5", "vulkan"]);
+        assert_eq!(picked(&release, "cuda-12.4", Some((13, 5))), "cuda-12.4");
+        let missing = picked(&release, "cuda-13.4", Some((13, 5)));
+        assert!(missing.starts_with("error:"), "{missing}");
+        assert!(missing.contains("cuda-13.5, cuda-12.4"), "{missing}");
+    }
+
+    #[test]
+    fn other_backends_keep_their_fallbacks() {
+        let release = release_with(&["cpu", "vulkan", "cuda-13.5"]);
+        assert_eq!(picked(&release, "vulkan", None), "vulkan");
+        assert_eq!(picked(&release, "cpu", None), "cpu");
+        let cpu_only = release_with(&["cpu"]);
+        assert_eq!(picked(&cpu_only, "vulkan", None), "cpu");
+        assert_eq!(picked(&cpu_only, "cuda", Some((13, 5))), "cpu");
+        assert!(picked(&release_with(&[]), "cpu", None).starts_with("error:"));
     }
 }

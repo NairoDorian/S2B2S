@@ -731,6 +731,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **llama.cpp installs picked a CUDA build the machine could not run
+  (2026-11-15).** Drivers from the 620 series print `CUDA UMD Version: 13.5`,
+  which detection did not read, so it fell back to a hardcoded `cuda-13.4`;
+  releases now ship 13.5 and 12.4 only, and the install took whichever CUDA
+  build came first — the 12.4 one, whose `cudart64_12.dll` no CUDA 13 toolkit
+  has. The build is now chosen from the release's own files: `cuda` takes the
+  newest CUDA build the driver supports, an exact `cuda-X.Y` is never
+  substituted, and the Local LLM page lists the builds the releases actually
+  carry, shows the driver's CUDA version and warns when the chosen build needs
+  a runtime the toolkit lacks. Settings schema 10 moves a stored `cuda-13.4` /
+  `cuda-12.4` to `cuda`.
 - **A dev run could silently stop compiling the transcribe.cpp fork
   (2026-11-15).** `scripts/check-transcribe-deps.ts` moved the pin with
   `cargo update -p transcribe-cpp`, which keeps every other crate locked. When

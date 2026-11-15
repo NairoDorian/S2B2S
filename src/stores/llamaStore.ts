@@ -30,7 +30,10 @@ interface LlamaStore {
   releasesError: string | null;
   installed: InstalledLlamaServer[];
   download: LlamaDownloadEvent | null;
+  /** What `auto` installs on this machine: `cuda` or `cpu`. */
   detectedBackend: string | null;
+  /** The driver's highest CUDA version (`13.5`), when `nvidia-smi` says. */
+  driverCuda: string | null;
   commandPreview: string;
   commandError: string | null;
   initialized: boolean;
@@ -63,6 +66,7 @@ const llamaState = createSolidStore<LlamaStore>((set, get) => ({
   installed: [],
   download: null,
   detectedBackend: null,
+  driverCuda: null,
   cudaToolkit: null,
   commandPreview: "",
   commandError: null,
@@ -86,7 +90,9 @@ const llamaState = createSolidStore<LlamaStore>((set, get) => ({
     await get().refreshState();
     commands
       .detectLlamaBackend()
-      .then((backend) => set({ detectedBackend: backend }))
+      .then((gpu) =>
+        set({ detectedBackend: gpu.backend, driverCuda: gpu.driver_cuda }),
+      )
       .catch(() => {});
     commands
       .detectCudaToolkit()

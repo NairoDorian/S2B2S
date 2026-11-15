@@ -235,7 +235,7 @@ export const commands = {
 	detectLlamaInstall: () => __TAURI_INVOKE<LlamaDetectedInstall_Serialize | null>("detect_llama_install"),
 	applyLlamaToPostProcessing: () => typedError<null, string>(__TAURI_INVOKE("apply_llama_to_post_processing")),
 	fetchLlamaReleases: (channel: string, force: boolean) => typedError<LlamaRelease_Serialize[], string>(__TAURI_INVOKE("fetch_llama_releases", { channel, force })),
-	detectLlamaBackend: () => __TAURI_INVOKE<string>("detect_llama_backend"),
+	detectLlamaBackend: () => __TAURI_INVOKE<LlamaGpuInfo_Serialize>("detect_llama_backend"),
 	listInstalledLlamaServers: () => __TAURI_INVOKE<InstalledLlamaServer[]>("list_installed_llama_servers"),
 	/**
 	 *  Download + unpack a release; progress arrives as `LlamaDownloadEvent`.
@@ -2396,13 +2396,41 @@ export type LlamaDownloadEvent_Serialize = {
 	dir: string | null,
 };
 
+/**
+ *  The Local LLM page's view of the GPU: what `auto` installs and the driver
+ *  CUDA version `pick_asset` compares the release's CUDA builds against.
+ */
+export type LlamaGpuInfo = LlamaGpuInfo_Serialize | LlamaGpuInfo_Deserialize;
+
+/**
+ *  The Local LLM page's view of the GPU: what `auto` installs and the driver
+ *  CUDA version `pick_asset` compares the release's CUDA builds against.
+ */
+export type LlamaGpuInfo_Deserialize = {
+	/**  `cuda` with an NVIDIA GPU, else `cpu`. */
+	backend: string,
+	/**  The highest CUDA version the driver supports (`13.5`), when known. */
+	driver_cuda?: string | null,
+};
+
+/**
+ *  The Local LLM page's view of the GPU: what `auto` installs and the driver
+ *  CUDA version `pick_asset` compares the release's CUDA builds against.
+ */
+export type LlamaGpuInfo_Serialize = {
+	/**  `cuda` with an NVIDIA GPU, else `cpu`. */
+	backend: string,
+	/**  The highest CUDA version the driver supports (`13.5`), when known. */
+	driver_cuda: string | null,
+};
+
 export type LlamaRelease = LlamaRelease_Serialize | LlamaRelease_Deserialize;
 
 export type LlamaReleaseAsset = {
 	name: string,
 	size_bytes: number | null,
 	url: string,
-	/**  `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
+	/**  `cuda-13.5`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
 	backend: string,
 };
 

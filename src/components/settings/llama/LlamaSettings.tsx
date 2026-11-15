@@ -12,8 +12,15 @@ import {
 import {
   commands,
   type GgufFile,
+  type LlamaRelease,
   type LlamaSettings as LlamaSettingsType,
 } from "@/bindings";
+import {
+  cudaBuildVersion,
+  llamaBackendOptions,
+  parseCudaVersion,
+  pickLlamaAsset,
+} from "@/lib/llamaAssets";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { useSettings } from "../../../hooks/useSettings";
 import { useLlamaStore } from "../../../stores/llamaStore";
@@ -25,7 +32,6 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Textarea } from "../../ui/Textarea";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 
-const BACKENDS = ["auto", "cuda-13.4", "cuda-12.4", "vulkan", "cpu"] as const;
 const CHANNELS = ["latest", "stable", "nightly"] as const;
 const LOG_POLL_MS = 1000;
 
@@ -259,10 +265,24 @@ export const LlamaSettings = () => {
   // wanted backend (releases without binaries point at a backing tag).
   const wantedBackend = () =>
     cfg().backend === "auto" ? store.detectedBackend : cfg().backend;
-  const latestRelease = createMemo(() => {
+  const driverCuda = () => parseCudaVersion(store.driverCuda);
+  // What the install will take from a release (`lib/llamaAssets.ts` mirrors
+  // the Rust `pick_asset`): for CUDA, the newest build the driver supports.
+  const pickFor = (release: LlamaRelease) => {
     const backend = wantedBackend();
+    return backend ? pickLlamaAsset(release, backend, driverCuda()) : null;
+  };
+  const latestRelease = createMemo(() => {
+    // Prefer the newest release with a build of the wanted kind (a CUDA
+    // build when CUDA is wanted), not one that would fall back to Vulkan.
+    const wantsCuda =
+      wantedBackend() === "cuda" || !!cudaBuildVersion(wantedBackend() ?? "");
     return (
-      store.releases.find((r) => r.assets.some((a) => a.backend === backend)) ??
+      store.releases.find((r) => {
+        const asset = pickFor(r);
+        return !!asset && (!wantsCuda || !!cudaBuildVersion(asset.backend));
+      }) ??
+      store.releases.find((r) => !!pickFor(r)) ??
       store.releases.find((r) => r.assets.length > 0) ??
       store.releases[0]
     );
@@ -270,10 +290,22 @@ export const LlamaSettings = () => {
   const latestAsset = createMemo(() => {
     const release = latestRelease();
     if (!release) return undefined;
-    return (
-      release.assets.find((a) => a.backend === wantedBackend()) ??
-      release.assets[0]
-    );
+    return pickFor(release) ?? release.assets[0];
+  });
+  const backendOptions = () =>
+    llamaBackendOptions(store.releases, cfg().backend).map((b) => ({
+      value: b,
+      label: b === "cuda" ? t("settings.llama.backend.cudaNewest") : b,
+    }));
+  // A CUDA build loads cudart64_<major>.dll: a toolkit of another major
+  // cannot serve it, and without the cudart package the server fails.
+  const runtimeMismatch = createMemo(() => {
+    const asset = latestAsset();
+    const build = asset ? cudaBuildVersion(asset.backend) : null;
+    if (!asset || !build || cfg().include_cudart) return null;
+    const installed = parseCudaVersion(toolkit()?.version);
+    if (installed && installed[0] === build[0]) return null;
+    return { build: asset.backend, major: build[0] };
   });
   // Read in JSX, never in the release row's body: that row stays mounted
   // while a release is shown, so a body-level read would freeze the asset.
@@ -289,12 +321,22 @@ export const LlamaSettings = () => {
   };
   const cudaToolkitDescription = createMemo(() => {
     const tk = toolkit();
+    const mismatch = runtimeMismatch();
+    const mismatchText =
+      mismatch && tk
+        ? t("settings.llama.backend.includeCudartMismatch", {
+            build: mismatch.build,
+            major: mismatch.major,
+            version: tk.version ?? "?",
+          })
+        : "";
     if (!tk) return t("settings.llama.backend.includeCudartMissing");
     return [
       t("settings.llama.backend.includeCudartFound", {
         dir: tk.runtime_dir,
         version: tk.version ?? "?",
       }),
+      mismatchText,
       tk.has_cublas ? "" : t("settings.llama.backend.includeCudartNoCublas"),
       tk.on_path
         ? t("settings.llama.backend.includeCudartOnPath")
@@ -479,13 +521,14 @@ export const LlamaSettings = () => {
           title={t("settings.llama.backend.preferred")}
           description={t("settings.llama.backend.preferredDescription", {
             detected: store.detectedBackend ?? "…",
+            driver: store.driverCuda ?? "—",
           })}
           grouped={true}
           layout="horizontal"
         >
           <div class="flex items-center gap-2">
             <Dropdown
-              options={BACKENDS.map((b) => ({ value: b, label: b }))}
+              options={backendOptions()}
               selectedValue={cfg().backend}
               onSelect={(v) => save({ backend: v })}
             />

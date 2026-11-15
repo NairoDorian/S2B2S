@@ -145,10 +145,17 @@ pub async fn fetch_llama_releases(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn detect_llama_backend() -> String {
-    // The first call runs `nvidia-smi` and waits for it; "cpu" is also what a
-    // failed detection reports.
-    off_main(llama_releases::detect_backend, "cpu".to_string()).await
+pub async fn detect_llama_backend() -> llama_releases::LlamaGpuInfo {
+    // The first call runs `nvidia-smi` and waits for it; a failed detection
+    // reports the CPU build and no driver version.
+    off_main(
+        llama_releases::detect_gpu,
+        llama_releases::LlamaGpuInfo {
+            backend: "cpu".into(),
+            driver_cuda: None,
+        },
+    )
+    .await
 }
 
 #[tauri::command]

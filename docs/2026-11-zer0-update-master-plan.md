@@ -191,6 +191,8 @@ intended in `TYPOGRAPHY.md` (it already says so).
 
 ## Phase 1 — llama.cpp CUDA 13.5 detection and download
 
+**Done 2026-11-15** (steps 1, 2, 4, 5, 7; step 3 keeps the synthesized cudart name, now with a toolkit-mismatch warning instead of an automatic 500 MB download). Step 8 (a real install) is still to run in the app.
+
 ### Root cause (verified on this machine)
 
 - Driver 621.14's `nvidia-smi` header reads `KMD Version: 621.14  CUDA UMD
