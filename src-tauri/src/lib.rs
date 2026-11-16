@@ -1204,6 +1204,7 @@ pub fn run(cli_args: CliArgs) {
                 app_handle.manage(model_manager);
                 app_handle.manage(transcription_manager);
                 managers::transcription::init_transcribe_backend();
+                managers::transcription::report_compute_devices();
                 managers::arch_plugins::init_arch_plugin_dirs(&app_handle);
                 managers::transcription::apply_accelerator_settings(&app_handle);
 
@@ -1349,7 +1350,10 @@ pub fn run(cli_args: CliArgs) {
             // devices, which can take a moment; without this
             // the cost is paid synchronously when the user first opens Advanced
             // settings, freezing the UI. Result is cached in a OnceLock.
+            // Device listing first opens the GPU drivers, so it runs here too
+            // rather than in init_transcribe_backend on the startup path.
             std::thread::spawn(|| {
+                crate::managers::transcription::report_compute_devices();
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
 
