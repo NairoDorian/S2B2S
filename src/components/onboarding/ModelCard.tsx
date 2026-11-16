@@ -10,6 +10,7 @@ import {
   Loader2,
   Trash2,
 } from "@/components/icons/lucide";
+import type { TFunction } from "i18next";
 import type { ModelInfo } from "@/bindings";
 import { formatModelSize } from "../../lib/utils/format";
 import {
@@ -26,7 +27,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 
 const getLanguageDisplayText = (
   supportedLanguages: string[],
-  t: (key: string, options?: Record<string, unknown>) => string,
+  t: TFunction,
 ): string => {
   const capabilityLanguages = getUniqueCapabilityLanguages(supportedLanguages);
   if (capabilityLanguages.length === 1) {

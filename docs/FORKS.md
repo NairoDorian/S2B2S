@@ -38,7 +38,7 @@ that drifts the moment the branch moves.
 
 | Fork                                     | Working copy                                                   | Remote (branch)                                                                    | How ZER0 consumes it                                                                                                                                                                              |
 | ---------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tauri-specta` (typed bindings)          | `C:\Users\Z\Downloads\PROJECTS\tauri-specta-v3`                | `NairoDorian/tauri-specta-v3` (`main`)                                             | `[patch.crates-io] tauri-specta`; the manifest asks for `tauri-specta = "2.0.0-rc.25"`, and the patch replaces that crate with the fork. Generates `src/bindings.ts`                              |
+| `tauri-specta` (typed bindings)          | `C:\Users\Z\Downloads\PROJECTS\tauri-specta-v3`                | `NairoDorian/tauri-specta-v3` (`main`)                                             | `[patch.crates-io] tauri-specta`; the manifest asks for `tauri-specta = "2.0.0-rc.29"`, and the patch replaces that crate with the fork. Generates `src/bindings.ts`                              |
 | `tauri-plugin-macos-permissions`         | `C:\Users\Z\Downloads\PROJECTS\tauri-plugin-macos-permissions` | `NairoDorian/tauri-plugin-macos-permissions` (`master`)                            | Rust: `[patch.crates-io]` plus `tauri-plugin-macos-permissions = "2.3.0"`. npm: `tauri-plugin-macos-permissions-api`, a `git+https://…/NairoDorian/tauri-plugin-macos-permissions.git` dependency |
 | `transcribe.cpp` (the inference runtime) | `C:\Users\Z\Downloads\PROJECTS\transcribe-fork`                | `NairoDorian/transcribe.cpp` (`main`); upstream is `handy-computer/transcribe.cpp` | `transcribe-cpp = { version = "*" }` in `[dependencies]` and the four platform tables, redirected to the fork's git `main` (with `transcribe-cpp-sys`) by `[patch.crates-io]`                     |
 
@@ -50,13 +50,28 @@ and ZER0 refreshes its commit pin automatically (see below).
 
 ### `tauri-specta-v3`
 
-Upstream `specta-rs/tauri-specta` publishes for Tauri 2; there is no released
-rc of the line this app runs on. The fork is `2.0.0-rc.25` and, like ZER0,
-patches the `specta-rs/specta` `main` branch (`specta`, `specta-macros`,
-`specta-serde`, `specta-typescript`, `specta-util`) in its own
-`[patch.crates-io]` — so the fork carries both the Tauri 3 alpha bump and the
-unreleased-specta pins. Its workspace pins `tauri = "3.0.0-alpha.0"`; ZER0's
-lock resolves that to the core alpha the app runs on (see "Constraints" below).
+Upstream `specta-rs/tauri-specta` publishes for Tauri 2 only (rc.29 still
+requires `tauri ^2`). The fork is upstream **`2.0.0-rc.29`** merged on
+2026-11-15 (`8109588`) with the Tauri 3 adaptation on top:
+
+- workspace dependencies `tauri 3.0.0-alpha.6`, `tauri-build` / `tauri-plugin`
+  `3.0.0-alpha.4`, and upstream's **published** Specta (`=2.0.0-rc.28`,
+  `0.0.15`) — no `[patch.crates-io]` any more, in the fork or in ZER0;
+- `tauri::Wry` is gone in Tauri 3 (the runtime is its own crate), so docs and
+  tests use the core's `tauri::DynRuntime`, and the tests keep running on
+  `MockRuntime` (the dev dependency drops the `wry` feature);
+- upstream's example apps (Tauri 2) are `exclude`d from the workspace;
+- `tests/ipc_types.rs` is gated behind an unset cfg until Tauri 3 implements
+  `specta::Type` for `ipc::Request` / `ipc::Response` (tauri-apps/tauri#16374,
+  open against Tauri 2 — upstream patches Tauri for it);
+- `tests/command_rename.rs` invokes on `tauri://localhost`, the URL Tauri 3's
+  `MockRuntime` reports on every platform.
+
+Upstream rc.27 made `ErrorHandlingMode::Throw` the default; ZER0 sets
+`ErrorHandlingMode::Result` explicitly in `lib.rs`, because every caller in
+`src/` reads `{ status, data | error }`. To take a newer upstream: `git fetch
+upstream && git merge upstream/main` in the fork, keep the Tauri 3 workspace
+block, run `cargo test --workspace --all-features`, push.
 
 ### `tauri-plugin-macos-permissions`
 
@@ -129,37 +144,35 @@ to link until it exits.
 
 ## Constraints that bite when bumping
 
-- **Tauri alpha ceilings — and why the core is pinned with `=`.** Core `tauri`
-  and `tauri-runtime-wry` are on `3.0.0-alpha.2`; `tauri-build`, `tauri-utils`,
-  `tauri-codegen`, `tauri-macros` and `tauri-plugin` are on `3.0.0-alpha.1`.
-  That split is not a preference, and it is not merely "the plugins lag": the
-  `v3` branch tip (`d9be6d0`) **is** the `v3.0.0-alpha.2` release of every
-  `tauri-plugin-*` — the same commit is the branch head, the crate source, and
-  the npm `-js-` tag. So the plugins are not behind the core; the core has moved
-  past them. Two separate breaks stand between here and `alpha.4` (verified
-  against the published `tauri-3.0.0-alpha.4`, whose commit is the `v3` branch
-  head):
+- **The Tauri family moves as one set, pinned with `=`.** Since 2026-11-15:
+  `tauri` and `tauri-runtime-wry` `3.0.0-alpha.6`, `tauri-runtime`
+  `3.0.0-alpha.5`, and `tauri-build`, `tauri-utils`, `tauri-codegen`,
+  `tauri-macros`, `tauri-plugin` `3.0.0-alpha.4` — the newest of each — with the
+  plugins on `plugins-workspace` `v3` (`14ed4c4f`, which requires
+  `tauri >= 3.0.0-alpha.4`) and `@tauri-apps/cli` `3.0.0-alpha.6`.
+  From alpha.3 until the plugins' `v3` branch moved on 2026-11-03 the core was
+  held at alpha.2, for two reasons that are history now but show what a bump
+  has to check:
   1. **The plugins.** `alpha.3` moved `run_on_main_thread` off an inherent
-     `AppHandle` method onto the `Manager` trait, and the plugin sources call
-     `handle.run_on_main_thread(..)` without `use tauri::Manager` (E0599 in
-     `tauri-plugin-dialog`). Fixing it means forking plugins-workspace.
-  2. **The core's own API, which the fork would hit second.** `b9a77ebb`
-     _`refactor(core)!: remove the macos-private-api feature flag`_ landed on
-     `v3` on 2026-09-30, so `macos-private-api` is **no longer a feature** in
-     `alpha.4` — and this manifest passes it to both `tauri` and
-     `tauri-runtime-wry`. `c9a3cb89` is the other half: macOS private APIs are
-     now enabled unconditionally. Taking alpha.4 is therefore a code change
-     here, not only a fork upstream.
+     `AppHandle` method onto the `Manager` trait, and the plugin sources then
+     called `handle.run_on_main_thread(..)` without `use tauri::Manager` (E0599
+     in `tauri-plugin-dialog`).
+  2. **The core's own API.** `b9a77ebb`
+     _`refactor(core)!: remove the macos-private-api feature flag`_ (alpha.4)
+     removed the Cargo feature and the `app > macOSPrivateApi` config key;
+     transparency and `fullScreenEnabled` no longer need private APIs. ZER0
+     dropped both on the bump.
      Two failures follow from a partial bump, and both are silent until compile
-     time: `tauri-build` alpha.1 validates `tauri.conf.json` through `tauri-utils`,
-     so a `tauri-utils` a single patch ahead makes it reject `macOSPrivateApi` as
-     an unknown field (its diagnostic blames "a CLI newer than tauri-build"), and a
-     partially-bumped family otherwise resolves and then fails to compile naming
-     none of the crates you would think to check. `scripts/update-deps.ts` holds the
-     family in `CARGO_VERSION_LOCKED` and `src-tauri/Cargo.toml` carries `=` on
-     every member — including the four nothing in the crate calls directly, which
-     are declared purely so an `=` has somewhere to live. Check what a fork's own
-     pins resolve to before assuming a bump is needed.
+     time: `tauri-build` validates `tauri.conf.json` through `tauri-utils`, so a
+     `tauri-utils` from another release rejects the config (its diagnostic
+     blames "a CLI newer than tauri-build"), and a partially-bumped family
+     otherwise resolves and then fails to compile naming none of the crates you
+     would think to check. `scripts/update-deps.ts` holds the family in
+     `CARGO_VERSION_LOCKED` (and the CLI in `NPM_VERSION_LOCKED`), and
+     `src-tauri/Cargo.toml` carries `=` on every member — including the five
+     nothing in the crate calls directly, which are declared purely so an `=`
+     has somewhere to live. Move them all in one edit; check what a fork's own
+     pins resolve to before assuming a fork change is needed.
 - **`js_init_script` → `initialization_script`.** Core alpha.2 renamed
   `Builder::js_init_script`. Any fork code calling the old name will not compile
   against this core. Verified 2026-09-21: neither `tauri-specta-v3` nor

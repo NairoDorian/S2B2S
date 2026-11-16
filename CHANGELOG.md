@@ -459,6 +459,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Tauri 3.0.0-alpha.6 and the newest plugins, tauri-specta rc.29, Specta
+  rc.28 (2026-11-15).** The core had been held at alpha.2 since alpha.3 because
+  the `v3` plugins called the removed inherent `run_on_main_thread`; the plugins
+  branch moved on 2026-11-03 (`14ed4c4f`, requires `tauri >= 3.0.0-alpha.4`), so
+  the whole family moved together: `tauri` / `tauri-runtime-wry` alpha.6,
+  `tauri-runtime` alpha.5, `tauri-build` / `tauri-codegen` / `tauri-utils` /
+  `tauri-macros` / `tauri-plugin` alpha.4, `@tauri-apps/cli` alpha.6. The
+  `macos-private-api` feature and `app.macOSPrivateApi` are gone (core alpha.4
+  removed them; transparency no longer needs private APIs). The
+  `NairoDorian/tauri-specta-v3` fork took upstream rc.29 (`8109588`); ZER0 now
+  sets `ErrorHandlingMode::Result` explicitly, since rc.27 made `Throw` the
+  default and every caller reads `{ status, data | error }`. The Specta and tao
+  git patches are gone: Specta rc.28 / 0.0.15 and tao 0.37.2 on crates.io carry
+  everything they were pinned for. See `docs/FORKS.md`.
+- **Every other dependency to its newest version (2026-11-15).** Solid
+  `solid-js` / `@solidjs/web` 2.0.0-rc.13 → rc.21, `@solidjs/vite-plugin`
+  3.0.0-next.57, TypeScript 7.1 dev (20261115), Vite 8.3.8, Tailwind 4.3.5,
+  i18next 27.1.2, oxlint 1.93, Playwright 1.66 alpha, `@tauri-apps/api`
+  alpha.3 and plugins alpha.3 / alpha.4; Cargo: sysinfo 0.40, tokio 1.54,
+  zip 9.6, rubato 5.1, handy-keys 0.3.5 and the rest. Code changes they needed:
+  sysinfo 0.40's fallible `System` constructor and `with_usage()` (the meter
+  thread now logs and stops instead of panicking), i18next 27's stricter
+  `TFunction`, and TypeScript refusing a readonly tuple as `unknown[]`. Held:
+  `rusqlite` stays on 0.40 — the newest `rusqlite_migration` (2.7) is built on
+  `rusqlite` 0.41, and two `libsqlite3-sys` versions cannot both link SQLite.
+  `scripts/update-rtk.ts` names the `rtk` package, since the RTK repository now
+  has two binaries.
 - **transcribe.cpp fork moved to `cfb07a12` (2026-11-15), crate 0.4.2.** The
   engine now carries upstream 0.4.2 and ggml 1.0, the CPU Whisper fix (every
   CPU Whisper transcript on the old engine was noise), the language allowlist

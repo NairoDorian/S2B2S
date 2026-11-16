@@ -120,26 +120,26 @@ const CARGO_STABLE_ONLY: ReadonlySet<string> = new Set(["libc"]);
  * split across two releases resolves and then fails to compile with an error
  * that names none of the crates you would think to look at.
  *
- * The Tauri family is exactly that. `tauri-plugin-*` are git dependencies on
- * `plugins-workspace` `branch = "v3"`, whose tip is written against tauri
- * alpha.2: it calls `handle.run_on_main_thread(..)` without importing
- * `Manager`, which alpha.3 turned into a trait method. So `tauri` cannot pass
- * alpha.2 — and neither can anything under it, because `tauri-build` validates
- * `tauri.conf.json` through `tauri-utils`, and a `tauri-utils` a patch ahead
- * makes it reject `macOSPrivateApi` as an unknown field.
+ * The Tauri family is exactly that: `tauri-build` validates `tauri.conf.json`
+ * through `tauri-utils`, the plugins (git, `plugins-workspace` `branch = "v3"`)
+ * are written against one core API, and the alphas carry their breaking changes
+ * in the prerelease position (alpha.3 moved `run_on_main_thread` onto the
+ * `Manager` trait; alpha.4 removed the `macos-private-api` feature and the
+ * `macOSPrivateApi` config key). From alpha.3 until 2026-11-03 the `v3` plugins
+ * still called the removed inherent method, which held the core at alpha.2; the
+ * family moved to alpha.6 / alpha.5 / alpha.4 on 2026-11-15 by hand, as one edit.
  *
  * Holding the *direct* dependency is not enough on its own, and that is why the
  * set below names the members nothing in this crate calls directly
- * (`tauri-utils`, `tauri-macros`, `tauri-plugin`, `tauri-codegen`): only a
- * manifest entry can carry an `=`, so those four are declared in
- * `src-tauri/Cargo.toml` purely to be pinned. Removing one from the manifest,
- * or from this map, lets `cargo update` split the family again.
+ * (`tauri-runtime`, `tauri-utils`, `tauri-macros`, `tauri-plugin`,
+ * `tauri-codegen`): only a manifest entry can carry an `=`, so those are
+ * declared in `src-tauri/Cargo.toml` purely to be pinned. Removing one from the
+ * manifest, or from this set, lets `cargo update` split the family again.
  *
  * The hold reads the version from the manifest rather than repeating it here,
- * so it follows the pin: replace the `=` in `Cargo.toml` and this crate's target
- * moves with it. When the plugins-workspace fork described in
- * `docs/KNOWN_ISSUES.md` exists, delete this map in one edit — it is the only
- * thing standing between the manifest and alpha.4.
+ * so it follows the pin: move every `=` in `Cargo.toml` (and the CLI in
+ * `package.json`) in one edit and the targets move with them. This script never
+ * moves the family itself — a new alpha is a reviewed change, not a refresh.
  */
 const CARGO_VERSION_LOCKED: ReadonlySet<string> = new Set([
   "tauri",
@@ -147,17 +147,18 @@ const CARGO_VERSION_LOCKED: ReadonlySet<string> = new Set([
   "tauri-codegen",
   "tauri-macros",
   "tauri-plugin",
+  "tauri-runtime",
   "tauri-runtime-wry",
   "tauri-utils",
 ]);
 
 const VERSION_LOCKED_REASON =
   "held at the exact manifest version with `=`: the whole Tauri family has to " +
-  "stay on one release, and the thirteen `tauri-plugin-*` git pins " +
-  '(`plugins-workspace` `branch = "v3"`) are written against tauri alpha.2 — ' +
-  "alpha.3 moved `run_on_main_thread` onto the `Manager` trait, which they do " +
-  "not import. A bare requirement lets `cargo update` unify the core forward " +
-  "into a lockfile that resolves and cannot compile.";
+  "stay on one release with the `v3` plugins and `@tauri-apps/cli`, and the " +
+  "alphas break in the prerelease position (alpha.3 run_on_main_thread, alpha.4 " +
+  "macos-private-api). A bare requirement lets `cargo update` unify part of the " +
+  "family forward into a lockfile that resolves and cannot compile. Move the " +
+  "whole set by hand in one edit (src-tauri/Cargo.toml + package.json).";
 
 /**
  * Crates held inside the major they are installed on, with the reason printed
@@ -189,7 +190,7 @@ const CARGO_MAJOR_LOCKED: ReadonlyMap<string, string> = new Map([
       "controller. Its COM types only unify with the rest of the app when it is " +
       "the SAME webview2-com instance `tauri-runtime-wry` links: two versions " +
       "mean two windows_core versions and the Interface cast stops resolving. " +
-      "`tauri-runtime-wry 3.0.0-alpha.2` requires webview2-com ^0.39, which is " +
+      "`tauri-runtime-wry 3.0.0-alpha.6` requires webview2-com ^0.39, which is " +
       "the 0.39 the manifest pins, so the ceiling here holds both halves on " +
       "0.39.x. It moves when that crate moves — the same event that moves the " +
       "manifest pin.",
@@ -231,7 +232,7 @@ interface LinePin {
  *
  * `@tauri-apps/*` is the reason. Those packages are not a library the app uses;
  * they are the JS half of the IPC that the Rust `tauri` crate implements, and
- * the two are coupled at the major: `tauri = "3.0.0-alpha.2"` in
+ * the two are coupled at the major: `tauri = "=3.0.0-alpha.6"` in
  * `src-tauri/Cargo.toml` speaks to a 3.x JS API. Prerelease mode probes
  * dist-tags and takes the newest by **core version**, deliberately ignoring
  * range operators — which is right for a package that is merely newer, and
@@ -265,17 +266,19 @@ const NPM_MAJOR_LOCKED_PREFIXES: readonly string[] = ["@tauri-apps/"];
  * are not merely coupled at the major — they are the same release, and a CLI
  * ahead of the core rejects a config the core still requires. Concretely, the
  * core's `b9a77ebb refactor(core)!: remove the macos-private-api feature flag`
- * dropped `macOSPrivateApi` from `app` in `tauri.conf.json`, so:
+ * dropped `macOSPrivateApi` from `app` in `tauri.conf.json`, so while the core
+ * was held at alpha.2:
  *
  *   * CLI `3.0.0-alpha.4`  ->  `Error "tauri.conf.json" ... Additional properties
  *                             are not allowed ('macOSPrivateApi' was unexpected)`
- *   * crate `=3.0.0-alpha.2` ->  still requires the key.
+ *   * crate `=3.0.0-alpha.2` ->  still required the key.
  *
- * A `3.x` ceiling waves alpha.4 straight through, which is how a CLI at alpha.4
+ * A `3.x` ceiling waved alpha.4 straight through, which is how a CLI at alpha.4
  * ended up beside a core held at alpha.2 and `bun run tauri dev` refused to
  * start — while `cargo check`, clippy and the whole test suite passed, because
  * none of them run the CLI. Two halves of one dependency, validated by two
- * different tools, failing in the gap between them.
+ * different tools, failing in the gap between them. (Both are at alpha.6 now,
+ * and the key is gone from the config.)
  *
  * Like the Cargo hold, this reads the version from the manifest, so moving the
  * pin here is unnecessary: replace the version in `package.json` and the target
@@ -288,10 +291,10 @@ const NPM_VERSION_LOCKED: ReadonlySet<string> = new Set(["@tauri-apps/cli"]);
 const NPM_VERSION_LOCKED_REASON =
   "held at the exact manifest version: `@tauri-apps/cli` validates " +
   "tauri.conf.json itself, before cargo runs, so it has to be the SAME release " +
-  "as the `tauri` crate — which `CARGO_VERSION_LOCKED` holds at 3.0.0-alpha.2. " +
-  "The core removed `macOSPrivateApi` from the `app` schema (b9a77ebb), so a " +
-  "newer CLI rejects a config the older core still requires, and only " +
-  "`bun run tauri` notices: cargo check, clippy and the test suite all pass.";
+  "as the `tauri` crate, which `CARGO_VERSION_LOCKED` holds at its manifest `=`. " +
+  "A CLI ahead of the core can reject a config the core still requires (as " +
+  "alpha.4 did with `macOSPrivateApi`), and only `bun run tauri` notices: " +
+  "cargo check, clippy and the test suite all pass. Move it with the family.";
 
 const isMajorLocked = (name: string): boolean =>
   NPM_MAJOR_LOCKED_PREFIXES.some((prefix) => name.startsWith(prefix));

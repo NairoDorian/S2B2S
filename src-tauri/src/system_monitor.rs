@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
@@ -83,11 +83,20 @@ fn init_gpu() -> Option<Gpu> {
 }
 
 fn run(app: AppHandle) {
-    let mut sys = System::new_with_specifics(
+    // sysinfo 0.40 made the constructor fallible (the platform backend can
+    // fail to open). The meters are a nicety: without them the sampler stops
+    // and the footer shows no CPU/RAM figures, and the app carries on.
+    let mut sys = match System::new_with_specifics(
         RefreshKind::nothing()
-            .with_cpu(sysinfo::CpuRefreshKind::nothing().with_cpu_usage())
+            .with_cpu(sysinfo::CpuRefreshKind::nothing().with_usage())
             .with_memory(MemoryRefreshKind::nothing().with_ram()),
-    );
+    ) {
+        Ok(sys) => sys,
+        Err(e) => {
+            warn!("System monitor disabled: sysinfo could not start ({e})");
+            return;
+        }
+    };
     let gpu = init_gpu();
     // First CPU reading needs a baseline sample.
     sys.refresh_cpu_usage();

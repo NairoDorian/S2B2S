@@ -43,7 +43,7 @@ mod webview_hardening;
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
 use specta_typescript::Typescript;
-use tauri_specta::{Builder, collect_commands, collect_events};
+use tauri_specta::{Builder, ErrorHandlingMode, collect_commands, collect_events};
 pub use utils::{app_env_flag, app_env_var, env_flag_enabled};
 
 use managers::audio::AudioRecordingManager;
@@ -792,6 +792,11 @@ pub fn run(cli_args: CliArgs) {
     session_log::init();
 
     let specta_builder = Builder::<tauri::DynRuntime>::new()
+        // Every caller in `src/` reads `{ status: "ok" | "error", ... }` from a
+        // fallible command. tauri-specta rc.27 made `Throw` the default
+        // (a failed command rejects its promise), so the mode is set
+        // explicitly to keep the generated bindings on the shape they have.
+        .error_handling(ErrorHandlingMode::Result)
         .dangerously_cast_bigints_to_number()
         .commands(collect_commands![
             shortcut::change_binding,

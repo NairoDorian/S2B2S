@@ -103,38 +103,6 @@ items live here, self-contained.
   the fork's explicit policy: Solid 2 RC, TypeScript 7 dev, Vite 8, Prettier 4
   alpha, Playwright alpha, Bun 1.4); expect occasional breakage from upstream
   tooling.
-- **The Tauri core cannot be updated past `3.0.0-alpha.2` (2026-10-05).**
-  `bun run update-deps --prerelease` proposes `tauri 3.0.0-alpha.4`, and taking
-  it produces a lockfile that resolves and cannot compile. **Two** independent
-  breaks stand in the way, both verified against the published
-  `tauri-3.0.0-alpha.4` (whose commit _is_ the `tauri-apps/tauri` `v3` branch
-  head):
-  1. Thirteen `tauri-plugin-*` crates are pinned to `plugins-workspace`
-     `branch = "v3"`, and that branch's tip (`d9be6d0`) is also the
-     `v3.0.0-alpha.2` release of every plugin — the plugins are not behind the
-     core, the core has moved past them. The tip calls
-     `handle.run_on_main_thread(..)` without `use tauri::Manager`, which alpha.3
-     turned into a trait method, so `tauri-plugin-dialog` and the rest fail
-     E0599.
-  2. `b9a77ebb` _`refactor(core)!: remove the macos-private-api feature flag`_
-     landed on `v3` on 2026-09-30. `macos-private-api` is **no longer a
-     feature**, and `src-tauri/Cargo.toml` passes it to both `tauri` and
-     `tauri-runtime-wry`. `c9a3cb89` is the other half — macOS private APIs are
-     now enabled unconditionally — so this side is a code change, not just an
-     upstream fork.
-
-  A _partial_ bump is worse than none: `cargo update` unifies the **transitive**
-  family (`tauri-utils`, `tauri-macros`, `tauri-plugin`, `tauri-codegen`) forward
-  on its own, and `tauri-build` then rejects `macOSPrivateApi` in
-  `tauri.conf.json` as an unknown field — a diagnostic that names neither the
-  crate nor the cause. Contained by pinning the whole family with `=` in
-  `src-tauri/Cargo.toml` (including four members nothing calls directly,
-  declared so the `=` has somewhere to live) and holding it in
-  `update-deps.ts`'s `CARGO_VERSION_LOCKED`. **Reaching alpha.4 needs both** a
-  plugins-workspace fork (the missing `use tauri::Manager;` imports) and a local
-  edit dropping the dead feature flags. See
-  [FORKS.md](FORKS.md#constraints-that-bite-when-bumping).
-
 - clippy reports a stable set of upstream style warnings (see the advisory
   clippy step in `test.yml`); fork-added code is clean. Clearing the upstream
   ones would create merge conflicts for little gain.

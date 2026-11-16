@@ -25,6 +25,10 @@ const REPO = "rtk-ai/rtk";
 const RELEASES_URL = `https://api.github.com/repos/${REPO}/releases`;
 const TAGS_URL = `https://api.github.com/repos/${REPO}/tags`;
 const GIT_URL = `https://github.com/${REPO}`;
+// The repository holds more than one binary package (`rtk` and, since the
+// dev-1.2.1 line, `rtk-proxy`), and `cargo install --git` then refuses to
+// guess: the package is named explicitly.
+const PACKAGE = "rtk";
 const PER_PAGE = 100;
 
 const API_HEADERS: Record<string, string> = {
@@ -212,7 +216,7 @@ const HELP_TEXT = `
 Usage: bun run update:rtk [--commit] [--tag <tag>] [--check]
 
 Reinstalls RTK at the ABSOLUTE LATEST GitHub release tag or commit:
-  cargo install --git ${GIT_URL} [--tag <tag>] --force
+  cargo install --git ${GIT_URL} ${PACKAGE} [--tag <tag>] --force
 
 Flags:
   --commit      Install from the latest git commit on default branch (HEAD).
@@ -233,7 +237,7 @@ const run = async (): Promise<void> => {
 
   if (flags.commit) {
     console.log(`Reinstalling RTK from the latest git commit (HEAD)...`);
-    execSync(`cargo install --git ${GIT_URL} --force`, {
+    execSync(`cargo install --git ${GIT_URL} ${PACKAGE} --force`, {
       stdio: "inherit",
     });
     console.log(`\nRTK updated to latest git commit.`);
@@ -252,7 +256,7 @@ const run = async (): Promise<void> => {
   }
 
   console.log(`Reinstalling RTK at tag ${tag}...`);
-  execSync(`cargo install --git ${GIT_URL} --tag ${tag} --force`, {
+  execSync(`cargo install --git ${GIT_URL} ${PACKAGE} --tag ${tag} --force`, {
     stdio: "inherit",
   });
   console.log(`\nRTK updated to ${tag}.`);

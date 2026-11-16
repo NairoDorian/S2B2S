@@ -92,8 +92,10 @@ export const readCanvasFont = (): string =>
 const noop = () => {};
 
 /** Element-wise identity of two prop snapshots. */
-export const sameValues = (a: unknown[], b: unknown[]): boolean =>
-  a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+export const sameValues = (
+  a: readonly unknown[],
+  b: readonly unknown[],
+): boolean => a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 
 export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
   let canvasRef: HTMLCanvasElement | undefined;
@@ -101,7 +103,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
   let propsVersion = 0;
   // Set by the paint loop once it exists; a no-op before mount.
   let requestPaint = noop;
-  let lastProps: unknown[] = [];
+  let lastProps: readonly unknown[] = [];
 
   createEffect(
     () => [

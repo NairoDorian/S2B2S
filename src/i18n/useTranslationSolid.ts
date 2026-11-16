@@ -48,7 +48,8 @@ export const currentLanguage = language;
 export function useTranslation(): { t: TFunction; i18n: typeof i18n } {
   const t = ((key: string, options?: Record<string, unknown>) => {
     language();
-    return i18n.t(key, options);
+    // i18next 27 types reject an explicit `undefined` options argument.
+    return options === undefined ? i18n.t(key) : i18n.t(key, options);
   }) as unknown as TFunction;
 
   return { t, i18n };

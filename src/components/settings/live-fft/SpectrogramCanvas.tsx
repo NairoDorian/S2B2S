@@ -41,7 +41,7 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
   let canvasRef: HTMLCanvasElement | undefined;
   let propsVersion = 0;
   let requestPaint = noop;
-  let lastProps: unknown[] = [];
+  let lastProps: readonly unknown[] = [];
 
   createEffect(
     () => [

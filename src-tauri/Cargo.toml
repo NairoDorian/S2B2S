@@ -21,78 +21,62 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-# The whole Tauri family is pinned with `=`, and it has to be pinned as a SET
-# rather than one crate at a time. A requirement like `3.0.0-alpha.2` reads as
-# `>=3.0.0-alpha.2, <3.0.0`, so every one of these crates also accepts 3.0.0-alpha.3
-# — and a bare `cargo update` unifies the whole family forward to alpha.3 while
-# leaving the plugins at their `v3` branch tip, which is written for alpha.2. The
-# result is a lockfile that resolves and does not compile:
+# The whole Tauri family is pinned with `=`, and it has to move as a SET rather
+# than one crate at a time. A requirement like `3.0.0-alpha.4` reads as
+# `>=3.0.0-alpha.4, <3.0.0`, so a bare `cargo update` unifies the family forward
+# on its own, and a family split across two releases resolves and then fails to
+# compile (or `tauri-build` rejects `tauri.conf.json` against a newer
+# `tauri-utils` schema) with an error naming none of the crates to look at. The
+# `@tauri-apps/cli` in package.json is the same release as `tauri` for the same
+# reason: it validates `tauri.conf.json` before cargo runs.
 #
-#   * `tauri` alpha.3 moved `run_on_main_thread` off an inherent `AppHandle`
-#     method onto the `Manager` trait; the thirteen `tauri-plugin-*` crates below
-#     call it without `use tauri::Manager` (E0599 in `tauri-plugin-dialog`).
-#   * `tauri-build` alpha.1 validates `tauri.conf.json` against `tauri-utils`, so
-#     a stray alpha.3 `tauri-utils` makes it reject `macOSPrivateApi` as an
-#     unknown field — the diagnostic even blames "a CLI newer than tauri-build".
-#   * `tauri-utils` alpha.3 renamed that field's schema; nothing else complains
-#     first.
-#
-# These are the versions the tree is written against and the ones
-# `plugins-workspace` `branch = "v3"` declares for itself. Upstream has since
-# published alpha.4 for `tauri` / `tauri-runtime-wry`, but the workspace still has
-# only `v2` and `v3` branches and `v3`'s tip has not moved, so there is no newer
-# plugin source to pair with it. Moving past alpha.2 means forking
-# plugins-workspace (adding the `use tauri::Manager;` imports) — a decision with a
-# cost, not a version bump. When that fork lands, take the whole family with it:
-# drop every `=` in this block and in `[dependencies]` in one edit.
-tauri-build = { version = "=3.0.0-alpha.1", features = [] }
+# Current set (2026-11-15, the newest published): `tauri` / `tauri-runtime-wry`
+# alpha.6, `tauri-runtime` alpha.5, `tauri-build` / `tauri-codegen` /
+# `tauri-utils` / `tauri-macros` / `tauri-plugin` alpha.4. The `v3` plugins
+# branch requires `tauri >= 3.0.0-alpha.4`, so plugins and core agree again
+# (alpha.2 → alpha.6 was blocked from alpha.3 to 2026-11-03 by plugins still
+# calling the removed inherent `run_on_main_thread`). To move the set, bump every
+# `=` here and in `[dependencies]` in one edit, then `@tauri-apps/cli`.
+tauri-build = { version = "=3.0.0-alpha.4", features = [] }
 # Pulled by tauri-build; pinned here for the same reason (it is what carries the
 # config schema tauri-build validates against).
-tauri-codegen = "=3.0.0-alpha.1"
-serde_json = "1.0.151"
+tauri-codegen = "=3.0.0-alpha.4"
+serde_json = "^1.0.154"
 
 [dependencies]
 once_cell = "1.21.4"
-# `=` on the Tauri family is load-bearing — see the long note in
-# `[build-dependencies]` above for the whole story (three ways a partial bump
-# resolves and then fails to compile). Summarised: the plugins below are pinned
-# to `plugins-workspace` `branch = "v3"`, whose tip is written against alpha.2,
-# so `tauri` itself cannot move past it.
-tauri = { version = "=3.0.0-alpha.2", features = [
+# `=` on the Tauri family is load-bearing — see the note in
+# `[build-dependencies]` above. `macos-private-api` is gone: core alpha.4
+# (b9a77ebb) removed the feature and the `app > macOSPrivateApi` config option,
+# because window transparency and `fullScreenEnabled` no longer need macOS
+# private APIs.
+tauri = { version = "=3.0.0-alpha.6", features = [
   "protocol-asset",
-  "macos-private-api",
   "tray-icon",
   'image-png',
 ] }
 # In Tauri 3 the runtime lives in a separate crate; `tauri::Builder::default()`
 # is generic over `tauri_runtime::Runtime` and defaults to the type-erased
 # `DynRuntime`. The Wry runtime type (`WryRuntime`) and the `Wry` runtime
-# initializer both live here. Published on crates.io; enabling
-# `macos-private-api` mirrors the same feature on the `tauri` crate so the macOS
-# private-API window functionality (transparent windows, full-screen
-# enablement) is available.
-tauri-runtime-wry = { version = "=3.0.0-alpha.2", features = ["macos-private-api"] }
+# initializer both live here.
+tauri-runtime-wry = "=3.0.0-alpha.6"
 # The rest of the family, declared here only to pin it. Nothing in this crate
-# names these crates directly: `tauri` pulls `tauri-utils` and `tauri-macros`
-# (the latter through its `macros` feature), and each `tauri-plugin-*` below
-# pulls `tauri-plugin`. Declaring them is the only way to stop `cargo update`
-# unifying them forward on its own — a transitive requirement is not a place to
-# put an `=`.
-tauri-utils = "=3.0.0-alpha.1"
-tauri-macros = "=3.0.0-alpha.1"
-tauri-plugin = "=3.0.0-alpha.1"
+# names these crates directly: `tauri` pulls `tauri-runtime`, `tauri-utils` and
+# `tauri-macros` (the latter through its `macros` feature), and each
+# `tauri-plugin-*` below pulls `tauri-plugin`. Declaring them is the only way to
+# stop `cargo update` unifying them forward on its own — a transitive
+# requirement is not a place to put an `=`.
+tauri-runtime = "=3.0.0-alpha.5"
+tauri-utils = "=3.0.0-alpha.4"
+tauri-macros = "=3.0.0-alpha.4"
+tauri-plugin = "=3.0.0-alpha.4"
 # Every `tauri-plugin-*` comes from Tauri's own `plugins-workspace`, `v3`
 # branch — the canonical source, tracked at the branch tip so a `cargo update`
-# always takes the newest v3 alpha. It was git-only for a while: the published
-# crates stopped at `3.0.0-alpha.0`, which still calls `Builder::js_init_script`
-# (core alpha.2 renamed it to `initialization_script`). **That is no longer
-# true — crates.io now carries `tauri-plugin-*` at `3.0.0-alpha.2`, and those
-# crates are built from `d9be6d0`, which is the `v3` branch tip and this very
-# pin.** So the git dependency and the published crate are the same code today;
-# the git pin is kept because it follows the branch automatically, which is what
-# `scripts/check-transcribe-deps.ts` keeps current. Switching to the registry
-# version is a no-op today and would go stale the moment the branch moves — the
-# reverse of what happened with alpha.0.
+# always takes the newest v3 alpha (crates.io carries them too, at alpha.3 /
+# alpha.4, built from that branch). The git pin is kept because it follows the
+# branch automatically, which is what `scripts/check-transcribe-deps.ts` keeps
+# current — and that script now refuses a pin that does not resolve against the
+# core above instead of half-applying it.
 # `tauri-plugin-macos-permissions` is the exception — it is a community plugin
 # with no v3 release at all, so it stays on its fork.
 tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
@@ -104,17 +88,17 @@ tauri-plugin-process = { git = "https://github.com/tauri-apps/plugins-workspace"
 rusqlite_migration = "2.6.0"
 tauri-plugin-fs = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "^1.0.154"
 cpal = "^0.18.2"
-rtrb = "0.4.0"
+rtrb = "^0.4.1"
 anyhow = "1.0.104"
-rubato = "^5.0.1"
+rubato = "^5.1.0"
 hound = "3.5.1"
 # Decodes MP3 / M4A / FLAC / OGG / multi-channel WAV for the "Transcribe Files"
 # page. Same crate + features rodio already pulls in, so no new transitive deps.
 symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
-log = "^0.4.34"
-tokio = "^1.53.2"
+log = "^0.4.35"
+tokio = "^1.54.1"
 # Voice activity detection: pure Rust, no model file, no native runtime.
 earshot = "1.2.2"
 # RNNoise noise suppression (pure-Rust port, weights compiled in). Default
@@ -122,10 +106,10 @@ earshot = "1.2.2"
 nnnoiseless = { version = "0.5.2", default-features = false }
 # In-app llama.cpp server manager: release archives are unpacked with the
 # pure-Rust zip crate (no PowerShell / tar shell-outs).
-zip = { version = "^9.0.0-pre3", default-features = false, features = ["deflate"] }
+zip = { version = "^9.6.0", default-features = false, features = ["deflate"] }
 # Status-bar meters: one sampler thread, CPU + RAM from sysinfo, GPU from NVML
 # when the NVIDIA driver library is present (loaded at runtime, optional).
-sysinfo = { version = "^0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "^0.40.3", default-features = false, features = ["system"] }
 nvml-wrapper = "0.13"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
@@ -133,7 +117,7 @@ reqwest = { version = "^0.13.5", features = ["json", "stream", "gzip", "brotli",
 futures-util = "^0.3.34"
 # Live FFT page: real-to-complex transform (built on rustfft). Already a
 # transitive dependency of rubato, so no new crate is compiled.
-realfft = "3.5.0"
+realfft = "^3.5.1"
 strsim = "0.11.1"
 natural = "0.5.0"
 regex = "1.13.1"
@@ -143,28 +127,28 @@ whatlang = "^0.18.0"
 isolang = "^2.4.0"
 chrono = "0.4.45"
 rusqlite = { version = "^0.40.2", features = ["bundled"] }
-sha2 = "0.11.0"
+sha2 = "^0.11.1"
 # Every model (Whisper family, Parakeet, Moonshine, Canary, … as GGUF) runs
 # through transcribe-cpp (ggml, native backends). Per-platform backend features
 # are added in the target tables below.
 transcribe-cpp = { version = "*", default-features = false }
-handy-keys = "^0.3.4"
+handy-keys = "^0.3.5"
 ferrous-opencc = "0.4.0"
 clap = { version = "^4.6.7", features = ["derive"] }
-specta = "2.0.0-rc.26"
-specta-typescript = "0.0.13"
-tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = "2.0.0-rc.28"
+specta-typescript = "0.0.15"
+tauri-specta = { version = "2.0.0-rc.29", features = ["derive", "typescript"] }
 tauri-plugin-macos-permissions = "2.3.0"
 tauri-plugin-dialog = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 hf-hub = { git = "https://github.com/huggingface/hf-hub", branch = "main" }
-tokio-util = "^0.7.19"
+tokio-util = "^0.7.20"
 dirs = "^7.0.0"
 chacha20poly1305 = "0.11.0"
 argon2 = "0.6.0"
-rand = "^0.10.3"
+rand = "^0.10.4"
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "^0.4.5"
+signal-hook = "^0.4.6"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
@@ -224,7 +208,7 @@ transcribe-cpp = { version = "*", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }
-objc2 = "^0.6.4"
+objc2 = "^0.6.5"
 objc2-foundation = "^0.3.2"
 objc2-app-kit = "^0.3.2"
 objc2-service-management = "0.3.2"
@@ -237,7 +221,7 @@ gtk = "^0.18.2"
 # Stays on 0.2: the libc README says to depend on 0.2, the 1.0.0-alpha.*
 # tags are v1.0 branch snapshots, and every other crate here uses 0.2 (a
 # second libc would be compiled on Linux). update-deps.ts knows this.
-libc = "^0.2.190"
+libc = "^0.2.191"
 # Same posture as Windows x86_64 above: architectures are compiled in on every
 # platform (no `arch-dl` anywhere), so every model works — there is just no
 # plugin directory to swap a family in or out of.
@@ -247,21 +231,16 @@ transcribe-cpp = { version = "*", default-features = false, features = [
   "vulkan",
 ] }
 
-# TEMPORARY: tao pinned to upstream tauri-apps/tao `main` for the Wayland
-# client-side-decorations fix (tao #1218, fixes tauri #11856 — dead titlebar
-# buttons after visible(false) → show()) and the thread event target shutdown
-# fix (tao #1274 / upstream #1710). The patched tree is tao **0.37.0**, which is
-# what `tauri-runtime-wry 3.0.0-alpha.2` requires (`tao ^0.37.0`), so the patch
-# no longer pins past its consumer's constraint — it tracks `main` for the two
-# fixes above.
-# tao-macros must be patched to the SAME rev even though nothing here depends on
-# it directly: wry pulls tao-macros 0.1.3 from crates.io, so without this the
-# lockfile carries two tao-macros 0.1.3 entries (registry + git). cargo tolerates
-# that, but Nix's importCargoLock vendors both to the same `tao-macros-0.1.3`
-# dir and fails with a symlink collision. Unifying the source removes the dup.
+# tao is no longer patched: the git patch existed for the Wayland client-side
+# decorations fix (tao #1218) and the thread event target fix (tao #1274), both
+# merged before tao 0.37.0 was published (2026-08-21); `tao` `dev` is the
+# published 0.37.2, so crates.io carries everything the patch did. Dropping it
+# also drops the duplicated `tao-macros` source that Nix's importCargoLock
+# could not vendor.
+#
+# Specta is no longer patched either: rc.28 / 0.0.15 are published, and the
+# tauri-specta fork requires exactly `=2.0.0-rc.28`.
 [patch.crates-io]
-tao = { git = "https://github.com/tauri-apps/tao" }
-tao-macros = { git = "https://github.com/tauri-apps/tao" }
 # The tauri crates are NOT patched: they resolve from crates.io at the versions
 # `[dependencies]` above asks for. They were briefly patched from a v3 fork that
 # carried one commit — bumping tauri-runtime-wry's wry dependency from 0.56 to
@@ -273,18 +252,13 @@ tao-macros = { git = "https://github.com/tauri-apps/tao" }
 tauri-specta = { git = "https://github.com/NairoDorian/tauri-specta-v3" }
 tauri-plugin-macos-permissions = { git = "https://github.com/NairoDorian/tauri-plugin-macos-permissions" }
 transcribe-cpp = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
-specta = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
-specta-macros = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
-specta-serde = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
-specta-typescript = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
-specta-util = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
 transcribe-cpp-sys = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
 # Test-only tokio features for the local socket servers exercising the
 # resumable HTTP downloader; normal builds keep the leaner feature set.
-tokio = { version = "^1.53.2", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
+tokio = { version = "^1.54.1", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
 
 [profile.release]
 lto = "thin"
