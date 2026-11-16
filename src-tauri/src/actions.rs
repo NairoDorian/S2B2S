@@ -579,6 +579,26 @@ pub(crate) async fn process_transcription_output(
 /// recording the user made with filtering turned off.
 pub(crate) const MIN_SPEECH_MS_TO_TRANSCRIBE: u64 = 200;
 
+/// Whether a recording started now could be transcribed: a model is loaded, or
+/// the selected model's files are on disk for the load kicked off just before.
+/// Otherwise the microphone, tray and overlay stay untouched, and the failed
+/// load reports why through its usual error — instead of recording a whole
+/// dictation that then fails with "Model is not loaded" (upstream eea1f5f,
+/// #2161). A loaded model keeps working even if its files were removed.
+pub(crate) fn transcription_model_available(app: &AppHandle) -> bool {
+    if app.state::<Arc<TranscriptionManager>>().is_model_loaded() {
+        return true;
+    }
+    let selected = get_settings(app).selected_model;
+    match app.state::<Arc<ModelManager>>().get_model_path(&selected) {
+        Ok(_) => true,
+        Err(e) => {
+            warn!("Not starting recording: no model can transcribe it ({e})");
+            false
+        }
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
@@ -598,6 +618,10 @@ impl ShortcutAction for TranscribeAction {
             }
         });
         let kickoff_elapsed = kickoff_started.elapsed();
+
+        if !transcription_model_available(app) {
+            return;
+        }
 
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
@@ -1790,6 +1814,12 @@ impl ShortcutAction for MultiSttAction {
                 warn!("VAD pre-load failed: {}", e);
             }
         });
+
+        // The primary model is the one that must exist: extras that are
+        // missing are skipped by the merge, not a reason to keep the mic shut.
+        if !transcription_model_available(app) {
+            return;
+        }
 
         let binding_id = binding_id.to_string();
         set_tray_state(app, TrayIconState::Recording);

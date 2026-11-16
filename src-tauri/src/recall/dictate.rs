@@ -55,6 +55,10 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     let vad_policy = crate::managers::audio::vad_policy_for(app, &settings);
 
     tm.initiate_model_load();
+    if !crate::actions::transcription_model_available(app) {
+        DICTATE_ACTIVE.store(false, Ordering::Release);
+        return Err("No transcription model is available".to_string());
+    }
 
     match rm.try_start_recording_with_options(
         DICTATE_BINDING,
