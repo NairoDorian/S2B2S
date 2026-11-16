@@ -2888,7 +2888,16 @@ fn post_process_transcription_text(
             settings.filler_word_removal_enabled,
         );
 
-        normalize_transcription_output(&without_fillers)
+        let text = normalize_transcription_output(&without_fillers);
+        // A short wordless clip (Whisper pads noise to 1.25 s) often comes back
+        // as just "." or "?": that is not speech, and pasting it, post-processing
+        // it or saving it would be wrong. No letter or digit means no transcript
+        // (upstream ca4a611, #2434).
+        if text.chars().any(char::is_alphanumeric) {
+            text
+        } else {
+            String::new()
+        }
     })
 }
 
@@ -5380,6 +5389,30 @@ mod tests {
         );
 
         assert_eq!(evidence, OutputLanguageEvidence::TranslatedToEnglish);
+    }
+
+    #[test]
+    fn punctuation_only_transcripts_are_empty() {
+        let settings = AppSettings::default();
+        let supported = languages(&["en"]);
+        for raw in [".", " ? ", "...", "!", "—"] {
+            let result = post_process_transcription_text(
+                raw.to_string(),
+                &settings,
+                false,
+                &OutputLanguageEvidence::Unknown,
+                &supported,
+            );
+            assert_eq!(result, "", "{raw:?} is not a transcript");
+        }
+        let kept = post_process_transcription_text(
+            "7.".to_string(),
+            &settings,
+            false,
+            &OutputLanguageEvidence::Unknown,
+            &supported,
+        );
+        assert_eq!(kept, "7.", "a digit is content");
     }
 
     #[test]
