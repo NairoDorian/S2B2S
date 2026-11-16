@@ -3,8 +3,6 @@ import { dynamic } from "@solidjs/web";
 import { useTranslation } from "@/i18n/useTranslation";
 import {
   AlertTriangle,
-  Check,
-  Copy,
   Cpu,
   FileAudio,
   Mic,
@@ -22,7 +20,6 @@ import { scrollAndFocusAnchor } from "../../../lib/anchorNavigation";
 import {
   HELP_SECTIONS,
   SMART_HELP_ACTIONS,
-  SOURCE_URL,
   type HelpEntryDefinition,
 } from "./helpContent";
 
@@ -55,9 +52,6 @@ const scrollToAnchor = (anchor: string) => {
 export const HelpSettings = () => {
   const { t } = useTranslation();
   const [query, setQuery] = createSignal("");
-  const [copyStatus, setCopyStatus] = createSignal<"idle" | "copied" | "error">(
-    "idle",
-  );
 
   // A QuickHelp banner opened Help at a section. Tracked, so an `openHelp`
   // issued while this page is already showing is honoured too.
@@ -82,17 +76,6 @@ export const HelpSettings = () => {
       return haystack.includes(normalizedQuery());
     });
   });
-
-  const aiPrompt = () => t("help.aiAssist.prompt", { url: SOURCE_URL });
-  const copyAiPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(aiPrompt());
-      setCopyStatus("copied");
-    } catch {
-      setCopyStatus("error");
-    }
-    window.setTimeout(() => setCopyStatus("idle"), 2000);
-  };
 
   const renderEntry = (
     entry: HelpEntryDefinition,
@@ -288,32 +271,6 @@ export const HelpSettings = () => {
           )}
         </For>
       </div>
-
-      {/* Ask an AI assistant */}
-      <section class="rounded-lg border border-mid-gray/20 bg-background p-4 space-y-2">
-        <h2 class="text-sm font-semibold text-text">
-          {t("help.aiAssist.title")}
-        </h2>
-        <p class="text-xs text-text/70">{t("help.aiAssist.description")}</p>
-        <pre class="whitespace-pre-wrap break-words rounded-md bg-mid-gray/10 p-3 text-xs text-text/80 select-text">
-          {aiPrompt()}
-        </pre>
-        <Button variant="secondary" size="sm" onClick={copyAiPrompt}>
-          <span class="inline-flex items-center gap-1.5">
-            <Show when={copyStatus() === "copied"}>
-              <Check class="w-3.5 h-3.5" />
-            </Show>
-            <Show when={copyStatus() !== "copied"}>
-              <Copy class="w-3.5 h-3.5" />
-            </Show>
-            {copyStatus() === "copied"
-              ? t("help.aiAssist.copied")
-              : copyStatus() === "error"
-                ? t("help.aiAssist.copyFailed")
-                : t("help.aiAssist.copy")}
-          </span>
-        </Button>
-      </section>
 
       <p class="text-xs text-text/50 px-1">
         <button

@@ -976,6 +976,9 @@ build`, with or without a source change (four minutes in release). The
 
 ### Removed
 
+- **Help's "Ask an AI assistant" section (2026-11-16).** The copyable prompt
+  that pointed an AI chat at the source repository is gone from the Help page,
+  with its strings in all 26 locales.
 - **ONNX stack (2026-09-10):** `transcribe-rs` (and its `[patch.crates-io]`
   entry), `ort`, `ndarray`, `tar`, `flate2`; `audio_toolkit/vad/silero.rs`,
   `resources/models/silero_vad_v6.2.onnx`, `resources/models/gigaam_vocab.txt`
