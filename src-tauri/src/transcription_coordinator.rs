@@ -153,6 +153,14 @@ struct InputEvent {
     /// They fire on every edge by design and must never be debounced —
     /// dropping one desyncs toggle parity and wedges recording on.
     external: bool,
+    /// When the sender observed the edge, not when the coordinator thread
+    /// dequeues it. The coordinator executes `Effect::Start` inline, and the
+    /// first activation after startup spends hundreds of milliseconds opening
+    /// the microphone; a release queued behind that block must still be
+    /// measured from the real key-up, or a short tap classifies as a hold and
+    /// the just-started recording stops with zero samples (upstream 56c7e21,
+    /// #2097). The loop passes this as the `now` of `on_input`.
+    received_at: Instant,
 }
 
 impl InputEvent {
@@ -583,7 +591,12 @@ impl TranscriptionCoordinator {
 
                     match cmd {
                         Command::Input(input) => {
-                            if let Some(effect) = state.on_input(input, Instant::now()) {
+                            // Holds are measured edge to edge from the sender's
+                            // stamp, so time spent blocked in a prior effect
+                            // (first-activation mic open) cannot turn a tap into
+                            // a hold.
+                            let now = input.received_at;
+                            if let Some(effect) = state.on_input(input, now) {
                                 run_effect(&app, &mut state, effect);
                             }
                         }
@@ -658,6 +671,7 @@ impl TranscriptionCoordinator {
                 mode,
                 hold_threshold,
                 external,
+                received_at: Instant::now(),
             }))
             .is_err()
         {
@@ -912,6 +926,7 @@ mod tests {
             mode: ShortcutActivation::PushToTalk,
             hold_threshold: Duration::ZERO,
             external: false,
+            received_at: Instant::now(),
         }
     }
 
@@ -1050,6 +1065,7 @@ mod tests {
                     mode: ShortcutActivation::Toggle,
                     hold_threshold: Duration::ZERO,
                     external: true,
+                    received_at: at,
                 },
                 at,
             )
@@ -1112,6 +1128,7 @@ mod tests {
             mode: ShortcutActivation::Toggle,
             hold_threshold: Duration::ZERO,
             external,
+            received_at: Instant::now(),
         }
     }
 
@@ -1241,11 +1258,50 @@ mod tests {
             mode,
             hold_threshold: HOLD_THRESHOLD,
             external: false,
+            received_at: Instant::now(),
         }
     }
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    /// Regression for upstream #2089 / 56c7e21: the first activation after
+    /// startup blocks the coordinator thread in `Effect::Start` while the
+    /// microphone opens (~400 ms). A short tap whose release is queued behind
+    /// that block must still classify as a tap, because the loop measures the
+    /// hold from the sender's `received_at` stamps, not its dequeue time.
+    #[test]
+    fn hold_or_toggle_tap_survives_first_activation_start_latency() {
+        let mode = ShortcutActivation::HoldOrToggle;
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+
+        let mut press = input(mode, true);
+        press.received_at = t0;
+        assert!(matches!(
+            state.on_input(press, t0),
+            Some(Effect::Start { .. })
+        ));
+
+        // The key really goes up 150 ms in, while the coordinator is still
+        // opening the microphone: the release carries the edge time.
+        let mut release = input(mode, false);
+        release.received_at = t0 + ms(150);
+        assert!(state.on_input(release, t0 + ms(150)).is_none());
+        assert!(
+            state.on_grace_expired().is_none(),
+            "a 150 ms tap measured edge to edge must not stop the recording"
+        );
+        assert!(state.is_locked(), "the tap must lock the session on");
+
+        // The next press ends the session, per tap semantics.
+        let mut stop_press = input(mode, true);
+        stop_press.received_at = t0 + ms(5000);
+        assert!(matches!(
+            state.on_input(stop_press, t0 + ms(5000)),
+            Some(Effect::Stop { .. })
+        ));
     }
 
     /// Hold-or-toggle: a key held past the threshold is push-to-talk — the
