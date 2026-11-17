@@ -296,6 +296,41 @@ test.describe("settings window", () => {
     expect(crashes).toEqual([]);
   });
 
+  test("speaking Chinese reveals the script setting", async ({ page }) => {
+    const crashes = watchForCrashes(page);
+    await boot(page);
+
+    const scriptRow = page.getByText("Chinese Script", { exact: true });
+    await expect(scriptRow).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Add a language" }).click();
+    const search = page.getByRole("textbox", { name: "Search languages" });
+    await search.fill("cantonese");
+    await search.press("Enter");
+    await search.press("Escape");
+    await expect(scriptRow).toBeVisible();
+
+    await page.getByRole("button", { name: "As Transcribed" }).click();
+    await page
+      .getByRole("button", { name: /Traditional \(Hong Kong\)/ })
+      .click();
+    await expect
+      .poll(async () =>
+        (await calls(page)).filter(
+          (c) => c.cmd === "change_chinese_script_setting",
+        ),
+      )
+      .toEqual([
+        {
+          cmd: "change_chinese_script_setting",
+          args: { script: "traditional_hk" },
+        },
+      ]);
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+
   test("a missing language detector is explained and can be downloaded", async ({
     page,
   }) => {

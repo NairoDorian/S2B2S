@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Chinees schrift",
+        "description": "Schrijft Mandarijnse en Kantonese transcripties in vereenvoudigde tekens, of in traditionele tekens zoals gebruikt in Taiwan of Hongkong. Andere talen blijven ongewijzigd.",
+        "options": {
+          "asTranscribed": "Zoals getranscribeerd",
+          "simplified": "Vereenvoudigd",
+          "traditionalTw": "Traditioneel (Taiwan)",
+          "traditionalHk": "Traditioneel (Hongkong)"
+        }
       }
     },
     "postProcessing": {

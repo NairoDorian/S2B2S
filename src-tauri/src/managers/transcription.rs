@@ -1555,15 +1555,23 @@ impl TranscriptionManager {
                                 if update.committed_changed || update.tentative_changed {
                                     let text = stream.text();
                                     perf.record_emit();
-                                    self.emit_stream_text(
-                                        slot,
+                                    // The script is decided once per update over
+                                    // the whole text, so both halves agree.
+                                    let (committed, tentative) = chinese_stream_text(
                                         &text.committed,
                                         &text.tentative,
+                                        &output_language,
+                                        settings.chinese_script,
+                                    );
+                                    self.emit_stream_text(
+                                        slot,
+                                        &committed,
+                                        &tentative,
                                         update.audio_committed_ms,
                                         update.input_received_ms,
                                     );
                                     if let Some(writer) = &direct_writer {
-                                        writer.update_target(text.display());
+                                        writer.update_target(format!("{committed}{tentative}"));
                                     }
                                 }
                                 perf.maybe_log();
@@ -1588,7 +1596,12 @@ impl TranscriptionManager {
                                     update.buffered_ms,
                                 );
                                 let text = stream.text();
-                                let finalized_text = text.display();
+                                let finalized_text = crate::chinese_script::apply_chinese_script(
+                                    &text.display(),
+                                    &output_language,
+                                    settings.chinese_script,
+                                )
+                                .unwrap_or_else(|| text.display());
                                 // After finalize the committed prefix holds the
                                 // whole text, so a sink that has been tracking
                                 // the chunk boundaries gets its last words here.
@@ -2858,6 +2871,29 @@ fn with_model_detected_language(
     }
 }
 
+/// A live update's two halves in the chosen Chinese script, borrowed as they
+/// are when no conversion applies (the common case costs no copy).
+fn chinese_stream_text<'a>(
+    committed: &'a str,
+    tentative: &'a str,
+    output_language: &OutputLanguageEvidence,
+    script: crate::settings::ChineseScript,
+) -> (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>) {
+    use crate::chinese_script::{chinese_variety_for_text, convert_chinese_script};
+    use std::borrow::Cow;
+    if script == crate::settings::ChineseScript::AsTranscribed {
+        return (Cow::Borrowed(committed), Cow::Borrowed(tentative));
+    }
+    let whole = format!("{committed}{tentative}");
+    match chinese_variety_for_text(&whole, output_language) {
+        Some(variety) => (
+            Cow::Owned(convert_chinese_script(committed, variety, script)),
+            Cow::Owned(convert_chinese_script(tentative, variety, script)),
+        ),
+        None => (Cow::Borrowed(committed), Cow::Borrowed(tentative)),
+    }
+}
+
 struct TranscribeCppRunPlan {
     task: Task,
     language: Option<String>,
@@ -3073,6 +3109,14 @@ fn post_process_transcription_text(
         } else {
             raw
         };
+        // Chinese script: decided from the text (mixed Mandarin/English is
+        // often tagged English), Japanese and Korean left alone.
+        let corrected = crate::chinese_script::apply_chinese_script(
+            &corrected,
+            output_language,
+            settings.chinese_script,
+        )
+        .unwrap_or(corrected);
 
         // Last-resort language evidence: confidence-gated detection from the
         // transcribed text itself, constrained to the model's languages. Only

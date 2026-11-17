@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "중국어 간체/번체",
+        "description": "표준 중국어와 광둥어 전사를 간체 또는 대만·홍콩식 번체로 표기합니다. 다른 언어는 변경되지 않습니다.",
+        "options": {
+          "asTranscribed": "전사된 그대로",
+          "simplified": "간체",
+          "traditionalTw": "번체 (대만)",
+          "traditionalHk": "번체 (홍콩)"
+        }
       }
     },
     "postProcessing": {

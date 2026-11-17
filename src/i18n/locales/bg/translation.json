@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Китайска писменост",
+        "description": "Записва транскрипциите на мандарин и кантонски с опростени йероглифи или с традиционни йероглифи, както се пишат в Тайван или Хонконг. Другите езици остават непроменени.",
+        "options": {
+          "asTranscribed": "Както е транскрибирано",
+          "simplified": "Опростени",
+          "traditionalTw": "Традиционни (Тайван)",
+          "traditionalHk": "Традиционни (Хонконг)"
+        }
       }
     },
     "postProcessing": {

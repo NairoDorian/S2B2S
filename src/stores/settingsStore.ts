@@ -3,6 +3,7 @@ import { createSolidStore } from "@/lib/solidStore";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  ChineseScript,
   TranscribeAcceleratorSetting,
   FileTranscriptionSettings,
   LiveModeSettings,
@@ -236,6 +237,8 @@ const settingUpdaters: {
     commands.changeSpokenLanguagesSetting(value as string[]),
   spoken_languages_any_letters: (value) =>
     commands.changeSpokenLanguagesAnyLettersSetting(value as boolean),
+  chinese_script: (value) =>
+    commands.changeChineseScriptSetting(value as ChineseScript),
   overlay_position: (value) =>
     commands.changeOverlayPositionSetting(value as string),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),

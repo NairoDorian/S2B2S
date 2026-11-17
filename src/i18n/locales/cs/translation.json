@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Čínské písmo",
+        "description": "Přepisy v mandarínštině a kantonštině se píší zjednodušenými znaky nebo tradičními znaky, jak se píší na Tchaj-wanu či v Hongkongu. Ostatní jazyky zůstanou beze změny.",
+        "options": {
+          "asTranscribed": "Jak bylo přepsáno",
+          "simplified": "Zjednodušené",
+          "traditionalTw": "Tradiční (Tchaj-wan)",
+          "traditionalHk": "Tradiční (Hongkong)"
+        }
       }
     },
     "postProcessing": {

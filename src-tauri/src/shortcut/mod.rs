@@ -854,6 +854,20 @@ pub fn change_spoken_languages_setting(
     Ok(())
 }
 
+/// How Mandarin and Cantonese output is written; applies from the next
+/// update of a live stream and to every later transcription.
+#[tauri::command]
+#[specta::specta]
+pub fn change_chinese_script_setting(
+    app: AppHandle,
+    script: settings::ChineseScript,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.chinese_script = script;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_spoken_languages_any_letters_setting(

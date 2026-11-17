@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "כתב סיני",
+        "description": "כותב תמלולים של מנדרינית וקנטונזית בתווים מפושטים, או בתווים מסורתיים כפי שכותבים בטייוואן או בהונג קונג. שפות אחרות נשארות ללא שינוי.",
+        "options": {
+          "asTranscribed": "כפי שתומלל",
+          "simplified": "מפושט",
+          "traditionalTw": "מסורתית (טייוואן)",
+          "traditionalHk": "מסורתית (הונג קונג)"
+        }
       }
     },
     "postProcessing": {

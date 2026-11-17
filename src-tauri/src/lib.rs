@@ -6,6 +6,7 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod catalog;
+mod chinese_script;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -817,6 +818,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_selected_language_setting,
             shortcut::change_spoken_languages_setting,
             shortcut::change_spoken_languages_any_letters_setting,
+            shortcut::change_chinese_script_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_overlay_direct_mode_setting,

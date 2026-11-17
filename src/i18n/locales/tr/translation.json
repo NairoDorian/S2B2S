@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Çince yazı",
+        "description": "Mandarin ve Kantonca transkripsiyonları Basitleştirilmiş karakterlerle veya Tayvan ya da Hong Kong'da yazıldığı şekliyle Geleneksel karakterlerle yazar. Diğer diller değiştirilmez.",
+        "options": {
+          "asTranscribed": "Transkripsiyondaki gibi",
+          "simplified": "Basitleştirilmiş",
+          "traditionalTw": "Geleneksel (Tayvan)",
+          "traditionalHk": "Geleneksel (Hong Kong)"
+        }
       }
     },
     "postProcessing": {

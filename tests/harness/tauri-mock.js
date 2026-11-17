@@ -198,6 +198,8 @@
     //   leaving the webview, like the combobox above.
     change_spoken_languages_setting: null,
     change_spoken_languages_any_letters_setting: null,
+    //   The Chinese script row the list reveals for Mandarin / Cantonese.
+    change_chinese_script_setting: null,
     //   The detector button under that list (a test drives it through the
     //   per-test replies below).
     download_language_detector: null,

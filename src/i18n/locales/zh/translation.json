@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "简繁转换",
+        "description": "将普通话和粤语的转录结果输出为简体字，或台湾、香港通行的繁体字。其他语言保持不变。",
+        "options": {
+          "asTranscribed": "保持原样",
+          "simplified": "简体",
+          "traditionalTw": "繁体（台湾）",
+          "traditionalHk": "繁体（香港）"
+        }
       }
     },
     "postProcessing": {

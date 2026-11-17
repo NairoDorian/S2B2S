@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Escrita chinesa",
+        "description": "Escreve as transcrições em mandarim e cantonês com caracteres simplificados ou com caracteres tradicionais, como são escritos em Taiwan ou Hong Kong. Os outros idiomas não são alterados.",
+        "options": {
+          "asTranscribed": "Como transcrito",
+          "simplified": "Simplificado",
+          "traditionalTw": "Tradicional (Taiwan)",
+          "traditionalHk": "Tradicional (Hong Kong)"
+        }
       }
     },
     "postProcessing": {

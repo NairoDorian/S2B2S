@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Pismo chińskie",
+        "description": "Zapisuje transkrypcje w języku mandaryńskim i kantońskim znakami uproszczonymi albo tradycyjnymi, w odmianie używanej na Tajwanie lub w Hongkongu. Inne języki pozostają bez zmian.",
+        "options": {
+          "asTranscribed": "Jak w transkrypcji",
+          "simplified": "Uproszczone",
+          "traditionalTw": "Tradycyjne (Tajwan)",
+          "traditionalHk": "Tradycyjne (Hongkong)"
+        }
       }
     },
     "postProcessing": {

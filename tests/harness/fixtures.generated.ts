@@ -27,6 +27,7 @@ export const settingsFixture = {
   selected_language: "",
   spoken_languages: [],
   spoken_languages_any_letters: false,
+  chinese_script: "as_transcribed",
   language_detection: "when_needed",
   language_detection_window_secs: 0,
   overlay_position: "top",

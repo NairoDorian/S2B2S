@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Kinesisk skrift",
+        "description": "Skriver mandarin- og kantonesiske transskriptioner med forenklede tegn eller med traditionelle tegn, som de skrives i Taiwan eller Hongkong. Andre sprog forbliver uændrede.",
+        "options": {
+          "asTranscribed": "Som transskriberet",
+          "simplified": "Forenklet",
+          "traditionalTw": "Traditionelle (Taiwan)",
+          "traditionalHk": "Traditionelle (Hongkong)"
+        }
       }
     },
     "postProcessing": {

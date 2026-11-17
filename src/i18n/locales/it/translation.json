@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Scrittura cinese",
+        "description": "Scrive le trascrizioni in mandarino e cantonese in caratteri semplificati, oppure in caratteri tradizionali come si scrivono a Taiwan o a Hong Kong. Le altre lingue restano invariate.",
+        "options": {
+          "asTranscribed": "Come trascritto",
+          "simplified": "Semplificato",
+          "traditionalTw": "Tradizionale (Taiwan)",
+          "traditionalHk": "Tradizionale (Hong Kong)"
+        }
       }
     },
     "postProcessing": {

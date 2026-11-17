@@ -31,6 +31,11 @@ export const commands = {
 	 */
 	changeSpokenLanguagesSetting: (languages: string[], options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_spoken_languages_setting", { languages }, options)),
 	changeSpokenLanguagesAnyLettersSetting: (enabled: boolean, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_spoken_languages_any_letters_setting", { enabled }, options)),
+	/**
+	 *  How Mandarin and Cantonese output is written; applies from the next
+	 *  update of a live stream and to every later transcription.
+	 */
+	changeChineseScriptSetting: (script: ChineseScript_Deserialize, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_chinese_script_setting", { script }, options)),
 	changeOverlayPositionSetting: (position: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_overlay_position_setting", { position }, options)),
 	changeOverlayStyleSetting: (style: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style }, options)),
 	changeOverlayDirectModeSetting: (enabled: boolean, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled }, options)),
@@ -696,6 +701,12 @@ export type AppSettings_Deserialize = {
 	 */
 	spoken_languages_any_letters?: boolean,
 	/**
+	 *  How Mandarin and Cantonese output is written ([`ChineseScript`]),
+	 *  applied to the live text and the final text alike. Replaced the
+	 *  `zh-Hans` / `zh-Hant` language intents (migrated on load).
+	 */
+	chinese_script?: ChineseScript_Deserialize,
+	/**
 	 *  When the spoken-language detector picks the language for Auto
 	 *  (`language_detection` module). The upstream project's name and values.
 	 */
@@ -1067,6 +1078,12 @@ export type AppSettings_Serialize = {
 	 *  keeps its own spelling. Fork-only.
 	 */
 	spoken_languages_any_letters: boolean,
+	/**
+	 *  How Mandarin and Cantonese output is written ([`ChineseScript`]),
+	 *  applied to the live text and the final text alike. Replaced the
+	 *  `zh-Hans` / `zh-Hant` language intents (migrated on load).
+	 */
+	chinese_script: ChineseScript_Serialize,
 	/**
 	 *  When the spoken-language detector picks the language for Auto
 	 *  (`language_detection` module). The upstream project's name and values.
@@ -1452,6 +1469,41 @@ export type BindingResponse_Serialize = {
 	binding: ShortcutBinding | null,
 	error: string | null,
 };
+
+/**
+ *  Script applied to Mandarin and Cantonese output. Traditional carries its
+ *  region (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it. The
+ *  upstream project's setting and values (decision D6).
+ */
+export type ChineseScript = ChineseScript_Serialize | ChineseScript_Deserialize;
+
+/**
+ *  Script applied to Mandarin and Cantonese output. Traditional carries its
+ *  region (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it. The
+ *  upstream project's setting and values (decision D6).
+ */
+export type ChineseScript_Deserialize = 
+/**  Keep whatever script the model produced. */
+"as_transcribed" | "simplified" | 
+/**  Traditional, Taiwan forms. Also reads upstream's legacy `traditional`. */
+"traditional_tw" | 
+/**  Traditional, Taiwan forms. Also reads upstream's legacy `traditional`. */
+"traditional" | 
+/**  Traditional, in Hong Kong's standard forms. */
+"traditional_hk";
+
+/**
+ *  Script applied to Mandarin and Cantonese output. Traditional carries its
+ *  region (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it. The
+ *  upstream project's setting and values (decision D6).
+ */
+export type ChineseScript_Serialize = 
+/**  Keep whatever script the model produced. */
+"as_transcribed" | "simplified" | 
+/**  Traditional, Taiwan forms. Also reads upstream's legacy `traditional`. */
+"traditional_tw" | 
+/**  Traditional, in Hong Kong's standard forms. */
+"traditional_hk";
 
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard";
 

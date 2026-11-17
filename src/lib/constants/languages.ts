@@ -128,16 +128,21 @@ export const MODEL_CAPABILITY_LANGUAGES: Language[] = LANGUAGES.filter(
     language.value !== "auto" && !CHINESE_OUTPUT_INTENTS.has(language.value),
 );
 
-// Languages offered in the transcription-language picker. We surface the two
-// explicit Chinese *output* variants (Simplified / Traditional) and hide the
-// bare recognition code `zh` ("Chinese"): all three recognize identically, so
-// the plain option only adds ambiguity about which script you get. `zh` stays in
-// LANGUAGES — it's still a valid *effective* language (auto-detect and must-pick
-// fallback can resolve to it) and its label is needed to render that state — it
-// just isn't directly selectable.
+// Languages offered in the transcription-language picker: the recognition
+// languages. The script Chinese is written in is its own setting
+// (`chinese_script`, decision D6), so the bare `zh` ("Chinese") is offered and
+// the old `zh-Hans` / `zh-Hant` intents are not; they stay in LANGUAGES only so
+// a value written by an older build still renders a label until the settings
+// migration folds it into `zh`.
 export const SELECTABLE_LANGUAGES: Language[] = LANGUAGES.filter(
-  (language) => language.value !== CHINESE_LANGUAGE_CODE,
+  (language) => !CHINESE_OUTPUT_INTENTS.has(language.value),
 );
+
+/** Mandarin or Cantonese: the languages the Chinese script setting writes. */
+export const isChineseLanguage = (code: string): boolean => {
+  const base = code.split(/[-_]/)[0].toLowerCase();
+  return base === CHINESE_LANGUAGE_CODE || base === "yue";
+};
 
 // Collapse a language tag to the canonical recognition intent the app exposes in
 // the UI. BCP-47 region/script subtags are dropped ("en-US" → "en",

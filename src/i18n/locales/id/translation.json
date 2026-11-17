@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Aksara Tionghoa",
+        "description": "Menulis transkripsi Mandarin dan Kanton dengan aksara Sederhana, atau aksara Tradisional seperti yang ditulis di Taiwan atau Hong Kong. Bahasa lain tidak diubah.",
+        "options": {
+          "asTranscribed": "Sesuai transkripsi",
+          "simplified": "Sederhana",
+          "traditionalTw": "Tradisional (Taiwan)",
+          "traditionalHk": "Tradisional (Hong Kong)"
+        }
       }
     },
     "postProcessing": {

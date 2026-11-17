@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Chinese script as its own setting (2026-11-17).** Mandarin and Cantonese
+  output can be written in Simplified characters or in Traditional characters
+  with Taiwan's or Hong Kong's forms, on the live preview, the typed text and
+  the paste alike. Whether text is Chinese is decided from the text itself, so
+  mixed Mandarin/English that a model tags as English is still converted, and
+  Japanese and Korean are never touched. The language picker now offers plain
+  "Chinese"; a stored `zh-Hans` / `zh-Hant` choice becomes Chinese plus the
+  matching script (settings schema 11), and anyone else keeps the model's own
+  output. Fresh installs follow the OS locale. Ported from upstream.
+
 - **Languages I speak (2026-11-17).** A list on the General page of the
   languages you speak. While the language is Auto, every model that takes a
   language allowlist (transcribe.cpp's `Feature::LanguageAllowlist`) is limited

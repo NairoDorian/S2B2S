@@ -543,6 +543,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "الكتابة الصينية",
+        "description": "يكتب تفريغ الماندرين والكانتونية بالحروف المبسّطة، أو بالحروف التقليدية كما تُكتب في تايوان أو هونغ كونغ. تبقى اللغات الأخرى دون تغيير.",
+        "options": {
+          "asTranscribed": "كما نُسخ",
+          "simplified": "مبسطة",
+          "traditionalTw": "تقليدية (تايوان)",
+          "traditionalHk": "تقليدية (هونغ كونغ)"
+        }
       }
     },
     "postProcessing": {

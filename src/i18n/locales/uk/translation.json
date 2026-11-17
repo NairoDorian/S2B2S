@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Китайська писемність",
+        "description": "Записує транскрипції мандаринською та кантонською спрощеними ієрогліфами або традиційними, як їх пишуть на Тайвані чи в Гонконгу. Інші мови не змінюються.",
+        "options": {
+          "asTranscribed": "Як розпізнано",
+          "simplified": "Спрощені",
+          "traditionalTw": "Традиційні (Тайвань)",
+          "traditionalHk": "Традиційні (Гонконг)"
+        }
       }
     },
     "postProcessing": {

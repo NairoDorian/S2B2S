@@ -427,6 +427,14 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   first run. When `stop_on_exit` is on, stopped on `RunEvent::Exit` and, on
   Windows, by a job object if the app dies; with it off the server is not
   tied to the job object and survives the app's exit
+- `chinese_script.rs` - Simplified / Traditional (Taiwan or Hong Kong forms)
+  for Mandarin and Cantonese output (upstream `0bb0428` + `c67ec6a` +
+  `b5920f2`): decided from the text, not the run's language tag (mixed
+  Mandarin/English is often tagged English), never touching Japanese or
+  Korean; OpenCC converters built once and cached. `apply_chinese_script` is
+  the one entry point, used by the batch filter
+  (`post_process_transcription_text`) and by the live stream (preview, typed
+  text and the finalized text), so all of them agree
 - `language_detection/` - Spoken-language detection for Auto (port of the
   upstream module): `policy.rs` is the pure decision (`plan` → `Fixed` /
   `Native` / `Detect`, and `status` for the UI), `detector.rs` the
@@ -912,6 +920,14 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   cannot detect a language itself (Canary, Cohere, Voxtral, Granite NAR) the
   list also drives the detector: one compatible language → that language, two
   or more → `language_detection` picks from the first seconds of speech
+- `chinese_script` (`as_transcribed` / `simplified` / `traditional_tw` /
+  `traditional_hk`; fresh installs follow the OS locale) - How Mandarin and
+  Cantonese output is written (`ChineseScript.tsx`, shown in the Languages
+  group to people who speak or picked Chinese, or already chose a script).
+  Replaced the `zh-Hans` / `zh-Hant` language intents: settings schema
+  **11** folds them into `zh` plus the script (a Multi-STT slot pinned to one
+  supplies the script when the global language did not), and the language
+  picker offers plain "Chinese"
 - `language_detection` (`when_needed` default / `always`) and
   `language_detection_window_secs` (default 5, clamped 2–30) - Upstream's
   names: `always` runs the detector for every non-streaming model, restricted

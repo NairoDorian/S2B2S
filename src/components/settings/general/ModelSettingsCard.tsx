@@ -5,10 +5,6 @@ import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { useModelStore } from "../../../stores/modelStore";
 import type { ModelInfo } from "@/bindings";
-import {
-  CHINESE_LANGUAGE_CODE,
-  getUniqueCapabilityLanguages,
-} from "@/lib/constants/languages";
 
 export const ModelSettingsCard = () => {
   const { t } = useTranslation();
@@ -20,15 +16,10 @@ export const ModelSettingsCard = () => {
   const currentModelInfo = () =>
     modelStore.models.find((m: ModelInfo) => m.id === modelStore.currentModel);
 
-  const supportsLanguageSelection = () =>
-    currentModelInfo()?.supports_language_selection ?? false;
-  const capabilityLanguages = () =>
-    getUniqueCapabilityLanguages(currentModelInfo()?.supported_languages ?? []);
-  const supportsChineseOnlyScriptSelection = () =>
-    capabilityLanguages().length === 1 &&
-    capabilityLanguages()[0] === CHINESE_LANGUAGE_CODE;
+  // A Chinese-only model used to show the selector so its script could be
+  // picked; the script is its own setting now (the Languages group).
   const showLanguageSelector = () =>
-    supportsLanguageSelection() || supportsChineseOnlyScriptSelection();
+    currentModelInfo()?.supports_language_selection ?? false;
   const supportsTranslation = () =>
     currentModelInfo()?.supports_translation ?? false;
   const hasAnySettings = () => showLanguageSelector() || supportsTranslation();

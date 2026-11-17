@@ -570,6 +570,16 @@
         "noiseSuppressionOn": "On",
         "noiseSuppressionOff": "Off",
         "denoiseProb": "Suppressor"
+      },
+      "chineseScript": {
+        "title": "Китайская письменность",
+        "description": "Записывает транскрипции на путунхуа и кантонском упрощёнными иероглифами или традиционными, как их пишут на Тайване или в Гонконге. Другие языки не изменяются.",
+        "options": {
+          "asTranscribed": "Как распознано",
+          "simplified": "Упрощённые",
+          "traditionalTw": "Традиционные (Тайвань)",
+          "traditionalHk": "Традиционные (Гонконг)"
+        }
       }
     },
     "postProcessing": {

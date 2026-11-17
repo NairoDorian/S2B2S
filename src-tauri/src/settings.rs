@@ -440,6 +440,31 @@ pub const DEFAULT_VAD_THRESHOLD_EARSHOT: f32 = 0.5;
 pub const MIN_VAD_THRESHOLD: f32 = 0.05;
 pub const MAX_VAD_THRESHOLD: f32 = 0.95;
 
+/// Script applied to Mandarin and Cantonese output. Traditional carries its
+/// region (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it. The
+/// upstream project's setting and values (decision D6).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ChineseScript {
+    /// Keep whatever script the model produced.
+    #[default]
+    AsTranscribed,
+    Simplified,
+    /// Traditional, Taiwan forms. Also reads upstream's legacy `traditional`.
+    #[serde(alias = "traditional")]
+    TraditionalTw,
+    /// Traditional, in Hong Kong's standard forms.
+    TraditionalHk,
+}
+
+/// A fresh install writes Chinese the way the OS locale does; anything else
+/// keeps the model's own output. Upgrading stores are migrated separately.
+fn default_chinese_script() -> ChineseScript {
+    tauri_plugin_os::locale()
+        .and_then(|locale| crate::chinese_script::chinese_script_for_locale(&locale))
+        .unwrap_or_default()
+}
+
 /// When the spoken-language detector picks the language for Auto.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -454,6 +479,32 @@ pub enum LanguageDetectionMode {
 
 fn default_language_detection_window_secs() -> u32 {
     5
+}
+
+/// The script a `zh-Hans` / `zh-Hant` intent asked for.
+fn script_of_intent(language: &str) -> Option<ChineseScript> {
+    match language {
+        "zh-Hans" => Some(ChineseScript::Simplified),
+        "zh-Hant" => Some(ChineseScript::TraditionalTw),
+        _ => None,
+    }
+}
+
+/// Fold the old script intents into `zh` + [`ChineseScript`]: the global
+/// language decides the script; a Multi-STT slot pinned to one supplies it
+/// only when the global language did not, and every such slot becomes `zh`.
+fn migrate_chinese_script(settings: &mut AppSettings) {
+    let mut script = script_of_intent(&settings.selected_language);
+    if script.is_some() {
+        settings.selected_language = "zh".to_string();
+    }
+    for slot in &mut settings.multi_stt_extra_models {
+        if let Some(slot_script) = slot.language.as_deref().and_then(script_of_intent) {
+            script.get_or_insert(slot_script);
+            slot.language = Some("zh".to_string());
+        }
+    }
+    settings.chinese_script = script.unwrap_or(ChineseScript::AsTranscribed);
 }
 
 /// The spoken-language list as stored: trimmed, `auto` and blanks dropped,
@@ -1591,6 +1642,11 @@ pub struct AppSettings {
     /// keeps its own spelling. Fork-only.
     #[serde(default)]
     pub spoken_languages_any_letters: bool,
+    /// How Mandarin and Cantonese output is written ([`ChineseScript`]),
+    /// applied to the live text and the final text alike. Replaced the
+    /// `zh-Hans` / `zh-Hant` language intents (migrated on load).
+    #[serde(default = "default_chinese_script")]
+    pub chinese_script: ChineseScript,
     /// When the spoken-language detector picks the language for Auto
     /// (`language_detection` module). The upstream project's name and values.
     #[serde(default)]
@@ -1982,7 +2038,7 @@ fn default_model() -> String {
 /// carry it and no store ever arrives at it from below. The trailing
 /// `max(CURRENT_SETTINGS_SCHEMA_VERSION)` stamps the bump regardless, so a
 /// store can never replay a migration.
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 10;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 11;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -2559,6 +2615,7 @@ pub fn get_default_settings() -> AppSettings {
         selected_language: "auto".to_string(),
         spoken_languages: Vec::new(),
         spoken_languages_any_letters: false,
+        chinese_script: default_chinese_script(),
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_position: default_overlay_position(),
@@ -3045,6 +3102,17 @@ fn apply_settings_migrations(
         updated = true;
     }
 
+    // Schema 11: the Chinese script split (decision D6). The script used to be
+    // chosen through `zh-Hans` / `zh-Hant` language intents; those become the
+    // recognition language `zh` plus `chinese_script`. Every other upgrading
+    // user keeps the unconverted output they had — the locale default is for
+    // fresh installs only. A store that already carries the key (one shared
+    // with the upstream project) keeps its value.
+    if stored_schema_version < 11 && settings_value.get("chinese_script").is_none() {
+        migrate_chinese_script(settings);
+        updated = true;
+    }
+
     settings.settings_schema_version = settings
         .settings_schema_version
         .max(CURRENT_SETTINGS_SCHEMA_VERSION);
@@ -3232,6 +3300,40 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chinese_script_intents_become_zh_plus_the_script() {
+        let mut settings = get_default_settings();
+        settings.selected_language = "zh-Hant".to_string();
+        settings.multi_stt_extra_models = vec![MultiSttExtraModel {
+            language: Some("zh-Hans".to_string()),
+            ..Default::default()
+        }];
+        migrate_chinese_script(&mut settings);
+        assert_eq!(settings.selected_language, "zh");
+        assert_eq!(settings.chinese_script, ChineseScript::TraditionalTw);
+        assert_eq!(
+            settings.multi_stt_extra_models[0].language.as_deref(),
+            Some("zh")
+        );
+
+        // Without a script intent an upgrading user keeps the model's output.
+        let mut settings = get_default_settings();
+        settings.selected_language = "fr".to_string();
+        settings.chinese_script = ChineseScript::Simplified;
+        migrate_chinese_script(&mut settings);
+        assert_eq!(settings.selected_language, "fr");
+        assert_eq!(settings.chinese_script, ChineseScript::AsTranscribed);
+
+        // A slot alone supplies the script.
+        let mut settings = get_default_settings();
+        settings.multi_stt_extra_models = vec![MultiSttExtraModel {
+            language: Some("zh-Hans".to_string()),
+            ..Default::default()
+        }];
+        migrate_chinese_script(&mut settings);
+        assert_eq!(settings.chinese_script, ChineseScript::Simplified);
+    }
 
     #[test]
     fn spoken_languages_are_normalized_for_storage() {
