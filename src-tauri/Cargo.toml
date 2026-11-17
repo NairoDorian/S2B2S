@@ -99,11 +99,6 @@ hound = "3.5.1"
 symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
 log = "^0.4.35"
 tokio = "^1.54.1"
-# Voice activity detection: pure Rust, no model file, no native runtime.
-earshot = "1.2.2"
-# RNNoise noise suppression (pure-Rust port, weights compiled in). Default
-# features pull a CLI + dasp; only the DenoiseState API is needed.
-nnnoiseless = { version = "0.5.2", default-features = false }
 # In-app llama.cpp server manager: release archives are unpacked with the
 # pure-Rust zip crate (no PowerShell / tar shell-outs).
 zip = { version = "^9.6.0", default-features = false, features = ["deflate"] }
@@ -266,8 +261,3 @@ codegen-units = 16
 strip = true
 panic = "unwind"
 
-# Earshot is pure Rust; keep it optimised in dev builds so a debug app (and
-# tests/vad_speech_clock_probe.rs) measure the real VAD cost, not an
-# unoptimised one.
-[profile.dev.package.earshot]
-opt-level = 3

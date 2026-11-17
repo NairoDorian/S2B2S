@@ -1,4 +1,3 @@
-use crate::audio_toolkit::VoiceActivityDetector;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use log::{debug, error, info, warn};
@@ -368,45 +367,22 @@ impl HistoryManager {
                 entries_to_update
             {
                 let wav_path = self.recordings_dir.join(&file_name);
-                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) = if needs_audio
-                    && wav_path.exists()
-                {
-                    if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
-                        let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
-                        let speech_dur = if let Ok(mut vad) =
-                            crate::audio_toolkit::EarshotVad::new(0.5)
-                        {
-                            let mut voiced = 0;
-                            let total = samples_16k.len()
-                                / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
-                            #[allow(clippy::chunks_exact_to_as_chunks)]
-                            for chunk in samples_16k.chunks_exact(
-                                crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
-                            ) {
-                                if let Ok(frame) = vad.push_frame(chunk)
-                                    && frame.is_speech()
-                                {
-                                    voiced += 1;
-                                }
-                            }
-                            if total > 0 && voiced > 0 {
-                                // Frames of 16 kHz samples, in ms.
-                                (voiced * crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES)
-                                    as f64
-                                    / 16.0
-                            } else {
-                                dur
-                            }
+                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) =
+                    if needs_audio && wav_path.exists() {
+                        if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
+                            let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
+                            // The recording's own two-threshold verdict over
+                            // the engine's batch Earshot scores; the whole clip
+                            // when nothing in it reads as speech.
+                            let speech_dur =
+                                crate::audio_toolkit::vad::voiced_ms(&samples_16k).unwrap_or(dur);
+                            (Some(dur), Some(speech_dur), Some(16000))
                         } else {
-                            dur
-                        };
-                        (Some(dur), Some(speech_dur), Some(16000))
+                            (None, None, None)
+                        }
                     } else {
                         (None, None, None)
-                    }
-                } else {
-                    (None, None, None)
-                };
+                    };
 
                 let word_count = counted_word_count(
                     &transcription_text,

@@ -1,95 +1,50 @@
 //! RNNoise noise suppression on the capture path, ahead of the VAD.
 //!
-//! `nnnoiseless` is a pure-Rust port of Xiph's RNNoise: a small recurrent
-//! network that estimates per-band gains for 10 ms frames of 48 kHz audio.
-//! The capture path runs at the microphone's native rate and hands the VAD
-//! 16 kHz frames, so the chain here is
+//! The suppressor itself is the engine's ([`transcribe_cpp::Denoiser`]): classic
+//! RNNoise with its bundled model, the wet/dry mix and the speech-probability
+//! gate in one SIMD C++ implementation — the algorithm of the `nnnoiseless`
+//! crate this module used to wrap, output within one int16 step of it and
+//! about 1.4× faster. What stays here is the framing around it. The capture
+//! path runs at the microphone's native rate and hands the VAD 16 kHz frames,
+//! so the chain is
 //!
 //! ```text
-//! native rate ──▶ 48 kHz, 480-sample frames ──▶ RNNoise ──▶ 16 kHz VAD frames
+//! native rate ──▶ 48 kHz, 480-sample frames ──▶ Denoiser ──▶ 16 kHz VAD frames
 //! ```
 //!
 //! With a 48 kHz microphone (the WASAPI shared-mode default) the first stage
 //! is pure framing, so the denoiser sees the full-band signal and only one
 //! real resample happens, exactly as without suppression. The output frames
-//! are the same size the VAD consumes, so everything downstream — hysteresis,
-//! smoothing, the speech clock, the live VAD test's score and level — sees
-//! the denoised signal. The raw-audio tap and the native analysis tap are
-//! upstream of this and stay untouched; the "after noise suppression" tap
-//! sees every 48 kHz frame as it leaves the suppressor.
+//! are the same size the VAD consumes, so everything downstream — the speech
+//! gate, the speech clock, the live VAD test's score and level — sees the
+//! denoised signal. The raw-audio tap and the native analysis tap are upstream
+//! of this and stay untouched; the "after noise suppression" tap sees every
+//! 48 kHz frame as it leaves the suppressor.
 //!
-//! RNNoise's model has no knobs, but three things shape its output per frame,
-//! all read from atomics the settings commands update ([`DenoiseControls`])
-//! so a slider applies on the next frame, mid-recording included:
+//! Three tunables shape the output per frame ([`DenoiseParams`]), read from
+//! atomics the settings commands update ([`DenoiseControls`]) so a slider
+//! applies on the next frame, mid-recording included:
 //!
 //! - `strength`: wet/dry mix of the suppressed and the untouched frame;
 //! - `vad_threshold`: RNNoise's own per-frame speech probability below which
 //!   the frame is muted (0 turns the gate off), and
 //! - `vad_grace_ms`: how long audio keeps passing after the last frame above
 //!   that threshold, so word endings survive.
-//!
-//! The gate slews its gain over a few frames instead of cutting, to avoid
-//! clicks. RNNoise wants samples in the `i16` range; the chain scales in and
-//! out so the rest of the pipeline keeps its `[-1, 1]` floats.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use nnnoiseless::DenoiseState;
+pub use transcribe_cpp::DenoiseParams;
+use transcribe_cpp::{DENOISE_FRAME_SAMPLES, DENOISE_MAX_GRACE_MS, DENOISE_SAMPLE_RATE, Denoiser};
 
 use super::resampler::FrameResampler;
 
 /// The only sample rate RNNoise is trained for.
-pub const RNNOISE_SAMPLE_RATE: usize = 48_000;
+pub const RNNOISE_SAMPLE_RATE: usize = DENOISE_SAMPLE_RATE as usize;
 /// RNNoise frame: 10 ms at 48 kHz.
-pub const RNNOISE_FRAME_SAMPLES: usize = DenoiseState::FRAME_SIZE;
-/// Duration of one RNNoise frame.
-pub const RNNOISE_FRAME_MS: u32 = 10;
-const I16_SCALE: f32 = i16::MAX as f32;
-/// Fraction of the remaining distance the gate's gain covers per 10 ms
-/// frame: about three frames from open to closed and back.
-const GATE_SLEW: f32 = 0.5;
-/// The frame `DenoiseChain::finish` flushes RNNoise's one-frame lag with.
-const SILENT_FRAME: [f32; RNNOISE_FRAME_SAMPLES] = [0.0; RNNOISE_FRAME_SAMPLES];
+pub const RNNOISE_FRAME_SAMPLES: usize = DENOISE_FRAME_SAMPLES;
 /// Longest grace period the settings accept.
-pub const MAX_DENOISE_VAD_GRACE_MS: u32 = 5000;
-
-/// The suppressor's tunables (see the module docs).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DenoiseParams {
-    /// Wet/dry mix, 0–1: 1 = RNNoise's output, 0 = the input untouched.
-    pub strength: f32,
-    /// RNNoise's own speech probability below which frames are muted, 0–1;
-    /// 0 turns the gate off.
-    pub vad_threshold: f32,
-    /// How long audio keeps passing after the last frame above the
-    /// threshold, in milliseconds.
-    pub vad_grace_ms: u32,
-}
-
-impl Default for DenoiseParams {
-    fn default() -> Self {
-        Self {
-            strength: 1.0,
-            vad_threshold: 0.0,
-            vad_grace_ms: 200,
-        }
-    }
-}
-
-impl DenoiseParams {
-    /// Clamp into the ranges the chain expects; non-finite floats fall back
-    /// to the default.
-    pub fn normalized(self) -> Self {
-        let d = Self::default();
-        let finite = |v: f32, fallback: f32| if v.is_finite() { v } else { fallback };
-        Self {
-            strength: finite(self.strength, d.strength).clamp(0.0, 1.0),
-            vad_threshold: finite(self.vad_threshold, d.vad_threshold).clamp(0.0, 1.0),
-            vad_grace_ms: self.vad_grace_ms.min(MAX_DENOISE_VAD_GRACE_MS),
-        }
-    }
-}
+pub const MAX_DENOISE_VAD_GRACE_MS: u32 = DENOISE_MAX_GRACE_MS;
 
 /// Lock-free home of the params: written by the settings commands, read by
 /// the audio consumer thread once per drained chunk.
@@ -126,78 +81,54 @@ impl DenoiseControls {
     }
 }
 
-/// The probability gate: open while RNNoise's speech probability is at or
-/// above the threshold and for the grace period after, closed otherwise,
-/// with the gain slewed between frames.
-#[derive(Debug)]
-struct Gate {
-    gain: f32,
-    grace_left: u32,
-}
-
-impl Gate {
-    fn new() -> Self {
-        Self {
-            gain: 1.0,
-            grace_left: 0,
-        }
-    }
-
-    /// The gain to apply to the frame with this speech probability.
-    fn update(&mut self, prob: f32, params: &DenoiseParams) -> f32 {
-        let target = if params.vad_threshold <= 0.0 {
-            1.0
-        } else if prob >= params.vad_threshold {
-            self.grace_left = params.vad_grace_ms / RNNOISE_FRAME_MS;
-            1.0
-        } else if self.grace_left > 0 {
-            self.grace_left -= 1;
-            1.0
-        } else {
-            0.0
-        };
-        self.gain += (target - self.gain) * GATE_SLEW;
-        if (self.gain - target).abs() < 1e-3 {
-            self.gain = target;
-        }
-        self.gain
-    }
-
-    fn reset(&mut self) {
-        self.gain = 1.0;
-        self.grace_left = 0;
-    }
-}
-
 /// Native-rate samples in, denoised VAD-sized 16 kHz frames out.
 pub struct DenoiseChain {
     to_48k: FrameResampler,
-    denoiser: Box<DenoiseState<'static>>,
+    denoiser: Denoiser,
+    /// The params the denoiser holds, so `set_params` crosses the FFI only
+    /// when a slider actually moved.
+    applied: DenoiseParams,
     to_out: FrameResampler,
-    scaled_in: [f32; RNNOISE_FRAME_SAMPLES],
-    scaled_out: [f32; RNNOISE_FRAME_SAMPLES],
-    /// The previous frame's scaled input: RNNoise's output lags its input by
-    /// one frame (overlap-add synthesis), so the dry side of the mix is
-    /// delayed to match or a partial strength would comb-filter.
-    dry_delay: [f32; RNNOISE_FRAME_SAMPLES],
     frame_out: [f32; RNNOISE_FRAME_SAMPLES],
-    gate: Gate,
+    /// A params update or a frame the engine refused, reported once per chain
+    /// rather than once per 10 ms.
+    error_logged: bool,
 }
 
 impl DenoiseChain {
     /// `in_hz` is the microphone's native rate, `out_hz` / `out_frame_dur`
-    /// the frames the VAD consumes (16 kHz, one detector frame).
-    pub fn new(in_hz: usize, out_hz: usize, out_frame_dur: Duration) -> Self {
-        Self {
+    /// the frames the VAD consumes (16 kHz, one detector frame). Fails only
+    /// when the engine cannot allocate a suppressor.
+    pub fn new(
+        in_hz: usize,
+        out_hz: usize,
+        out_frame_dur: Duration,
+    ) -> transcribe_cpp::Result<Self> {
+        let applied = DenoiseParams::default();
+        Ok(Self {
             to_48k: FrameResampler::new(in_hz, RNNOISE_SAMPLE_RATE, Duration::from_millis(10)),
-            denoiser: DenoiseState::new(),
+            denoiser: Denoiser::new(&applied)?,
+            applied,
             to_out: FrameResampler::new(RNNOISE_SAMPLE_RATE, out_hz, out_frame_dur),
-            scaled_in: [0.0; RNNOISE_FRAME_SAMPLES],
-            scaled_out: [0.0; RNNOISE_FRAME_SAMPLES],
-            dry_delay: [0.0; RNNOISE_FRAME_SAMPLES],
             frame_out: [0.0; RNNOISE_FRAME_SAMPLES],
-            gate: Gate::new(),
+            error_logged: false,
+        })
+    }
+
+    /// Hand the denoiser new params when they changed. `DenoiseControls`
+    /// only ever holds normalized values, so a refusal is a bug; the previous
+    /// params stay in force and it is logged once.
+    fn apply(&mut self, params: DenoiseParams) {
+        if params == self.applied {
+            return;
         }
+        if let Err(e) = self.denoiser.set_params(&params)
+            && !self.error_logged
+        {
+            self.error_logged = true;
+            log::warn!("Noise suppression kept its previous settings: {e}");
+        }
+        self.applied = params;
     }
 
     /// Feed native-rate samples. `on_denoised` sees every 48 kHz frame as it
@@ -211,63 +142,55 @@ impl DenoiseChain {
         mut on_denoised: impl FnMut(&[f32]),
         mut emit: impl FnMut(&[f32], f32),
     ) {
+        self.apply(params);
         let Self {
             to_48k,
             denoiser,
             to_out,
-            scaled_in,
-            scaled_out,
-            dry_delay,
             frame_out,
-            gate,
+            error_logged,
+            ..
         } = self;
         to_48k.push(src, |frame| {
-            let prob = denoise_frame(
-                denoiser, gate, &params, frame, scaled_in, scaled_out, dry_delay, frame_out,
-            );
+            let prob = denoise_frame(denoiser, frame, frame_out, error_logged);
             on_denoised(frame_out);
             to_out.push(frame_out, |out| emit(out, prob));
         });
     }
 
-    /// Flush both resamplers' delay lines at the end of a recording, and
-    /// RNNoise's own one-frame lag: one silent frame pushes the last real
-    /// frame out of the suppressor, or the final ~10 ms would be lost.
+    /// Flush both resamplers' delay lines at the end of a recording, and the
+    /// suppressor's own one-frame lag (overlap-add synthesis): the engine's
+    /// `flush` pushes the last real frame out, or the final ~10 ms would be
+    /// lost.
     pub fn finish(
         &mut self,
         params: DenoiseParams,
         mut on_denoised: impl FnMut(&[f32]),
         mut emit: impl FnMut(&[f32], f32),
     ) {
+        self.apply(params);
         let Self {
             to_48k,
             denoiser,
             to_out,
-            scaled_in,
-            scaled_out,
-            dry_delay,
             frame_out,
-            gate,
+            error_logged,
+            ..
         } = self;
         to_48k.finish(|frame| {
-            let prob = denoise_frame(
-                denoiser, gate, &params, frame, scaled_in, scaled_out, dry_delay, frame_out,
-            );
+            let prob = denoise_frame(denoiser, frame, frame_out, error_logged);
             on_denoised(frame_out);
             to_out.push(frame_out, |out| emit(out, prob));
         });
         // The flush frame is always the last one through the suppressor, so
         // its probability is also the one the final partial frame carries.
-        let last_prob = denoise_frame(
-            denoiser,
-            gate,
-            &params,
-            &SILENT_FRAME,
-            scaled_in,
-            scaled_out,
-            dry_delay,
-            frame_out,
-        );
+        let last_prob = match denoiser.flush(frame_out) {
+            Ok(prob) => prob,
+            Err(_) => {
+                frame_out.fill(0.0);
+                0.0
+            }
+        };
         on_denoised(frame_out);
         to_out.push(frame_out, |out| emit(out, last_prob));
         to_out.finish(|out| emit(out, last_prob));
@@ -275,47 +198,44 @@ impl DenoiseChain {
 
     /// Forget buffered audio, the gate and the network's recurrent state, so
     /// nothing from one recording (or from before a toggle) leaks into the
-    /// next.
+    /// next. The params stay.
     pub fn reset(&mut self) {
         self.to_48k.reset();
         self.to_out.reset();
-        self.denoiser = DenoiseState::new();
-        self.dry_delay = [0.0; RNNOISE_FRAME_SAMPLES];
-        self.gate.reset();
+        self.denoiser.reset();
     }
 }
 
-/// One 48 kHz frame through RNNoise, the wet/dry mix and the gate. Returns
-/// RNNoise's speech probability for the frame. The output is one frame behind
-/// the input on both sides of the mix (see `DenoiseChain::dry_delay`).
-#[allow(clippy::too_many_arguments)]
+/// One 48 kHz frame through the suppressor. Returns RNNoise's speech
+/// probability for it; the output is one frame behind the input.
+///
+/// The engine refuses a frame with a non-finite sample (a broken driver can
+/// produce one). That frame comes out silent with probability 0 instead of
+/// poisoning the VAD and the model downstream, and the first refusal of the
+/// chain is logged.
 fn denoise_frame(
-    denoiser: &mut DenoiseState<'static>,
-    gate: &mut Gate,
-    params: &DenoiseParams,
+    denoiser: &mut Denoiser,
     frame: &[f32],
-    scaled_in: &mut [f32; RNNOISE_FRAME_SAMPLES],
-    scaled_out: &mut [f32; RNNOISE_FRAME_SAMPLES],
-    dry_delay: &mut [f32; RNNOISE_FRAME_SAMPLES],
-    frame_out: &mut [f32; RNNOISE_FRAME_SAMPLES],
+    out: &mut [f32; RNNOISE_FRAME_SAMPLES],
+    error_logged: &mut bool,
 ) -> f32 {
-    debug_assert_eq!(frame.len(), RNNOISE_FRAME_SAMPLES);
-    for (dst, src) in scaled_in.iter_mut().zip(frame) {
-        *dst = (src * I16_SCALE).clamp(i16::MIN as f32, i16::MAX as f32);
+    let Ok(input) = <&[f32; RNNOISE_FRAME_SAMPLES]>::try_from(frame) else {
+        // `FrameResampler` only ever emits whole 10 ms frames.
+        debug_assert!(false, "denoise frame of {} samples", frame.len());
+        out.fill(0.0);
+        return 0.0;
+    };
+    match denoiser.process_frame(input, out) {
+        Ok(prob) => prob,
+        Err(e) => {
+            if !*error_logged {
+                *error_logged = true;
+                log::warn!("Noise suppression dropped a frame: {e}");
+            }
+            out.fill(0.0);
+            0.0
+        }
     }
-    let prob = denoiser.process_frame(scaled_out, scaled_in);
-    let gain = gate.update(prob, params);
-    let wet = params.strength;
-    let dry = 1.0 - wet;
-    for ((dst, dry_sample), wet_sample) in frame_out
-        .iter_mut()
-        .zip(dry_delay.iter())
-        .zip(scaled_out.iter())
-    {
-        *dst = (((dry_sample * dry + wet_sample * wet) / I16_SCALE) * gain).clamp(-1.0, 1.0);
-    }
-    dry_delay.copy_from_slice(scaled_in);
-    prob
 }
 
 #[cfg(test)]
@@ -326,8 +246,12 @@ mod tests {
     const OUT_FRAME: Duration = Duration::from_millis(16);
     const OUT_FRAME_SAMPLES: usize = 256;
 
+    fn chain(in_hz: usize) -> DenoiseChain {
+        DenoiseChain::new(in_hz, OUT_HZ, OUT_FRAME).expect("denoiser")
+    }
+
     fn run(in_hz: usize, input: &[f32]) -> Vec<f32> {
-        let mut chain = DenoiseChain::new(in_hz, OUT_HZ, OUT_FRAME);
+        let mut chain = chain(in_hz);
         let params = DenoiseParams::default();
         let mut out = Vec::new();
         chain.push(input, params, |_| {}, |f, _| out.extend_from_slice(f));
@@ -372,7 +296,7 @@ mod tests {
 
     #[test]
     fn works_at_native_16k_and_reset_clears_state() {
-        let mut chain = DenoiseChain::new(16_000, OUT_HZ, OUT_FRAME);
+        let mut chain = chain(16_000);
         let params = DenoiseParams::default();
         let mut out = Vec::new();
         chain.push(
@@ -400,7 +324,7 @@ mod tests {
 
     #[test]
     fn the_denoised_observer_sees_every_48k_frame() {
-        let mut chain = DenoiseChain::new(48_000, OUT_HZ, OUT_FRAME);
+        let mut chain = chain(48_000);
         let input = sine(48_000, 440.0, 48_000.0, 0.3);
         let mut frames = 0usize;
         let mut lengths_ok = true;
@@ -419,68 +343,41 @@ mod tests {
 
     #[test]
     fn strength_zero_passes_the_input_through_one_frame_late() {
-        // The dry side is delayed by the frame RNNoise's output lags, so at
-        // strength 0 the second output is the first input, untouched.
-        let mut denoiser = DenoiseState::new();
-        let mut gate = Gate::new();
+        // The wet/dry mix now lives in the engine; this pins that the chain
+        // hands it the params: at strength 0 the 48 kHz frames leaving the
+        // suppressor are the input, one frame late.
+        let mut chain = chain(48_000);
         let params = DenoiseParams {
             strength: 0.0,
             ..DenoiseParams::default()
         };
-        let first = sine(RNNOISE_FRAME_SAMPLES, 1000.0, 48_000.0, 0.5);
-        let second = sine(RNNOISE_FRAME_SAMPLES, 250.0, 48_000.0, 0.25);
-        let (mut a, mut b, mut delay, mut out) = (
-            [0.0; RNNOISE_FRAME_SAMPLES],
-            [0.0; RNNOISE_FRAME_SAMPLES],
-            [0.0; RNNOISE_FRAME_SAMPLES],
-            [0.0; RNNOISE_FRAME_SAMPLES],
-        );
-        for frame in [&first, &second] {
-            denoise_frame(
-                &mut denoiser,
-                &mut gate,
-                &params,
-                frame,
-                &mut a,
-                &mut b,
-                &mut delay,
-                &mut out,
-            );
-        }
-        for (x, y) in first.iter().zip(out.iter()) {
+        let input = sine(RNNOISE_FRAME_SAMPLES * 3, 1000.0, 48_000.0, 0.5);
+        let mut seen: Vec<f32> = Vec::new();
+        chain.push(&input, params, |f| seen.extend_from_slice(f), |_, _| {});
+        assert_eq!(seen.len(), input.len());
+        let (first, rest) = seen.split_at(RNNOISE_FRAME_SAMPLES);
+        assert!(first.iter().all(|&s| s == 0.0));
+        for (x, y) in input.iter().zip(rest.iter()) {
             assert!((x - y).abs() < 1e-4, "{x} vs {y}");
         }
     }
 
     #[test]
-    fn gate_is_transparent_when_off_and_holds_for_the_grace_period() {
-        let off = DenoiseParams::default();
-        let mut gate = Gate::new();
-        for prob in [0.0, 0.2, 0.9, 0.0] {
-            assert_eq!(gate.update(prob, &off), 1.0);
-        }
-
-        let on = DenoiseParams {
-            vad_threshold: 0.5,
-            vad_grace_ms: 30,
+    fn a_non_finite_sample_silences_its_frame_only() {
+        let mut chain = chain(48_000);
+        let params = DenoiseParams {
+            strength: 0.0,
             ..DenoiseParams::default()
         };
-        let mut gate = Gate::new();
-        assert_eq!(gate.update(0.9, &on), 1.0);
-        // Three 10 ms frames of grace stay fully open…
-        for _ in 0..3 {
-            assert_eq!(gate.update(0.1, &on), 1.0);
-        }
-        // …then the gain slews shut instead of cutting.
-        let first = gate.update(0.1, &on);
-        assert!(first < 1.0 && first > 0.0, "slewing, got {first}");
-        let mut last = first;
-        for _ in 0..12 {
-            last = gate.update(0.1, &on);
-        }
-        assert_eq!(last, 0.0);
-        // Speech reopens it.
-        assert!(gate.update(0.8, &on) > 0.0);
+        let mut input = sine(RNNOISE_FRAME_SAMPLES * 3, 300.0, 48_000.0, 0.3);
+        input[RNNOISE_FRAME_SAMPLES + 7] = f32::NAN;
+        let mut seen: Vec<f32> = Vec::new();
+        chain.push(&input, params, |f| seen.extend_from_slice(f), |_, _| {});
+        assert!(seen.iter().all(|s| s.is_finite()));
+        // The refused frame comes out silent; the frames around it still flow.
+        let frames: Vec<&[f32]> = seen.chunks(RNNOISE_FRAME_SAMPLES).collect();
+        assert!(frames[1].iter().all(|&s| s == 0.0));
+        assert!(frames[2].iter().any(|&s| s != 0.0));
     }
 
     #[test]

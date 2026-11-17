@@ -1,3 +1,15 @@
+//! Voice activity detection on the capture path.
+//!
+//! The detector is the engine's capture-side speech gate
+//! ([`transcribe_cpp::VadGate`], wrapped by [`SpeechGate`]): the Earshot model
+//! with SIMD kernels and bundled weights, the two-threshold hysteresis, the
+//! onset debounce, a pre-roll ring that never releases a frame twice and the
+//! hangover tail — the chain this module used to assemble from the `earshot`
+//! crate and its own `Hysteresis` and `SmoothedVad`, now one C++ implementation
+//! shared with the engine. The app keeps the framing, the per-recording policy
+//! (offline vs streaming hangover) and its own speech clock (`SpeechClock` in
+//! the recorder), which counts the gate's raw per-frame verdict.
+
 use anyhow::Result;
 
 use crate::audio_toolkit::constants;
@@ -7,8 +19,13 @@ pub const VAD_OFFLINE_HANGOVER_MS: u64 = 450;
 pub const VAD_STREAMING_HANGOVER_MS: u64 = 1650;
 pub const VAD_ONSET_MS: u64 = 60;
 
+/// Entry threshold of the History re-analysis, the detector's default.
+const HISTORY_THRESHOLD: f32 = 0.5;
+
 /// Convert a VAD timing duration to whole detector frames, rounding up so a
-/// change of frame size never shortens the app's onset, pre-roll, or hangover tail.
+/// change of frame size never shortens the app's onset, pre-roll, or hangover
+/// tail. The gate rounds its own millisecond settings the same way; this is
+/// for the speech clock's onset, which counts frames.
 pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> usize {
     assert!(frame_samples > 0, "VAD frame size must be non-zero");
     let numerator = duration_ms * constants::WHISPER_SAMPLE_RATE as u64;
@@ -16,44 +33,11 @@ pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> u
     numerator.div_ceil(denominator) as usize
 }
 
-/// Two-threshold gate: speech is entered at `threshold` and only left once
-/// the score falls below a lower exit threshold (the rule silero-vad's
-/// reference pipeline uses, applied here to Earshot's 0–1 score).
-///
-/// A single value for both edges makes a signal hovering near the threshold
-/// flap frame to frame — which surfaces directly as a stuttering speech /
-/// silence indicator and a speech clock that stalls mid-word.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Hysteresis {
-    enter: f32,
-    exit: f32,
-    in_speech: bool,
-}
-
-impl Hysteresis {
-    /// The exit threshold follows silero-vad's reference implementation: 0.15
-    /// below the entry threshold, floored at 0.01 so it stays above the
-    /// near-zero score a detector emits for true silence.
-    pub(crate) fn new(threshold: f32) -> Self {
-        Self {
-            enter: threshold,
-            exit: (threshold - 0.15).max(0.01),
-            in_speech: false,
-        }
-    }
-
-    pub(crate) fn update(&mut self, prob: f32) -> bool {
-        self.in_speech = if self.in_speech {
-            prob >= self.exit
-        } else {
-            prob >= self.enter
-        };
-        self.in_speech
-    }
-
-    pub(crate) fn reset(&mut self) {
-        self.in_speech = false;
-    }
+/// The exit threshold of the two-threshold gate: 0.15 below the entry
+/// threshold, floored at 0.01 (silero-vad's reference rule, which the engine's
+/// gate applies when no exit threshold is given).
+pub(crate) fn exit_threshold(threshold: f32) -> f32 {
+    (threshold - 0.15).max(0.01)
 }
 
 pub enum VadFrame<'a> {
@@ -70,29 +54,28 @@ impl<'a> VadFrame<'a> {
     }
 }
 
-pub trait VoiceActivityDetector: Send + Sync {
+/// What the recorder needs from a detector. One implementation ships
+/// ([`SpeechGate`]); the trait stays so the recorder's tests can drive the
+/// capture path with scripted detectors.
+pub trait VoiceActivityDetector: Send {
     /// Primary streaming API: feed one backend-sized frame, get a keep/drop decision.
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>>;
 
     /// Required number of mono 16 kHz samples per prediction.
     fn frame_samples(&self) -> usize;
 
-    fn is_voice(&mut self, frame: &[f32]) -> Result<bool> {
-        Ok(self.push_frame(frame)?.is_speech())
-    }
-
-    /// Set the post-speech hangover tail (in backend-sized frames) applied to
-    /// subsequent frames. Detectors without a smoothing tail can ignore this.
-    fn set_hangover_frames(&mut self, _frames: usize) {}
+    /// Set the post-speech hangover tail applied to subsequent frames.
+    /// Detectors without a smoothing tail can ignore this.
+    fn set_hangover_ms(&mut self, _hangover_ms: u64) {}
 
     /// Whether the *raw*, pre-smoothing detector classified the most recently
-    /// pushed frame as voiced.
+    /// pushed frame as voiced (the two-threshold verdict).
     ///
     /// This is deliberately not the same as `push_frame` returning
-    /// [`VadFrame::Speech`]: the smoothing wrapper keeps reporting speech
-    /// throughout its hangover tail, so that a streaming decoder keeps
-    /// receiving audio across a pause. Speech-time metrics must not count
-    /// that tail, so they read this instead.
+    /// [`VadFrame::Speech`]: the gate keeps reporting speech throughout its
+    /// hangover tail, so that a streaming decoder keeps receiving audio across
+    /// a pause. Speech-time metrics must not count that tail, so they read
+    /// this instead.
     fn last_frame_voiced(&self) -> bool {
         false
     }
@@ -100,10 +83,7 @@ pub trait VoiceActivityDetector: Send + Sync {
     /// Raw 0–1 speech score of the most recently pushed frame, before the
     /// hysteresis gate and any smoothing. `None` for detectors that do not
     /// expose one. Read by the live VAD test in Settings → Advanced so the
-    /// user can see how far a frame sits from the threshold. Earshot reports
-    /// 0.0 without running its model for a frame below -45 dBFS RMS while it
-    /// is not already in speech (its energy pre-gate), so a very quiet
-    /// microphone needs gain rather than a lower threshold.
+    /// user can see how far a frame sits from the threshold.
     fn last_frame_score(&self) -> Option<f32> {
         None
     }
@@ -138,11 +118,34 @@ pub struct VadTailReport {
     pub hangover_counter: usize,
 }
 
-pub mod earshot;
-mod smoothed;
+/// Milliseconds of voiced audio in a 16 kHz mono clip, by the same Earshot
+/// scores and two-threshold rule a recording uses: the History re-analysis of
+/// entries saved before the speech duration was recorded. The scores come from
+/// the engine's batch scorer (bit-identical to frame-by-frame scoring). `None`
+/// when the clip has no voiced frame or the engine refuses it (a non-finite
+/// sample), so the caller falls back to the clip's own duration.
+pub fn voiced_ms(pcm_16k: &[f32]) -> Option<f64> {
+    let scores = transcribe_cpp::score_frames(pcm_16k, 1).ok()?;
+    let exit = exit_threshold(HISTORY_THRESHOLD);
+    let mut in_speech = false;
+    let mut voiced = 0usize;
+    for score in scores {
+        in_speech = if in_speech {
+            score >= exit
+        } else {
+            score >= HISTORY_THRESHOLD
+        };
+        voiced += usize::from(in_speech);
+    }
+    (voiced > 0).then(|| {
+        (voiced * transcribe_cpp::EARSHOT_FRAME_SAMPLES) as f64 * 1000.0
+            / constants::WHISPER_SAMPLE_RATE as f64
+    })
+}
 
-pub use earshot::EarshotVad;
-pub use smoothed::SmoothedVad;
+mod gate;
+
+pub use gate::SpeechGate;
 
 #[cfg(test)]
 mod tests {
@@ -154,5 +157,20 @@ mod tests {
         assert_eq!(frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, 256), 29);
         assert_eq!(frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, 256), 104);
         assert_eq!(frames_for_duration_ms(VAD_ONSET_MS, 256), 4);
+    }
+
+    #[test]
+    fn exit_threshold_follows_the_reference_rule() {
+        assert!((exit_threshold(0.5) - 0.35).abs() < 1e-6);
+        assert_eq!(exit_threshold(0.1), 0.01);
+    }
+
+    #[test]
+    fn voiced_ms_of_silence_is_none() {
+        assert_eq!(voiced_ms(&vec![0.0; 16_000]), None);
+        assert_eq!(voiced_ms(&[]), None);
+        let mut bad = vec![0.0f32; 512];
+        bad[3] = f32::NAN;
+        assert_eq!(voiced_ms(&bad), None);
     }
 }

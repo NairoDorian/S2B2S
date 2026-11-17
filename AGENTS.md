@@ -254,7 +254,8 @@ the end-to-end procedure and the constraints that bite when bumping one are in
 [docs/FORKS.md](docs/FORKS.md).
 
 **Model Setup:** nothing to download for development. Voice activity
-detection is pure Rust (Earshot, no model file), and speech models are fetched
+detection and noise suppression run in the engine (Earshot and RNNoise,
+weights compiled in, no model file), and speech models are fetched
 from the in-app catalog on first run.
 
 **Native build flags:** the two `.cargo/config.toml` files (root and
@@ -331,9 +332,10 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
       keeps a session from accumulating audio it will never return (VAD test,
       Live FFT)
   - `vad/` - Voice Activity Detection — see Voice Activity Detection below;
-    `earshot.rs` wraps the pure-Rust Earshot detector, `smoothed.rs` adds
-    prefill / hangover / onset smoothing, `mod.rs` holds the `Hysteresis` gate
-    and the millisecond timing constants
+    `gate.rs` (`SpeechGate`) puts the engine's speech gate behind the
+    recorder's `VoiceActivityDetector` trait, `mod.rs` holds the trait, the
+    millisecond timing constants, the exit-threshold rule and `voiced_ms`
+    (the History re-analysis)
   - `audio/chunk_tap.rs` - The drainable mid-recording copy of the VAD-filtered
     16 kHz frames the experimental Multi-STT streaming mode decodes its chunks
     from, plus the session token that keeps a stale holder off the next
@@ -599,12 +601,10 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
 
 - `transcribe-cpp` - The only inference runtime: every model (Whisper family,
   Parakeet, Moonshine, Canary, Voxtral, Qwen3-ASR, … as GGUF/ggml) with GPU
-  acceleration. There is no ONNX Runtime and no `transcribe-rs` in this fork
+  acceleration, and the capture path's voice activity detection (Earshot) and
+  noise suppression (RNNoise), both with weights compiled in. There is no ONNX
+  Runtime and no `transcribe-rs` in this fork
 - `cpal` - Cross-platform audio I/O
-- `earshot` - Voice activity detection (pure Rust, no model file; see Voice
-  Activity Detection)
-- `nnnoiseless` - RNNoise noise suppression (pure Rust, weights compiled in;
-  optional, off by default)
 - `enigo` - Keystroke simulation for the performance-mode shortcuts
 - `handy-keys` (native backend, the default on Windows and macOS) /
   `tauri-plugin-global-shortcut` (the default on Linux) - Global keyboard
@@ -641,14 +641,25 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 ### Voice Activity Detection
 
-ZER0's only voice activity detector is **Earshot** (`earshot` crate, pure
-Rust, ~8 KiB of state, constructed in microseconds — there is no model file,
-no ONNX Runtime and nothing to download). It runs on the audio consumer thread
-once per 16 ms frame and is what makes `vad_enabled` mean anything: frames it
-scores below threshold never reach the decoder, so a recording carries speech
-instead of speech-plus-silence. That matters more than it sounds —
-Whisper-family models are prone to hallucinating text on silent audio, and
-every second of dropped silence is a second the model doesn't spend decoding.
+ZER0's only voice activity detector is **Earshot**, run by the engine:
+transcribe.cpp's capture-side speech gate (`transcribe_cpp::VadGate`, wrapped
+by `SpeechGate` in `audio_toolkit/vad/gate.rs`) — SIMD kernels, weights
+compiled in, no model file and nothing to download. It runs on the audio
+consumer thread once per 16 ms frame and is what makes `vad_enabled` mean
+anything: frames it scores below threshold never reach the decoder, so a
+recording carries speech instead of speech-plus-silence. That matters more
+than it sounds — Whisper-family models are prone to hallucinating text on
+silent audio, and every second of dropped silence is a second the model
+doesn't spend decoding.
+
+**One owner.** The app gates capture and nothing else does: every stream is
+opened with `StreamOptions { enable_vad: false, .. }` (the live path —
+primary and every Multi Streaming STT slot —, `benchmark_stream` and the
+headless `replay_stream_once`), so the engine's own per-stream silence gate
+never runs on audio the app already filtered. Before 2026-11-17 the two ran in
+series with different thresholds and tails, and a quiet clip (FLEURS French,
+−62 dBFS RMS) streamed to an empty transcript through it. With the app's VAD
+off the user asked for every frame, and the engine gate stays off as well.
 
 - **Frame size** is `constants::VAD_FRAME_SAMPLES` (256 samples = 16 ms at
   16 kHz, `VAD_FRAME_MS`). The capture pipeline frames itself to the
@@ -661,23 +672,30 @@ every second of dropped silence is a second the model doesn't spend decoding.
   shortens them: `VAD_STREAMING_HANGOVER_MS` = 1650 → 104 frames,
   `VAD_PREFILL_MS` / `VAD_OFFLINE_HANGOVER_MS` = 450 → 29, `VAD_ONSET_MS`
   = 60 → 4.
-- **Input contract**: exactly 256 mono 16 kHz samples in `[-1, 1]`.
-  `EarshotVad` clamps resampler overshoot for the prediction only (the audio
-  passed downstream is untouched) and rejects non-finite samples and wrong
-  frame sizes with an error rather than a silent wrong answer.
-- **Energy pre-gate**: while not already in speech, a frame whose RMS is below
-  −45 dBFS is scored 0 without running the model (a cost saving on deep
-  silence). The live VAD test's "raw score" is that synthetic 0 for such
-  frames, and a very quiet microphone needs gain, not a lower threshold.
-- **Thresholding uses hysteresis** (`Hysteresis` in `vad/mod.rs`, a pure
-  struct with its own unit tests): speech is entered at the threshold
-  (`vad_threshold_earshot`, default 0.5) but only left once the score falls
-  below `max(threshold - 0.15, 0.01)`. A single value for both edges makes a
-  signal hovering near it flap frame to frame, which shows up directly as a
-  stuttering speech/silence indicator and a speech clock that stalls mid-word.
-- `SmoothedVad` wraps the detector with prefill / hangover / onset smoothing
-  (`VadPolicy::Streaming` keeps the long hangover so a live decoder keeps
-  receiving audio across a pause; `Offline` uses the short one).
+- **Input contract**: exactly 256 mono 16 kHz samples. The engine clamps
+  resampler overshoot for the prediction only (the audio released downstream
+  is the original) and refuses a frame with a non-finite sample, leaving its
+  state untouched; `SpeechGate` also rejects a wrong frame size with an error
+  rather than a silent wrong answer.
+- **Every frame is scored.** The `earshot`-crate adapter this replaced skipped
+  the model below −45 dBFS RMS and reported 0 there, so a very quiet
+  microphone could never reach speech whatever the threshold. The engine has
+  no such floor (0.5 % of frames differ on ten minutes of audio): a quiet
+  microphone now responds to a lower `vad_threshold_earshot`, and the live
+  VAD test's raw score is always the model's.
+- **Thresholding uses hysteresis**: speech is entered at the threshold
+  (`vad_threshold_earshot`, default 0.5, the engine's range 0.05–0.95) but
+  only left once the score falls below `max(threshold - 0.15, 0.01)`
+  (`vad::exit_threshold`, passed explicitly). A single value for both edges
+  makes a signal hovering near it flap frame to frame, which shows up directly
+  as a stuttering speech/silence indicator and a speech clock that stalls
+  mid-word.
+- **Smoothing** is the gate's: onset debounce, a pre-roll ring that never
+  releases a frame twice, and the hangover tail (`VadPolicy::Streaming` sets
+  the long hangover per recording so a live decoder keeps receiving audio
+  across a pause; `Offline` uses the short one). Fed one frame per call, the
+  gate releases nothing, the frame, or the pre-roll with the frame. Its own
+  speech clock is not read — `SpeechClock` (below) counts the raw verdict.
 - `handle_frame` treats a per-frame VAD error as "keep this audio" (losing
   speech is worse than keeping silence) but logs the first failure of each
   recording — a VAD that fails on every frame otherwise looks exactly like a
@@ -692,10 +710,14 @@ every second of dropped silence is a second the model doesn't spend decoding.
   frames and kept identical audio (13.3 s), with Earshot ≈ 2–3× cheaper per
   frame and 109 ms → 9 µs to construct, so Silero, `ort`, `ndarray` and the
   2.2 MB model file were removed (see CHANGELOG, the transcribe.cpp-only
-  change of 2026-09-10). Noisy rooms were never benchmarked; if Earshot clips
-  speech there, lower `vad_threshold_earshot` first — unless the speech is
-  below the −45 dBFS pre-gate, which no threshold reaches. `earshot` is pinned to `opt-level = 3` in
-  the dev profile so debug builds pay the real (small) cost.
+  change of 2026-09-10). Until 2026-11-17 Earshot was the pure-Rust `earshot`
+  crate behind ZER0's own `Hysteresis` and `SmoothedVad`; the engine's gate
+  is the same chain in one shared implementation, and the crate is gone.
+  Noisy rooms were never benchmarked; if Earshot clips speech there, lower
+  `vad_threshold_earshot` first. The History re-analysis of entries saved
+  before the speech duration was recorded uses the engine's batch scorer
+  (`transcribe_cpp::score_frames`, bit-identical to frame-by-frame scoring)
+  and the same two-threshold rule (`vad::voiced_ms`).
 
 **Recordings with no speech never reach a decoder.** `SpeechClock` publishes its
 running total to an `Arc<AtomicU64>`, which `AudioRecorder::speech_ms()` and
@@ -720,10 +742,11 @@ and the running average words per minute.
 
 - Driven by `SpeechClock` in `audio_toolkit/audio/recorder.rs`, fed by
   `VoiceActivityDetector::last_frame_voiced` — the **raw** per-frame Earshot
-  verdict, deliberately _not_ what `push_frame` returns. `SmoothedVad` keeps
-  reporting speech through a hangover tail of ≈1.66 s in streaming mode
-  (`VAD_STREAMING_HANGOVER_MS` = 1650 rounded up to 104 Earshot frames), and
-  counting that would add more than a second of phantom speech per pause.
+  verdict (the gate's `VadGateUpdate::voiced`), deliberately _not_ what
+  `push_frame` returns. The gate keeps releasing audio through a hangover
+  tail of ≈1.66 s in streaming mode (`VAD_STREAMING_HANGOVER_MS` = 1650
+  rounded up to 104 Earshot frames), and counting that would add more than a
+  second of phantom speech per pause.
 - Gaps shorter than `speech_pause_hold_ms` are billed as part of the same
   utterance once speech resumes; longer gaps are dropped. The clock therefore
   only moves forward — it catches up rather than rewinding.
@@ -854,14 +877,18 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   detector is built with (0.05–0.95; lower = more sensitive).
   `create_audio_recorder` reads it, so `change_vad_threshold_setting` writes
   the setting first and then calls
-  `AudioRecordingManager::set_vad_threshold`, which swaps the detector's
-  hysteresis gate in place (`VoiceActivityDetector::set_threshold`) — no
-  rebuild, no microphone reopen, works mid-recording. The Advanced page shows
+  `AudioRecordingManager::set_vad_threshold`, which moves the speech gate's
+  thresholds in place (`VoiceActivityDetector::set_threshold` →
+  `VadGate::set_threshold`) — no rebuild, no microphone reopen, works
+  mid-recording. The Advanced page shows
   it as the `VadSensitivity` slider
-- **Noise suppression** (`denoise_enabled`, default off): RNNoise via the
-  pure-Rust `nnnoiseless` crate (`audio_toolkit/audio/denoise.rs`,
-  `DenoiseChain`: native rate → 48 kHz 10 ms frames → RNNoise → 16 kHz VAD
-  frames). It sits in `CaptureProcessor::process_raw_chunk` after the raw
+- **Noise suppression** (`denoise_enabled`, default off): RNNoise run by the
+  engine (`transcribe_cpp::Denoiser`: the model, the wet/dry mix and the
+  speech-probability gate in SIMD C++, the algorithm of the `nnnoiseless`
+  crate it replaced on 2026-11-17, output within one int16 step and ≈1.4×
+  faster), framed by `audio_toolkit/audio/denoise.rs` (`DenoiseChain`:
+  native rate → 48 kHz 10 ms frames → `Denoiser` → 16 kHz VAD frames; a frame
+  the engine refuses, i.e. one with a non-finite sample, comes out silent). It sits in `CaptureProcessor::process_raw_chunk` after the raw
   tap and before `handle_frame`, so the VAD, the
   speech clock, streaming and the model all get the denoised signal while
   saved raw audio and the native analysis tap stay untouched. The flag is an

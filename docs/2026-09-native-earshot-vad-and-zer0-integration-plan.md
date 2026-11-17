@@ -2,7 +2,9 @@
 
 Original specification: September 2026. Status corrected: 2026-10-16.
 
-> **Superseded for execution (2026-11-15)** by Phase 5 of
+> **Implemented 2026-11-17** (Phase 5 of the November plan: the app's
+> capture uses the engine's `VadGate` and `Denoiser`, every stream has
+> `enable_vad: false`). **Superseded for execution (2026-11-15)** by Phase 5 of
 > [`2026-11-zer0-update-master-plan.md`](2026-11-zer0-update-master-plan.md),
 > which moves ZER0's VAD and denoise onto the engine's `VadGate` / `Denoiser`.
 > §1.2's parity table is that phase's acceptance list.

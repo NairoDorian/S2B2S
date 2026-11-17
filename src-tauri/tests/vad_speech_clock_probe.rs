@@ -1,6 +1,6 @@
-//! End-to-end check of the real VAD chain (Earshot + SmoothedVad) over a real
-//! recording, asserting that the raw per-frame verdict the speech clock depends
-//! on actually tracks speech.
+//! End-to-end check of the real VAD chain (the engine's Earshot speech gate,
+//! with the streaming hangover) over a real recording, asserting that the raw
+//! per-frame verdict the speech clock depends on actually tracks speech.
 //!
 //!   <PROBE_WAV flag>=<path> cargo test --test vad_speech_clock_probe -- --nocapture
 //!
@@ -9,13 +9,10 @@
 
 use app_lib::app_env_var;
 use app_lib::audio_toolkit::{
-    EarshotVad, VoiceActivityDetector,
+    SpeechGate, VoiceActivityDetector,
     audio::read_wav_samples,
     constants::VAD_FRAME_SAMPLES,
-    vad::{
-        SmoothedVad, VAD_ONSET_MS, VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS, VadFrame,
-        frames_for_duration_ms,
-    },
+    vad::{VAD_STREAMING_HANGOVER_MS, VadFrame},
 };
 
 #[test]
@@ -28,17 +25,9 @@ fn real_vad_chain_reports_speech_over_real_audio() {
         return;
     };
     let samples = read_wav_samples(&wav).expect("read wav");
-    let earshot = EarshotVad::new(0.5).expect("construct earshot");
-    let prefill_frames = frames_for_duration_ms(VAD_PREFILL_MS, VAD_FRAME_SAMPLES);
-    let streaming_hangover_frames =
-        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, VAD_FRAME_SAMPLES);
-    let onset_frames = frames_for_duration_ms(VAD_ONSET_MS, VAD_FRAME_SAMPLES);
-    let mut vad: Box<dyn VoiceActivityDetector> = Box::new(SmoothedVad::new(
-        Box::new(earshot),
-        prefill_frames,
-        streaming_hangover_frames,
-        onset_frames,
-    ));
+    let mut vad: Box<dyn VoiceActivityDetector> = Box::new(
+        SpeechGate::new(0.5, VAD_STREAMING_HANGOVER_MS).expect("construct the speech gate"),
+    );
 
     let (mut frames, mut kept, mut raw_voiced, mut errors) = (0usize, 0usize, 0usize, 0usize);
     for chunk in samples.chunks(VAD_FRAME_SAMPLES) {
@@ -74,6 +63,7 @@ fn real_vad_chain_reports_speech_over_real_audio() {
     );
 
     assert_eq!(errors, 0, "VAD errored on {errors}/{frames} frames");
+    assert!(kept <= frames, "the gate released a frame twice");
     assert!(
         raw_voiced * 100 / frames.max(1) >= 30,
         "raw voiced frames far too low ({raw_voiced}/{frames}) for continuous speech"

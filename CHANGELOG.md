@@ -459,6 +459,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The engine owns voice activity detection and noise suppression
+  (2026-11-17).** The capture path's Earshot is now transcribe.cpp's speech
+  gate (`transcribe_cpp::VadGate`: SIMD Earshot, the two-threshold hysteresis,
+  onset debounce, a pre-roll ring that never releases a frame twice and the
+  hangover), and RNNoise is the engine's `Denoiser` (the `nnnoiseless`
+  algorithm, output within one int16 step, about 1.4× faster). The `earshot`
+  and `nnnoiseless` crates are gone, along with ZER0's own `Hysteresis` and
+  `SmoothedVad`. Every native stream is opened with the engine's per-stream
+  silence gate off (`enable_vad: false`): before, ZER0's streams ran two
+  Earshots in series with different thresholds and tails, and the second one,
+  which the VAD toggle never reached, could drop a quiet utterance the first
+  had kept. **Behaviour change:** the old adapter scored every frame below
+  −45 dBFS RMS as 0 without running the model, so a very quiet microphone
+  could not reach speech at any threshold; the engine scores every frame. On
+  the quiet FLEURS French clip (−62 dBFS RMS) the gate now reads 76 % of
+  frames as speech, where the old pre-gate read none. The speech clock, the
+  slider, the live VAD test, the overlay's speaking indicator and WPM keep
+  their behaviour; the History re-analysis uses the engine's batch scorer
+  (`score_frames`, bit-identical to frame-by-frame scoring).
+
 - **Tauri 3.0.0-alpha.6 and the newest plugins, tauri-specta rc.29, Specta
   rc.28 (2026-11-15).** The core had been held at alpha.2 since alpha.3 because
   the `v3` plugins called the removed inherent `run_on_main_thread`; the plugins

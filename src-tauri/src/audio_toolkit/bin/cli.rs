@@ -15,8 +15,8 @@ use app_lib::audio_toolkit::{
     AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, VadPolicy, VoiceActivityDetector,
     audio::{CpalDeviceInfo, list_input_devices, save_wav_file},
     vad::{
-        EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_PREFILL_MS,
-        VAD_STREAMING_HANGOVER_MS, frames_for_duration_ms,
+        SpeechGate, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_STREAMING_HANGOVER_MS,
+        frames_for_duration_ms,
     },
 };
 
@@ -191,19 +191,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================");
     print_help();
 
-    let earshot = EarshotVad::new(0.5)?;
-    let frame_samples = earshot.frame_samples();
-    let offline_hangover_frames = frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, frame_samples);
-    let smoothed_vad = SmoothedVad::new(
-        Box::new(earshot),
-        frames_for_duration_ms(VAD_PREFILL_MS, frame_samples),
-        offline_hangover_frames,
-        frames_for_duration_ms(VAD_ONSET_MS, frame_samples),
-    );
+    let gate = SpeechGate::new(0.5, VAD_OFFLINE_HANGOVER_MS)?;
+    let frame_samples = gate.frame_samples();
     let recorder = AudioRecorder::new()?.with_vad(
-        Box::new(smoothed_vad),
-        offline_hangover_frames,
-        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, frame_samples),
+        Box::new(gate),
+        VAD_OFFLINE_HANGOVER_MS,
+        VAD_STREAMING_HANGOVER_MS,
         frames_for_duration_ms(VAD_ONSET_MS, frame_samples),
     );
     let mut state = RecorderState::new(recorder);

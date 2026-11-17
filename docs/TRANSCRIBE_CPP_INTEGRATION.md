@@ -25,14 +25,14 @@ consumer contract from an upstream README or an old plan alone.
 
 ## Files to read together
 
-| Change                                        | App sources                                                                                            | Engine sources                                                                                         |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Stream defaults / API / lifecycle             | `src-tauri/src/managers/transcription.rs`, all StreamOptions builders                                  | `include/transcribe.h`, `src/transcribe-asr.cpp`, Rust `streaming.rs` / `session.rs`                   |
-| VAD policy and timing                         | `managers/audio.rs`, `audio_toolkit/vad/{mod,earshot,smoothed}.rs`, SpeechClock in `audio/recorder.rs` | `src/transcribe-earshot.*`, `src/transcribe-vad.*`, `include/transcribe/vad.h`, `src/arch/silero_vad/` |
-| Noise suppression / sample rate / final tails | `audio_toolkit/audio/{denoise,resampler,recorder}.rs`                                                  | ASR PCM contract and any new optional frontend; ASR itself still takes 16 kHz mono                     |
-| Pause/chunk/text ownership                    | `multi_stt_stream.rs`, `multi_streaming.rs`, `live_mode.rs`, `file_transcription.rs`                   | Stream cursors, finalize behavior and family-specific silence handling                                 |
-| Diagnostics / history                         | `live_fft/`, `managers/history.rs`, `settings.rs`, `shortcut/mod.rs`                                   | Raw scores, voiced/retained states and their distinct telemetry contracts                              |
-| Built dependency                              | `src-tauri/Cargo.{toml,lock}`, `scripts/check-transcribe-deps.ts`, `native_build_identity()`           | Public ABI hash, generated bindings, native install and model composite options                        |
+| Change                                        | App sources                                                                                  | Engine sources                                                                                                  |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Stream defaults / API / lifecycle             | `src-tauri/src/managers/transcription.rs`, all StreamOptions builders                        | `include/transcribe.h`, `src/transcribe-asr.cpp`, Rust `streaming.rs` / `session.rs`                            |
+| VAD policy and timing                         | `managers/audio.rs`, `audio_toolkit/vad/{mod,gate}.rs`, SpeechClock in `audio/recorder.rs`   | `src/transcribe-vad-gate.*`, `src/transcribe-earshot*`, Rust `earshot.rs` (`VadGate`, `score_frames`)           |
+| Noise suppression / sample rate / final tails | `audio_toolkit/audio/{denoise,resampler,recorder}.rs`                                        | `src/transcribe-denoise.cpp`, `src/transcribe-rnnoise.*`, Rust `denoise.rs` (`Denoiser`); ASR takes 16 kHz mono |
+| Pause/chunk/text ownership                    | `multi_stt_stream.rs`, `multi_streaming.rs`, `live_mode.rs`, `file_transcription.rs`         | Stream cursors, finalize behavior and family-specific silence handling                                          |
+| Diagnostics / history                         | `live_fft/`, `managers/history.rs`, `settings.rs`, `shortcut/mod.rs`                         | Raw scores, voiced/retained states and their distinct telemetry contracts                                       |
+| Built dependency                              | `src-tauri/Cargo.{toml,lock}`, `scripts/check-transcribe-deps.ts`, `native_build_identity()` | Public ABI hash, generated bindings, native install and model composite options                                 |
 
 Before the VAD merge, the engine's embedded Earshot occupied
 `src/transcribe-vad.*`. The VAD integration separates it into
@@ -154,3 +154,25 @@ on every native stream (Phase 5), and "languages I speak" through
 `RunOptions::allowed_languages` plus upstream Handy's spoken-language detector
 (Phase 6). No app code changed with this note; update this section as each
 phase lands.
+
+## Update: 2026-11-17 (app side, Phase 5 landed)
+
+The engine owns VAD and noise suppression; the paragraphs of the 2026-10-16
+audit about Rust Earshot, `SmoothedVad` and the double gate are history.
+
+- Capture: one `transcribe_cpp::VadGate` per recorder (`SpeechGate`, fed one
+  256-sample frame per call), its threshold moved in place by the slider and
+  its hangover set per recording (450 / 1650 ms). Exit threshold, onset and
+  pre-roll are passed explicitly. ZER0's `SpeechClock` still counts the gate's
+  raw `voiced` verdict; the gate's own clock is not read.
+- Noise suppression: `transcribe_cpp::Denoiser` inside `DenoiseChain`; params
+  cross the FFI only when a slider moved; `flush` replaces the silent frame.
+- Streams: `StreamOptions { enable_vad: false, .. }` at the live builder,
+  `benchmark_stream` and `replay_stream_once`. The engine's per-stream silence
+  gate no longer runs on audio the app already filtered.
+- History re-analysis: `transcribe_cpp::score_frames` + the same
+  two-threshold rule (`vad::voiced_ms`).
+- Removed crates: `earshot`, `nnnoiseless`.
+- Behaviour change: no −45 dBFS pre-gate; the quiet FLEURS French clip
+  (−62 dBFS RMS) reads 76 % voiced through `vad_speech_clock_probe`, where the
+  old pre-gate scored every frame 0.

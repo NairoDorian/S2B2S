@@ -1426,8 +1426,13 @@ impl TranscriptionManager {
             // from `native_streaming_chunk_ms` instead (a preset has no meaning
             // for a continuous millisecond range).
             let stream_ext = self.resolved_stream_extension(&settings, &session.model(), &model_id);
+            // The capture path already gates this audio (the engine's speech
+            // gate in the recorder, or nothing when the user turned VAD off and
+            // asked for every frame), so the stream's own silence gate stays
+            // off: a second gate only drops quiet speech the first one kept.
             let stream_options = StreamOptions {
                 family: stream_ext,
+                enable_vad: false,
                 ..Default::default()
             };
             info!(target: "pipeline", "stream model={} backend={} options={:?} run={:?}", model_id, backend, stream_options, run_options);
@@ -1731,8 +1736,11 @@ impl TranscriptionManager {
                 // different cadence than the app actually runs.
                 self.resolved_stream_extension(&settings, &model, &model_id)
             };
+            // As the live path: the app feeds its streams with the engine's
+            // own silence gate off.
             let stream_options = StreamOptions {
                 family,
+                enable_vad: false,
                 ..Default::default()
             };
             let start = Instant::now();
@@ -3942,8 +3950,11 @@ impl TranscriptionManager {
         };
         let family = self.resolved_stream_extension(settings, &model, model_id);
         let stream_extension = format!("{:?}", family);
+        // As the live path: the app feeds its streams with the engine's own
+        // silence gate off.
         let stream_options = StreamOptions {
             family,
+            enable_vad: false,
             ..Default::default()
         };
 

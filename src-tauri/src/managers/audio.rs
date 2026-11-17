@@ -2,8 +2,8 @@ use crate::audio_toolkit::audio::{DenoiseParams, default_input_endpoint};
 use crate::audio_toolkit::{
     AudioRecorder, VadPolicy, VoiceActivityDetector, list_input_devices,
     vad::{
-        EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_PREFILL_MS,
-        VAD_STREAMING_HANGOVER_MS, frames_for_duration_ms,
+        SpeechGate, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_STREAMING_HANGOVER_MS,
+        frames_for_duration_ms,
     },
 };
 use crate::helpers::clamshell;
@@ -409,25 +409,15 @@ fn create_audio_recorder(
     let settings = get_settings(app_handle);
     let threshold = vad_threshold(&settings);
     let detector: Box<dyn VoiceActivityDetector> = Box::new(
-        EarshotVad::new(threshold)
-            .map_err(|e| anyhow::anyhow!("Failed to create EarshotVad: {e}"))?,
+        SpeechGate::new(threshold, VAD_OFFLINE_HANGOVER_MS)
+            .map_err(|e| anyhow::anyhow!("Failed to create the VAD speech gate: {e}"))?,
     );
 
     let frame_samples = detector.frame_samples();
-    let prefill_frames = frames_for_duration_ms(VAD_PREFILL_MS, frame_samples);
-    let offline_hangover_frames = frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, frame_samples);
-    let streaming_hangover_frames =
-        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, frame_samples);
     let onset_frames = frames_for_duration_ms(VAD_ONSET_MS, frame_samples);
-    let smoothed_vad = SmoothedVad::new(
-        detector,
-        prefill_frames,
-        offline_hangover_frames,
-        onset_frames,
-    );
 
     info!(
-        "Initialized Earshot VAD ({} samples/frame, threshold {:.2})",
+        "Initialized the engine's Earshot speech gate ({} samples/frame, threshold {:.2})",
         frame_samples, threshold
     );
 
@@ -438,9 +428,9 @@ fn create_audio_recorder(
     let recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
         .with_vad(
-            Box::new(smoothed_vad),
-            offline_hangover_frames,
-            streaming_hangover_frames,
+            detector,
+            VAD_OFFLINE_HANGOVER_MS,
+            VAD_STREAMING_HANGOVER_MS,
             onset_frames,
         )
         .with_selected_channel(selected_channel)

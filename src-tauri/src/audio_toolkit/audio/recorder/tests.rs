@@ -48,8 +48,8 @@ fn resampler_frame_size_follows_the_vad_frame() {
     let vad = VadConfig {
         detector: Arc::new(Mutex::new(Box::new(FixedFrameVad(frame_samples)))),
         frame_samples,
-        offline_hangover_frames: 0,
-        streaming_hangover_frames: 0,
+        offline_hangover_ms: 0,
+        streaming_hangover_ms: 0,
         onset_frames: 0,
     };
     let frame_lengths = Arc::new(Mutex::new(Vec::new()));

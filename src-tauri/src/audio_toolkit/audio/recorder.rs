@@ -118,26 +118,26 @@ pub enum VadPolicy {
     Streaming,
 }
 
-/// A single VAD engine plus the hangover-tail lengths and onset frames its smoothing wrapper
-/// should use. The offline and streaming policies are never active
-/// concurrently, so one detector is reconfigured per session (see `Cmd::Start`)
-/// rather than kept as two resident engines.
+/// A single VAD engine plus the hangover tails of the two policies and the
+/// onset the speech clock debounces with. The offline and streaming policies
+/// are never active concurrently, so one detector is reconfigured per session
+/// (see `Cmd::Start`) rather than kept as two resident engines.
 #[derive(Clone)]
 pub(crate) struct VadConfig {
     pub(crate) detector: Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>,
     pub(crate) frame_samples: usize,
-    pub(crate) offline_hangover_frames: usize,
-    pub(crate) streaming_hangover_frames: usize,
+    pub(crate) offline_hangover_ms: u64,
+    pub(crate) streaming_hangover_ms: u64,
     pub(crate) onset_frames: usize,
 }
 
 impl VadConfig {
-    /// Post-speech hangover tail (in backend-sized frames) for the given policy.
-    /// `Disabled` never reaches the detector, so it maps to the offline value.
-    fn hangover_for(&self, policy: VadPolicy) -> usize {
+    /// Post-speech hangover tail for the given policy. `Disabled` never
+    /// reaches the detector, so it maps to the offline value.
+    fn hangover_for(&self, policy: VadPolicy) -> u64 {
         match policy {
-            VadPolicy::Streaming => self.streaming_hangover_frames,
-            VadPolicy::Offline | VadPolicy::Disabled => self.offline_hangover_frames,
+            VadPolicy::Streaming => self.streaming_hangover_ms,
+            VadPolicy::Offline | VadPolicy::Disabled => self.offline_hangover_ms,
         }
     }
 }
@@ -411,12 +411,12 @@ impl AudioRecorder {
     }
 
     /// Attach a single VAD engine, reconfigured per session for the offline vs
-    /// streaming hangover tail.
+    /// streaming hangover tail. `onset_frames` is the speech clock's debounce.
     pub fn with_vad(
         mut self,
         detector: Box<dyn VoiceActivityDetector>,
-        offline_hangover_frames: usize,
-        streaming_hangover_frames: usize,
+        offline_hangover_ms: u64,
+        streaming_hangover_ms: u64,
         onset_frames: usize,
     ) -> Self {
         let frame_samples = detector.frame_samples();
@@ -424,8 +424,8 @@ impl AudioRecorder {
         self.vad = Some(VadConfig {
             detector: Arc::new(Mutex::new(detector)),
             frame_samples,
-            offline_hangover_frames,
-            streaming_hangover_frames,
+            offline_hangover_ms,
+            streaming_hangover_ms,
             onset_frames,
         });
         self
@@ -1126,6 +1126,9 @@ pub(crate) struct CaptureProcessor {
     /// Built on first use so a user who never enables suppression pays
     /// nothing for it.
     denoise: Option<DenoiseChain>,
+    /// The engine could not allocate a suppressor: capture continues on the
+    /// direct path, and the attempt is not repeated for every chunk.
+    denoise_unavailable: bool,
     denoise_enabled: Arc<AtomicBool>,
     denoise_controls: Arc<DenoiseControls>,
     /// Which path carried the previous chunk; a change resets both so no
@@ -1234,6 +1237,7 @@ impl CaptureProcessor {
             stream_running_at,
             frame_resampler,
             denoise: None,
+            denoise_unavailable: false,
             denoise_active: denoise_enabled.load(Ordering::Relaxed),
             denoise_enabled,
             denoise_controls,
@@ -1295,7 +1299,7 @@ impl CaptureProcessor {
             && let Some(cfg) = &self.vad
         {
             let mut detector = cfg.detector.lock().unwrap();
-            detector.set_hangover_frames(cfg.hangover_for(policy));
+            detector.set_hangover_ms(cfg.hangover_for(policy));
             detector.reset();
         }
     }
@@ -1359,12 +1363,18 @@ impl CaptureProcessor {
                 if denoise_on { "enabled" } else { "disabled" }
             );
         }
-        if denoise_on && self.denoise.is_none() {
-            self.denoise = Some(DenoiseChain::new(
+        if denoise_on && self.denoise.is_none() && !self.denoise_unavailable {
+            match DenoiseChain::new(
                 self.in_sample_rate as usize,
                 constants::WHISPER_SAMPLE_RATE as usize,
                 self.out_frame_duration,
-            ));
+            ) {
+                Ok(chain) => self.denoise = Some(chain),
+                Err(e) => {
+                    self.denoise_unavailable = true;
+                    log::error!("Noise suppression unavailable, capturing without it: {e}");
+                }
+            }
         }
 
         let vad_policy = self.vad_policy;
