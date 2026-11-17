@@ -141,6 +141,14 @@ Anything added to startup goes after that line or on its own thread.
   "slow \_dot* communication" with the gate off in all three rounds (correct
   with it on) — one clip, one word, watch for it. Debug Rust build; the C++
   engine dominates the measured time.
+- The spoken-language detector costs nothing until a run's plan is `Detect`
+  (two or more spoken languages on a model that cannot detect them, or
+  `language_detection: always`): then one CPU inference on the blocking
+  thread that already runs the transcription, ≈ 70 ms for the default 5 s of
+  speech (VoxLingua107 ECAPA Q8_0, i9-13900H), cached for the other Multi-STT
+  slots of the same recording. The model (27 MB on disk) loads on first use
+  and unloads with the primary model. Its download is one background task,
+  started only when needed. No thread, poll or event.
 - FFT resampling adds ~20 ms of buffering per stage; the denoise chain is
   two stages when the microphone is not 48 kHz. Prefer a 48 kHz device.
 - The first RNNoise frames after a reset are transient; the chain is reset

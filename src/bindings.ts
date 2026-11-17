@@ -307,6 +307,20 @@ export const commands = {
 	 */
 	initializeShortcuts: (options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("initialize_shortcuts", undefined, options)),
 	getArchPlugins: (options?: InvokeOptions) => typedError<ArchPluginInfo_Serialize[], string>(__TAURI_INVOKE("get_arch_plugins", undefined, options)),
+	/**
+	 *  What Auto does for the selected model with the spoken languages, for the
+	 *  line the General page shows under the list: the model's own detection,
+	 *  the language Auto falls back to, or that the detector is still missing.
+	 *  Derived from the same plan a transcription uses, so the two cannot
+	 *  disagree.
+	 */
+	getLanguageStatus: (options?: InvokeOptions) => typedError<LanguageStatus, string>(__TAURI_INVOKE("get_language_status", undefined, options)),
+	/**
+	 *  Download the spoken-language detector now (≈27 MB, once). Progress and
+	 *  completion arrive as the usual model-download events under the
+	 *  detector's id.
+	 */
+	downloadLanguageDetector: (options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("download_language_detector", undefined, options)),
 	loadArchPlugin: (path: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("load_arch_plugin", { path }, options)),
 	registerArchDir: (dir: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("register_arch_dir", { dir }, options)),
 	getAvailableModels: (options?: InvokeOptions) => typedError<ModelInfo_Serialize[], string>(__TAURI_INVOKE("get_available_models", undefined, options)),
@@ -681,6 +695,16 @@ export type AppSettings_Deserialize = {
 	 *  keeps its own spelling. Fork-only.
 	 */
 	spoken_languages_any_letters?: boolean,
+	/**
+	 *  When the spoken-language detector picks the language for Auto
+	 *  (`language_detection` module). The upstream project's name and values.
+	 */
+	language_detection?: LanguageDetectionMode,
+	/**
+	 *  Seconds of speech the detector hears; clamped to
+	 *  `language_detection::WINDOW_SECS` where it is read.
+	 */
+	language_detection_window_secs?: number,
 	overlay_position?: OverlayPosition_Deserialize,
 	/**
 	 *  When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
@@ -1043,6 +1067,16 @@ export type AppSettings_Serialize = {
 	 *  keeps its own spelling. Fork-only.
 	 */
 	spoken_languages_any_letters: boolean,
+	/**
+	 *  When the spoken-language detector picks the language for Auto
+	 *  (`language_detection` module). The upstream project's name and values.
+	 */
+	language_detection: LanguageDetectionMode,
+	/**
+	 *  Seconds of speech the detector hears; clamped to
+	 *  `language_detection::WINDOW_SECS` where it is read.
+	 */
+	language_detection_window_secs: number,
 	overlay_position: OverlayPosition_Serialize,
 	/**
 	 *  When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
@@ -1367,6 +1401,14 @@ export type AudioDevice = {
 };
 
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter";
+
+export type AutoUnavailableReason = 
+/**  Only one of their languages (or only one at all) fits the model. */
+{ kind: "one_language" } | 
+/**  The detector can't identify these spoken languages. */
+{ kind: "undetectable"; languages: string[] } | 
+/**  None of their languages fit the model. */
+{ kind: "no_match" };
 
 export type AvailableAccelerators = {
 	transcribe: string[],
@@ -1863,6 +1905,37 @@ export type LLMPrompt = {
 	name: string,
 	prompt: string,
 };
+
+/**  When the spoken-language detector picks the language for Auto. */
+export type LanguageDetectionMode = 
+/**  Only for models that can't detect the language themselves. */
+"when_needed" | 
+/**
+ *  For every model except streaming ones, restricted to the languages
+ *  the person speaks.
+ */
+"always";
+
+/**
+ *  What the language picker shows: the language a transcription will run in,
+ *  or Auto when it's decided per transcription. Derived from [`plan`], so it
+ *  can't disagree with what transcription does.
+ */
+export type LanguageStatus = 
+/**  The language they picked. */
+{ kind: "selected"; language: string } | 
+/**
+ *  Decided per transcription: the model's own detection, or the
+ *  detector's.
+ */
+{ kind: "auto" } | 
+/**
+ *  Auto needs the detector, which isn't downloaded; `fallback` (the first
+ *  preferred language) is used until it is.
+ */
+{ kind: "detector_missing"; fallback: string } | 
+/**  Auto can't work here; `language` is used instead. */
+{ kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason };
 
 export type LiveChunkInfo = LiveChunkInfo_Serialize | LiveChunkInfo_Deserialize;
 

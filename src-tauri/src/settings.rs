@@ -440,6 +440,22 @@ pub const DEFAULT_VAD_THRESHOLD_EARSHOT: f32 = 0.5;
 pub const MIN_VAD_THRESHOLD: f32 = 0.05;
 pub const MAX_VAD_THRESHOLD: f32 = 0.95;
 
+/// When the spoken-language detector picks the language for Auto.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageDetectionMode {
+    /// Only for models that can't detect the language themselves.
+    #[default]
+    WhenNeeded,
+    /// For every model except streaming ones, restricted to the languages
+    /// the person speaks.
+    Always,
+}
+
+fn default_language_detection_window_secs() -> u32 {
+    5
+}
+
 /// The spoken-language list as stored: trimmed, `auto` and blanks dropped,
 /// Chinese script tags folded to the recognition code (`zh-Hans` → `zh`),
 /// one entry per language (`nb` and `no` are one), first occurrence kept.
@@ -1575,6 +1591,14 @@ pub struct AppSettings {
     /// keeps its own spelling. Fork-only.
     #[serde(default)]
     pub spoken_languages_any_letters: bool,
+    /// When the spoken-language detector picks the language for Auto
+    /// (`language_detection` module). The upstream project's name and values.
+    #[serde(default)]
+    pub language_detection: LanguageDetectionMode,
+    /// Seconds of speech the detector hears; clamped to
+    /// `language_detection::WINDOW_SECS` where it is read.
+    #[serde(default = "default_language_detection_window_secs")]
+    pub language_detection_window_secs: u32,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
     /// When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
@@ -2535,6 +2559,8 @@ pub fn get_default_settings() -> AppSettings {
         selected_language: "auto".to_string(),
         spoken_languages: Vec::new(),
         spoken_languages_any_letters: false,
+        language_detection: LanguageDetectionMode::default(),
+        language_detection_window_secs: default_language_detection_window_secs(),
         overlay_position: default_overlay_position(),
         recording_overlay_use_manual_position: false,
         recording_overlay_has_saved_custom_position: false,

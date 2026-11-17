@@ -843,7 +843,14 @@ pub fn change_spoken_languages_setting(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.spoken_languages = settings::normalize_spoken_languages(languages);
-    settings::write_settings(&app, settings);
+    settings::write_settings(&app, settings.clone());
+    // Decision D8: fetch the detector as soon as a model would want it,
+    // rather than at the first dictation that needs it.
+    let model_manager = app.state::<std::sync::Arc<crate::managers::model::ModelManager>>();
+    if crate::managers::transcription::language_detector_needed(&settings, &model_manager) {
+        app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>()
+            .start_language_detector_download();
+    }
     Ok(())
 }
 

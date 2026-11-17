@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a Multi-STT slot's, still wins. Applies to the live stream, the batch
   decode, every Multi-STT extra and both benchmarks. Same setting name and
   meaning as upstream's `spoken_languages`.
+  On a model that cannot detect a language itself (Canary, Cohere, Voxtral,
+  Granite NAR), one listed language it supports is used directly, and two or
+  more are told apart by a small language detector (VoxLingua107 ECAPA, 27 MB,
+  downloaded only when a model needs it, about 70 ms per dictation on the
+  CPU). The General page says what Auto will do with the selected model and
+  offers the download. `language_detection: always` (upstream's setting) runs
+  the detector for every non-streaming model.
 
 - **The fork is now ZER0 (2026-09-12).** The project has its own name, its own
   mark (a rounded badge with a slashed zero), its own links and its own version

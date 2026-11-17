@@ -27,6 +27,8 @@ export const settingsFixture = {
   selected_language: "",
   spoken_languages: [],
   spoken_languages_any_letters: false,
+  language_detection: "when_needed",
+  language_detection_window_secs: 0,
   overlay_position: "top",
   recording_overlay_use_manual_position: false,
   recording_overlay_has_saved_custom_position: false,

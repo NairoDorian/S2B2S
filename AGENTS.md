@@ -427,6 +427,23 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   first run. When `stop_on_exit` is on, stopped on `RunEvent::Exit` and, on
   Windows, by a job object if the app dies; with it off the server is not
   tied to the job object and survives the app's exit
+- `language_detection/` - Spoken-language detection for Auto (port of the
+  upstream module): `policy.rs` is the pure decision (`plan` → `Fixed` /
+  `Native` / `Detect`, and `status` for the UI), `detector.rs` the
+  VoxLingua107 ECAPA `LangIdSession` (CPU, loaded on first use, unloaded with
+  the primary model, the last answer cached so the Multi-STT slots of one
+  recording share one run), `mod.rs` the decision with its fallbacks, the
+  speech window (`speech_head`, through `SpeechGate`) and the detector's
+  pinned file (`DETECTOR`, Q8_0, sha256-checked; not in `catalog.json`, which
+  `gen_catalog.py` regenerates). `TranscriptionManager::run_language` applies
+  it to every batch run (primary and each extra with its own slot settings)
+  only when `spoken_languages` is set and the language is Auto — otherwise
+  the old `effective_language_for_model` resolution is untouched. A missing
+  detector is downloaded in the background (`ModelManager::
+download_language_detector`) when a plan wants it or when the list is
+  saved and a model needs it (`language_detector_needed`, decision D8); that
+  run uses the first preferred language. `get_language_status` /
+  `download_language_detector` serve the line under the list
 - `job_object.rs` - The Windows job object (kill-on-close) that ties
   `llama-server` to the app's lifetime when `llama.stop_on_exit` is on; a
   no-op elsewhere
@@ -891,7 +908,14 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   the letters (`AllowlistLetters::Any`). No list when a language is pinned
   (global or a Multi-STT slot's), when the model lacks the feature, or when it
   knows none of the listed languages. Upstream's name and meaning for
-  `spoken_languages`, so a shared store reads the same
+  `spoken_languages`, so a shared store reads the same. On a model that
+  cannot detect a language itself (Canary, Cohere, Voxtral, Granite NAR) the
+  list also drives the detector: one compatible language → that language, two
+  or more → `language_detection` picks from the first seconds of speech
+- `language_detection` (`when_needed` default / `always`) and
+  `language_detection_window_secs` (default 5, clamped 2–30) - Upstream's
+  names: `always` runs the detector for every non-streaming model, restricted
+  to the spoken languages, falling back to the model's own detection
 - `vad_threshold_earshot` (default 0.5) - Speech-probability threshold the
   detector is built with (0.05–0.95; lower = more sensitive).
   `create_audio_recorder` reads it, so `change_vad_threshold_setting` writes

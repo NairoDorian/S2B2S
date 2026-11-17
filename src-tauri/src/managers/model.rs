@@ -132,14 +132,56 @@ fn base_language(language: &str) -> &str {
 
 /// The stable user intent used to compare language codes across model
 /// families. Norwegian Bokmål (`nb`) maps to Norwegian (`no`), while Nynorsk
-/// (`nn`) remains distinct; Filipino (`fil`) maps to Tagalog (`tl`). This is
-/// only for matching: callers must return/pass the model's original code.
+/// (`nn`) remains distinct; Filipino (`fil`) maps to Tagalog (`tl`); the
+/// legacy ISO 639 codes the language detector and Whisper still use map to
+/// the current ones (`iw` → `he`, `jw` → `jv`). This is only for matching:
+/// callers must return/pass the model's original code.
 pub(crate) fn canonical_language_code(language: &str) -> &str {
     match base_language(language) {
         "nb" => "no",
         "fil" => "tl",
+        "iw" => "he",
+        "jw" => "jv",
         base => base,
     }
+}
+
+/// The model's own code for `language`, if it hears it. The same base first
+/// (with both `no` and `nb` listed, an explicit `nb` must pick `nb`), then
+/// an equivalent code ([`canonical_language_code`]).
+pub(crate) fn supported_code<'a>(
+    language: &str,
+    supported_languages: &'a [String],
+) -> Option<&'a String> {
+    supported_languages
+        .iter()
+        .find(|code| base_language(code) == base_language(language))
+        .or_else(|| {
+            supported_languages
+                .iter()
+                .find(|code| canonical_language_code(code) == canonical_language_code(language))
+        })
+}
+
+/// The language a run falls back to when it has to pick one without
+/// detecting: the user's one spoken language if the model hears it, else
+/// English, else the model's first.
+pub(crate) fn fallback_language(preferred: &[String], supported_languages: &[String]) -> String {
+    if let [only] = preferred
+        && let Some(code) = supported_code(only, supported_languages)
+    {
+        return code.clone();
+    }
+    if let Some(en) = supported_languages
+        .iter()
+        .find(|language| base_language(language) == "en")
+    {
+        return en.clone();
+    }
+    supported_languages
+        .first()
+        .map(|language| recognition_language(language).to_string())
+        .unwrap_or_else(|| "auto".to_string())
 }
 
 fn canonicalize_supported_languages(languages: Vec<String>) -> Vec<String> {
@@ -342,16 +384,7 @@ pub fn effective_language(
         // Prefer the same base code before considering an equivalence alias. If
         // a future model advertises both `no` and `nb`, an explicit `nb` intent
         // must select `nb`, regardless of capability-list order.
-        let exact_base_match = supported_languages
-            .iter()
-            .find(|language| base_language(language) == base_language(intent));
-        let equivalent_match = || {
-            supported_languages.iter().find(|language| {
-                canonical_language_code(language) == canonical_language_code(intent)
-            })
-        };
-
-        if let Some(code) = exact_base_match.or_else(equivalent_match) {
+        if let Some(code) = supported_code(intent, supported_languages) {
             if intent == "zh-Hans" || intent == "zh-Hant" {
                 return intent.to_string();
             }
@@ -734,6 +767,9 @@ pub struct ModelManager {
     /// Single-flight guard for [`Self::rescan_local_models`] so concurrent
     /// refresh requests coalesce instead of scanning the disk in parallel.
     is_rescanning: Arc<AtomicBool>,
+    /// Single-flight guard for [`Self::download_language_detector`]: a
+    /// second request while one runs is a no-op.
+    detector_downloading: Arc<AtomicBool>,
 }
 
 impl ModelManager {
@@ -942,6 +978,7 @@ impl ModelManager {
             available_models: Mutex::new(available_models),
             cancel_flags: Arc::new(Mutex::new(HashMap::new())),
             is_rescanning: Arc::new(AtomicBool::new(false)),
+            detector_downloading: Arc::new(AtomicBool::new(false)),
         };
 
         // Migrate any bundled models to user directory
@@ -1058,6 +1095,67 @@ impl ModelManager {
         }
         let _ = self.app_handle.emit("models-updated", ());
         Ok(())
+    }
+
+    /// The spoken-language detector's file, if it is on disk: the app's own
+    /// models folder, or a Hugging Face cache another tool filled.
+    pub fn language_detector_path(&self) -> Option<PathBuf> {
+        let d = &crate::language_detection::DETECTOR;
+        let own = self.models_dir.join(d.filename);
+        if own.is_file() {
+            return Some(own);
+        }
+        hf_cached_path(d.repo_id, d.revision, d.filename)
+    }
+
+    /// Fetch the language detector (≈27 MB, once) into the models folder,
+    /// resumable and checked against the pinned size and sha256 — decision
+    /// D8's "only when needed": callers start it when a plan wants the
+    /// detector and it is missing. Progress goes out as a model download
+    /// under [`crate::language_detection::DETECTOR`]'s id. A no-op when the
+    /// file is there or a download already runs.
+    pub async fn download_language_detector(&self) -> Result<()> {
+        if self.language_detector_path().is_some()
+            || self.detector_downloading.swap(true, Ordering::SeqCst)
+        {
+            return Ok(());
+        }
+        let d = &crate::language_detection::DETECTOR;
+        let url = format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            d.repo_id, d.revision, d.filename
+        );
+        let final_path = self.models_dir.join(d.filename);
+        let partial_path = self.models_dir.join(format!("{}.partial", d.filename));
+        let cancel_token = CancellationToken::new();
+        self.cancel_flags
+            .lock()
+            .unwrap()
+            .insert(d.id.to_string(), cancel_token.clone());
+        info!("Downloading the language detector from {url}");
+        let outcome = self
+            .download_http_resumable(
+                d.id,
+                &url,
+                &partial_path,
+                Some(d.size_bytes),
+                Some(d.sha256),
+                &cancel_token,
+            )
+            .await;
+        self.cancel_flags.lock().unwrap().remove(d.id);
+        let result = match outcome {
+            Ok(HttpDownloadOutcome::Completed) => fs::rename(&partial_path, &final_path)
+                .map_err(|e| anyhow::anyhow!("Failed to finalize the language detector: {e}"))
+                .map(|()| {
+                    info!("Language detector downloaded to {}", final_path.display());
+                    let _ = self.app_handle.emit("model-download-complete", d.id);
+                }),
+            Ok(HttpDownloadOutcome::Cancelled) => Ok(()),
+            Err(e) => Err(e),
+        };
+        self.detector_downloading.store(false, Ordering::SeqCst);
+        result
     }
 
     pub fn get_model_info(&self, model_id: &str) -> Option<ModelInfo> {

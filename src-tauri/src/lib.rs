@@ -14,6 +14,7 @@ mod file_transcription;
 mod helpers;
 mod input;
 mod job_object;
+mod language_detection;
 mod live_fft;
 mod live_mode;
 mod llama_releases;
@@ -941,6 +942,8 @@ pub fn run(cli_args: CliArgs) {
             commands::initialize_enigo,
             commands::initialize_shortcuts,
             commands::models::get_arch_plugins,
+            commands::models::get_language_status,
+            commands::models::download_language_detector,
             commands::models::load_arch_plugin,
             commands::models::register_arch_dir,
             commands::models::get_available_models,

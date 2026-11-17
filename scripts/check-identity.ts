@@ -170,6 +170,12 @@ const EXEMPTIONS: Exemption[] = [
       "Same external model host, in the download fallback URLs and their test.",
   },
   {
+    file: "src-tauri/src/language_detection/mod.rs",
+    allow: /"handy-computer\/lang-id-voxlingua107-ecapa-gguf"/,
+    reason:
+      "The Hugging Face repo that serves the language detector's pinned file (external HF org); renaming it breaks the download.",
+  },
+  {
     file: "scripts/gen_catalog.py",
     allow: /handy-computer|blob\.handy\.computer/,
     reason: "Generates the catalog; the org and host above are its inputs.",

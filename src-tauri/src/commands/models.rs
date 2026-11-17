@@ -533,3 +533,36 @@ pub fn load_arch_plugin(path: String) -> Result<(), String> {
 pub fn register_arch_dir(dir: String) -> Result<(), String> {
     crate::managers::arch_plugins::register_arch_dir(std::path::Path::new(&dir))
 }
+
+/// What Auto does for the selected model with the spoken languages, for the
+/// line the General page shows under the list: the model's own detection,
+/// the language Auto falls back to, or that the detector is still missing.
+/// Derived from the same plan a transcription uses, so the two cannot
+/// disagree.
+#[tauri::command]
+#[specta::specta]
+pub fn get_language_status(
+    app: AppHandle,
+) -> Result<crate::language_detection::LanguageStatus, String> {
+    let settings = crate::settings::get_settings(&app);
+    let model_manager = app.state::<Arc<ModelManager>>();
+    let model = model_manager.get_model_info(&settings.selected_model);
+    Ok(crate::language_detection::status_for(
+        &settings,
+        model.as_ref(),
+        model_manager.language_detector_path().is_some(),
+    ))
+}
+
+/// Download the spoken-language detector now (≈27 MB, once). Progress and
+/// completion arrive as the usual model-download events under the
+/// detector's id.
+#[tauri::command]
+#[specta::specta]
+pub async fn download_language_detector(app: AppHandle) -> Result<(), String> {
+    let model_manager = app.state::<Arc<ModelManager>>().inner().clone();
+    model_manager
+        .download_language_detector()
+        .await
+        .map_err(|e| format!("{e:#}"))
+}

@@ -471,6 +471,9 @@ impl Drop for StreamWorkerGuard {
 pub struct TranscriptionManager {
     engine: Arc<Mutex<Option<LoadedEngine>>>,
     model_manager: Arc<ModelManager>,
+    /// The spoken-language detector, loaded on first use when a plan wants it
+    /// and unloaded with the primary model.
+    language_detector: Arc<crate::language_detection::LanguageDetector>,
     app_handle: AppHandle,
     current_model_id: Arc<Mutex<Option<String>>>,
     last_activity: Arc<AtomicU64>,
@@ -564,6 +567,7 @@ impl TranscriptionManager {
         let manager = Self {
             engine: Arc::new(Mutex::new(None)),
             model_manager,
+            language_detector: Arc::default(),
             app_handle: app_handle.clone(),
             current_model_id: Arc::new(Mutex::new(None)),
             last_activity: Arc::new(AtomicU64::new(Self::now_ms())),
@@ -724,6 +728,8 @@ impl TranscriptionManager {
             let mut engine = self.lock_engine();
             // Dropping the engine frees all resources
             *engine = None;
+            // The detector serves the primary model; it goes with it.
+            self.language_detector.unload();
         }
         {
             let mut current_model = self.current_model_id.lock().unwrap();
@@ -2128,6 +2134,67 @@ impl TranscriptionManager {
         Arc::clone(&self.stream_timing)
     }
 
+    /// The language a batch run of `audio` on `model_id` uses.
+    ///
+    /// With no spoken languages, or a language picked explicitly, this is
+    /// exactly the old resolution ([`effective_language_for_model`]). With a
+    /// list and Auto, the language plan decides
+    /// ([`crate::language_detection::plan_for`]): the model's own detection,
+    /// the one spoken language it supports, or — two or more of them on a
+    /// model that cannot detect — the detector's pick from the first seconds
+    /// of speech. A missing detector starts its download (decision D8) and
+    /// this run uses the first preferred language.
+    fn run_language(&self, settings: &AppSettings, model_id: &str, audio: &[f32]) -> String {
+        use crate::language_detection::{self as detection, IdentifyError};
+
+        if settings.spoken_languages.is_empty() || settings.selected_language != "auto" {
+            return effective_language_for_model(settings, self.model_manager.as_ref(), model_id);
+        }
+        let model = self.model_manager.get_model_info(model_id);
+        let plan = detection::plan_for(settings, model.as_ref(), false);
+        let detector_path = if plan.detects() {
+            let path = self.model_manager.language_detector_path();
+            if path.is_none() {
+                self.start_language_detector_download();
+            }
+            path
+        } else {
+            None
+        };
+        let speech = match (&detector_path, plan.detects()) {
+            (_, false) => Some(Vec::new()),
+            (Some(_), true) => Some(detection::speech_head(
+                audio,
+                detection::window_samples(settings),
+            )),
+            (None, true) => None,
+        };
+        let decision = plan.decide(speech.as_deref(), |speech, allowed| {
+            let path = detector_path.as_deref().ok_or(IdentifyError::Missing)?;
+            self.language_detector
+                .identify(path, speech, allowed)
+                .map_err(IdentifyError::Failed)
+        });
+        info!(
+            "Transcription language for '{}': {} ({:?})",
+            model_id,
+            decision.intent(),
+            decision.source
+        );
+        decision.intent().to_string()
+    }
+
+    /// Start the detector's one-time download in the background (a no-op
+    /// while one runs or once the file is there).
+    pub fn start_language_detector_download(&self) {
+        let model_manager = Arc::clone(&self.model_manager);
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = model_manager.download_language_detector().await {
+                warn!("Language detector download failed: {e:#}");
+            }
+        });
+    }
+
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
         self.transcribe_internal(audio, None).map(|(text, _)| text)
     }
@@ -2211,8 +2278,7 @@ impl TranscriptionManager {
         // will actually use. The coercion is capability-aware (a must-pick model
         // never receives "auto") and computed fresh here — it is never written
         // back to settings, so the intent survives switching models and back.
-        let validated_language =
-            effective_language_for_model(&settings, self.model_manager.as_ref(), &active_model);
+        let validated_language = self.run_language(&settings, &active_model, &audio);
         if validated_language != settings.selected_language {
             debug!(
                 "Language intent '{}' resolved to '{}' for model '{}'",
@@ -2937,6 +3003,35 @@ fn multi_stt_extra_model(settings: &AppSettings, slot: u8) -> Option<String> {
 /// both ways behaves the same.
 ///
 /// A model that is not one of the configured slots keeps the global settings.
+/// Whether any model a dictation runs — the primary, and with Multi-STT on
+/// every configured extra under its own slot settings — would want the
+/// spoken-language detector: decision D8's "only when needed" (two or more
+/// spoken languages and a model that cannot detect the language itself).
+pub(crate) fn language_detector_needed(
+    settings: &AppSettings,
+    model_manager: &ModelManager,
+) -> bool {
+    let wants = |settings: &AppSettings, model_id: &str| {
+        crate::language_detection::needs_detector(
+            settings,
+            model_manager.get_model_info(model_id).as_ref(),
+        )
+    };
+    if wants(settings, &settings.selected_model) {
+        return true;
+    }
+    settings.multi_stt_enabled
+        && settings
+            .multi_stt_extra_model_ids()
+            .into_iter()
+            .flatten()
+            .any(|model_id| {
+                let mut slot = settings.clone();
+                apply_extra_model_settings(&mut slot, &model_id);
+                wants(&slot, &model_id)
+            })
+}
+
 fn apply_extra_model_settings(settings: &mut AppSettings, model_id: &str) {
     let Some(slot) = settings.multi_stt_extra_slot_for(model_id).cloned() else {
         return;
@@ -3435,6 +3530,10 @@ impl TranscriptionManager {
         let audio_len = audio.len();
         let mut settings = get_settings(&self.app_handle);
         apply_extra_model_settings(&mut settings, model_id);
+        // The slot's own plan against its own model: a pinned slot keeps its
+        // language; a slot whose model cannot detect gets the detector's pick,
+        // shared with the other slots of this recording (one run, cached).
+        let language = self.run_language(&settings, model_id, &audio);
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(
@@ -3443,6 +3542,7 @@ impl TranscriptionManager {
                 &audio,
                 model_id,
                 &self.model_manager,
+                Some(language.as_str()),
             )
         }));
 
@@ -3566,6 +3666,7 @@ impl TranscriptionManager {
                 audio,
                 variant_id,
                 &self.model_manager,
+                None,
             )
         }));
         match warmup {
@@ -3603,6 +3704,7 @@ impl TranscriptionManager {
                     audio,
                     variant_id,
                     &self.model_manager,
+                    None,
                 )
             }));
             let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -4470,12 +4572,17 @@ fn transcribe_with_engine(
     audio: &[f32],
     model_id: &str,
     model_manager: &ModelManager,
+    language: Option<&str>,
 ) -> Result<EngineTranscribeOutput> {
     // Coerce the requested language to what this particular model supports
     // (unsupported → auto/en). Without this a Multi-STT extra model inherits
     // the primary model's language verbatim, and e.g. Canary rejects "zh-Hant"
-    // → that slot yields nothing.
-    let effective_language = effective_language_for_model(settings, model_manager, model_id);
+    // → that slot yields nothing. A caller that already resolved it (the
+    // language plan, detection included) passes it in.
+    let effective_language = match language {
+        Some(language) => language.to_string(),
+        None => effective_language_for_model(settings, model_manager, model_id),
+    };
 
     let LoadedEngine::TranscribeCpp(session) = engine;
     let model = session.model();

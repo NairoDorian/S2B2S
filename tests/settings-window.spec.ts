@@ -296,6 +296,42 @@ test.describe("settings window", () => {
     expect(crashes).toEqual([]);
   });
 
+  test("a missing language detector is explained and can be downloaded", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    // The selected model cannot detect French vs English on its own and the
+    // detector is not on disk yet.
+    await page.addInitScript(() => {
+      (window as any).__TAURI_MOCK_REPLIES__ = {
+        get_language_status: { kind: "detector_missing", fallback: "fr" },
+      };
+    });
+    await boot(page);
+
+    // The line only shows with a list: add two languages.
+    await page.getByRole("button", { name: "Add a language" }).click();
+    const search = page.getByRole("textbox", { name: "Search languages" });
+    for (const name of ["french", "english"]) {
+      await search.fill(name);
+      await search.press("Enter");
+    }
+    await search.press("Escape");
+
+    await expect(
+      page.getByText(/until it is downloaded, Auto transcribes in French/),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Download the detector" }).click();
+    await expect
+      .poll(async () =>
+        (await calls(page)).some((c) => c.cmd === "download_language_detector"),
+      )
+      .toBe(true);
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+
   test("a backend event surfaces as a toast", async ({ page }) => {
     const crashes = watchForCrashes(page);
 

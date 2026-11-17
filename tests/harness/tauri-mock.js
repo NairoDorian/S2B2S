@@ -198,6 +198,9 @@
     //   leaving the webview, like the combobox above.
     change_spoken_languages_setting: null,
     change_spoken_languages_any_letters_setting: null,
+    //   The detector button under that list (a test drives it through the
+    //   per-test replies below).
+    download_language_detector: null,
     cancel_operation: null,
     cancel_file_transcription: null,
     live_fft_reset: null,
@@ -231,6 +234,8 @@
     recall_encryption_status: { enabled: false, unlocked: false },
     recall_set_insertion_mode: null,
     overlay_stream_text_height: 0,
+    //   What Auto does for the selected model: the plain "it just works" case.
+    get_language_status: { kind: "auto" },
   };
 
   // Structured results (paginated history, statistics summary, arch plugins)
@@ -246,6 +251,12 @@
   window.__TAURI_INTERNALS__.invoke = async function (cmd, args) {
     window.__TAURI_CALLS__.push({ cmd: cmd, args: args || {} });
     if (cmd.startsWith("plugin:event|")) return handleEventPlugin(cmd, args);
+    // Per-test replies, set with `page.addInitScript` and read at call time,
+    // so one test can put a page in a state the fixture does not describe.
+    var replies = window.__TAURI_MOCK_REPLIES__;
+    if (replies && Object.prototype.hasOwnProperty.call(replies, cmd)) {
+      return replies[cmd];
+    }
     if (cmd === "change_typography_setting") {
       settings.typography = args.typography;
       sessionStorage.setItem(

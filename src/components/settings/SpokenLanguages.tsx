@@ -1,5 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
+import { listen } from "@tauri-apps/api/event";
+import { commands, type LanguageStatus } from "@/bindings";
 import { useTranslation } from "@/i18n/useTranslation";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
@@ -35,6 +37,84 @@ export const SpokenLanguages = (props: SpokenLanguagesProps): JSX.Element => {
   const busy = () => isUpdating("spoken_languages");
   const label = (code: string) => getLanguageLabel(code) ?? code;
 
+  // What Auto does with the selected model and these languages — the same
+  // plan a transcription uses, asked of the backend. Refetched when the list,
+  // the model or the language changes, after each write, and when the
+  // detector finishes downloading (in the background or from the button).
+  const [status, setStatus] = createSignal<LanguageStatus | null>(null);
+  const [downloading, setDownloading] = createSignal(false);
+  const refreshStatus = async () => {
+    const result = await commands.getLanguageStatus();
+    setStatus(result.status === "ok" ? result.data : null);
+  };
+  createEffect(
+    () => [
+      spoken().join(","),
+      getSetting("selected_model"),
+      getSetting("selected_language"),
+    ],
+    () => {
+      void refreshStatus();
+    },
+  );
+  createEffect(
+    () => undefined,
+    () => {
+      let cancelled = false;
+      let unlisten: (() => void) | undefined;
+      listen<string>("model-download-complete", () => {
+        void refreshStatus();
+      }).then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
+      return () => {
+        cancelled = true;
+        unlisten?.();
+      };
+    },
+  );
+
+  const downloadDetector = async () => {
+    setDownloading(true);
+    try {
+      await commands.downloadLanguageDetector();
+    } finally {
+      setDownloading(false);
+      void refreshStatus();
+    }
+  };
+
+  // The line under the list; nothing when Auto simply works.
+  const statusText = (): string | null => {
+    const current = status();
+    if (!current || spoken().length === 0) return null;
+    switch (current.kind) {
+      case "detector_missing":
+        return t("settings.general.spokenLanguages.status.detectorMissing", {
+          language: label(current.fallback),
+        });
+      case "auto_unavailable": {
+        const language = label(current.language);
+        const reason = current.reason;
+        if (reason.kind === "undetectable")
+          return t("settings.general.spokenLanguages.status.undetectable", {
+            language,
+            languages: reason.languages.map(label).join(", "),
+          });
+        if (reason.kind === "no_match")
+          return t("settings.general.spokenLanguages.status.noMatch", {
+            language,
+          });
+        return t("settings.general.spokenLanguages.status.oneLanguage", {
+          language,
+        });
+      }
+      default:
+        return null;
+    }
+  };
+
   const addable = createMemo(() => {
     const chosen = new Set(spoken());
     const needle = query().trim().toLowerCase();
@@ -68,7 +148,10 @@ export const SpokenLanguages = (props: SpokenLanguagesProps): JSX.Element => {
     },
   );
 
-  const write = (next: string[]) => updateSetting("spoken_languages", next);
+  const write = async (next: string[]) => {
+    await updateSetting("spoken_languages", next);
+    void refreshStatus();
+  };
 
   const add = (code: string) => {
     void write([...spoken(), code]);
@@ -185,6 +268,25 @@ export const SpokenLanguages = (props: SpokenLanguagesProps): JSX.Element => {
           </div>
         </div>
       </SettingContainer>
+      <Show when={statusText()}>
+        {(text) => (
+          <div class="px-4 pb-2 -mt-1 flex items-center justify-end gap-2 text-xs text-mid-gray">
+            <span class="text-end">{text()}</span>
+            <Show when={status()?.kind === "detector_missing"}>
+              <button
+                type="button"
+                class="shrink-0 px-2 py-0.5 font-semibold border border-mid-gray/80 bg-mid-gray/10 rounded hover:bg-accent/10 hover:border-accent cursor-pointer disabled:opacity-50"
+                disabled={downloading()}
+                onClick={() => void downloadDetector()}
+              >
+                {downloading()
+                  ? t("settings.general.spokenLanguages.status.downloading")
+                  : t("settings.general.spokenLanguages.status.download")}
+              </button>
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={spoken().length > 0}>
         <ToggleSwitch
           checked={getSetting("spoken_languages_any_letters") ?? false}
