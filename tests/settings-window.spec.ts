@@ -526,4 +526,46 @@ test.describe("recording overlay window", () => {
     await expect(page.getByRole("button", { name: "cancel" })).toBeVisible();
     expect(crashes).toEqual([]);
   });
+
+  test("a slow model load opens the Live panel with a notice", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await page.goto("/src/overlay/index.html");
+    await waitForListener(page, "show-overlay");
+    await waitForListener(page, "model-state-changed");
+
+    const emit = (event: string, payload: unknown) =>
+      page.evaluate(
+        ([event, payload]) =>
+          (window as any).__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+            event,
+            payload,
+          }),
+        [event, payload] as const,
+      );
+    const modelEvent = (event_type: string) => ({
+      event_type,
+      model_id: null,
+      model_name: null,
+      error: null,
+    });
+
+    await emit("show-overlay", "streaming");
+    await expect(page.getByRole("button", { name: "cancel" })).toBeVisible();
+    await emit("model-state-changed", modelEvent("loading_started"));
+
+    // Nothing for a warm load: the notice waits for the load to be slow.
+    const notice = page.getByText("Loading model...");
+    await expect(notice).toBeHidden();
+    await expect(notice).toBeVisible({ timeout: 5000 });
+
+    // `unloaded` is not ordered against a load in flight and must not end it.
+    await emit("model-state-changed", modelEvent("unloaded"));
+    await expect(notice).toBeVisible();
+
+    await emit("model-state-changed", modelEvent("loading_completed"));
+    await expect(notice).toBeHidden();
+    expect(crashes).toEqual([]);
+  });
 });

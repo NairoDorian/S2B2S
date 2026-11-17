@@ -33,6 +33,7 @@ import type {
 import { applyPreferredLanguage } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { OverlayScope } from "./OverlayScope";
+import type { ModelStateEvent } from "@/lib/types/events";
 import {
   OVERLAY_SCOPE_DEFAULTS,
   applyOverlayScopeCss,
@@ -67,6 +68,11 @@ const countWords = (text: string): number => {
 // Below this much speech the words-per-minute ratio swings wildly on a single
 // word, and the streaming model's own decode lag dominates it. Show a placeholder
 // until there is enough signal for the average to mean something.
+// Only call out a model load in the Live preview once it has run this long.
+// A warm load finishes well inside it (~0.2 s on Apple Silicon, ~1.5 s on a
+// Windows CPU backend), so the common case never flashes a notice while the
+// user is speaking; a cold load can take 40 s and more.
+const SLOW_MODEL_LOAD_MS = 2000;
 const WPM_MIN_SPEECH_MS = 2500;
 const WPM_MIN_WORDS = 3;
 
@@ -199,6 +205,18 @@ const RecordingOverlay = () => {
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
   const [session, setSession] = createSignal(0);
+  // Recording starts while the model loads in the background (upstream
+  // 20a6685 / 417dc6a, #2093). Say so, or a cold start looks like an empty
+  // Live preview that ignores speech, then a hung "Transcribing..." spinner.
+  // Once recording stops, an in-flight load *is* the wait, so the working
+  // label follows `modelLoading` at once; the Live notice waits for the load
+  // to be slow (`SLOW_MODEL_LOAD_MS`), so a warm load never flashes it.
+  const [modelLoading, setModelLoading] = createSignal(false);
+  const [modelLoadSlow, setModelLoadSlow] = createSignal(false);
+  let modelLoadTimer: ReturnType<typeof setTimeout> | undefined;
+  // Latched per Live session: once the notice has opened the panel, it stays
+  // open after the load, so it does not collapse and reopen when text arrives.
+  const [loadNoticeShown, setLoadNoticeShown] = createSignal(false);
   // Overlay placement (top vs bottom of the screen). The Live panel grows downward
   // from a top overlay (oldest line under the pill) and upward from a bottom one.
   const [position, setPosition] = createSignal<"top" | "bottom">("bottom");
@@ -405,6 +423,7 @@ const RecordingOverlay = () => {
         // them would overwrite that event and leave the overlay stuck arming.
         if (overlayState === "recording" || overlayState === "streaming") {
           setCaptureReady(false);
+          setLoadNoticeShown(false);
           stopTypewriter();
           targetText = { committed: "", tentative: "" };
           reveal = NO_REVEAL;
@@ -620,10 +639,41 @@ const RecordingOverlay = () => {
         },
       );
 
+      // The backend ends every `loading_started` with exactly one
+      // `loading_completed` or `loading_failed`, so only those end a load:
+      // `unloaded` (the idle watcher) is not ordered against a load in
+      // flight, and the Multi-STT extras' own events are not the primary's
+      // wait.
+      const unlistenModel = await listen<ModelStateEvent>(
+        "model-state-changed",
+        (event) => {
+          const type = event.payload.event_type;
+          if (type === "loading_started") {
+            clearTimeout(modelLoadTimer);
+            setModelLoading(true);
+            setModelLoadSlow(false);
+            modelLoadTimer = setTimeout(
+              () => setModelLoadSlow(true),
+              SLOW_MODEL_LOAD_MS,
+            );
+          } else if (
+            type === "loading_completed" ||
+            type === "loading_failed"
+          ) {
+            clearTimeout(modelLoadTimer);
+            modelLoadTimer = undefined;
+            setModelLoading(false);
+            setModelLoadSlow(false);
+          }
+        },
+      );
+
       window.addEventListener("pointerup", handleDragGripPointerUp);
       window.addEventListener("pointercancel", handleDragGripPointerUp);
 
       return () => {
+        unlistenModel();
+        clearTimeout(modelLoadTimer);
         window.removeEventListener("pointerup", handleDragGripPointerUp);
         window.removeEventListener("pointercancel", handleDragGripPointerUp);
         stopTypewriter();
@@ -835,7 +885,22 @@ const RecordingOverlay = () => {
   // transcript stays put under a working spinner instead of collapsing and
   // squishing the text mid-stream. Only fall back to the small working pill
   // when there was no text to preserve.
-  const open = () => hasText();
+  // While listening, a slow model load opens the panel with a notice where
+  // the text would be, so speech that is not transcribing yet does not look
+  // ignored.
+  const loadingNotice = () => modelLoadSlow() && !working() && !hasText();
+  const open = () =>
+    hasText() || loadingNotice() || (loadNoticeShown() && !working());
+
+  // The latch above. `session` re-runs it when a new Live session starts
+  // mid-load (a retry during a cold load), since the reset leaves the other
+  // inputs unchanged.
+  createEffect(
+    () => [modelLoadSlow(), state(), session()] as const,
+    ([slow, current]) => {
+      if (slow && current === "streaming") setLoadNoticeShown(true);
+    },
+  );
   const collapsed = () => working() && !hasText();
 
   // A chunk whose merge failed shows the extras' outputs concatenated — still
@@ -965,10 +1030,10 @@ const RecordingOverlay = () => {
     </div>
   );
 
+  const transcribingLabel = () =>
+    modelLoading() ? t("overlay.loadingModel") : t("overlay.transcribing");
   const workLabel = () =>
-    state() === "processing"
-      ? t("overlay.processing")
-      : t("overlay.transcribing");
+    state() === "processing" ? t("overlay.processing") : transcribingLabel();
 
   // ---- Live overlay: a pill that sculpts open into a panel ----
   const LiveCard = () => (
@@ -1022,7 +1087,12 @@ const RecordingOverlay = () => {
                       <span class="tentative">{streamText().tentative}</span>
                       {/* Drop the blinking caret once finalizing — it's no longer
                           capturing, and a static spinner conveys the work. */}
-                      <Show when={!working()}>
+                      <Show when={loadingNotice()}>
+                        <span class="sloading">
+                          {t("overlay.loadingModel")}
+                        </span>
+                      </Show>
+                      <Show when={!working() && !loadingNotice()}>
                         <span class="scaret" />
                       </Show>
                     </p>
@@ -1110,7 +1180,7 @@ const RecordingOverlay = () => {
               label={
                 workKind() === "polishing"
                   ? t("overlay.processing")
-                  : t("overlay.transcribing")
+                  : transcribingLabel()
               }
               showCancel={true}
               onPointerDown={handleDragGripPointerDown}

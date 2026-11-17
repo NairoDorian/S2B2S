@@ -1968,7 +1968,8 @@
     "chunkFailedHint": "The merge of this chunk failed, so its text is the models' outputs side by side. The next pause retries it.",
     "mergeAndCleaned": "Merge & Cleaned",
     "awaitingText": "no live text yet",
-    "dragGripTooltip": "Drag to reposition the overlay"
+    "dragGripTooltip": "Drag to reposition the overlay",
+    "loadingModel": "मोडेल लोड गरिँदैछ..."
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} ले 1 सर्टकट रोकिरहेको हुन सक्छ",

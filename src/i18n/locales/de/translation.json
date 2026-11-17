@@ -1965,7 +1965,8 @@
     "chunkFailedHint": "The merge of this chunk failed, so its text is the models' outputs side by side. The next pause retries it.",
     "mergeAndCleaned": "Merge & Cleaned",
     "awaitingText": "no live text yet",
-    "dragGripTooltip": "Drag to reposition the overlay"
+    "dragGripTooltip": "Drag to reposition the overlay",
+    "loadingModel": "Modell wird geladen..."
   },
   "whatsNew": {
     "title": "Neu in {{app}} v{{version}}"

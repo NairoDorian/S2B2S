@@ -354,6 +354,10 @@
   color: var(--s-faint);
   font-style: italic;
 }
+/* The slow-model-load notice, where the Live text will appear. */
+.stext-cap .sloading {
+  color: var(--s-muted);
+}
 /* The merged-and-cleaned block, under the model columns it was merged from: the
    third block of the detailed view, and the only one that is not a model's own
    text. A rule above it and a brighter mark are what say so — the text itself is
