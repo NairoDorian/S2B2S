@@ -413,7 +413,50 @@ pub fn hf_cache_dir() -> PathBuf {
 /// back to it. Grandfathered `main` copies may predate the pin; per policy a
 /// working local model is never invalidated by routine catalog regeneration.
 fn hf_cached_path(repo_id: &str, revision: &str, filename: &str) -> Option<PathBuf> {
-    let cache_dir = hf_cache_dir();
+    hf_cached_path_among(&hf_cache_dirs(), repo_id, revision, filename)
+}
+
+/// The caches a model is looked up in: the active one ([`hf_cache_dir`]) and,
+/// in portable mode, the one in use before portable mode redirected `HF_HOME`
+/// (`portable::previous_hf_home`, or hf-hub's default when it was unset).
+/// Downloads only ever write to the active cache.
+fn hf_cache_dirs() -> Vec<PathBuf> {
+    let active = hf_cache_dir();
+    let mut dirs = vec![active.clone()];
+    if crate::portable::is_portable() {
+        let legacy = match crate::portable::previous_hf_home() {
+            Some(home) => Some(home.join("hub")),
+            None => {
+                dirs::home_dir().map(|home| home.join(".cache").join("huggingface").join("hub"))
+            }
+        };
+        if let Some(legacy) = legacy
+            && legacy != active
+        {
+            dirs.push(legacy);
+        }
+    }
+    dirs
+}
+
+/// [`hf_cached_path_in`] over several caches, first match wins.
+fn hf_cached_path_among(
+    cache_dirs: &[PathBuf],
+    repo_id: &str,
+    revision: &str,
+    filename: &str,
+) -> Option<PathBuf> {
+    cache_dirs
+        .iter()
+        .find_map(|dir| hf_cached_path_in(dir, repo_id, revision, filename))
+}
+
+fn hf_cached_path_in(
+    cache_dir: &Path,
+    repo_id: &str,
+    revision: &str,
+    filename: &str,
+) -> Option<PathBuf> {
     let repo_folder = format!("models--{}", repo_id.replace('/', "--"));
     let repo_path = cache_dir.join(&repo_folder);
 
@@ -1415,7 +1458,9 @@ impl ModelManager {
     /// share the cache are ignored.
     fn discover_hf_cache_models(available_models: &mut HashMap<String, ModelInfo>) {
         let before: HashSet<String> = available_models.keys().cloned().collect();
-        Self::discover_hf_cache_models_in(&hf_cache_dir(), available_models);
+        for cache_dir in hf_cache_dirs() {
+            Self::discover_hf_cache_models_in(&cache_dir, available_models);
+        }
         let mut found: Vec<&str> = available_models
             .keys()
             .filter(|id| !before.contains(*id))
@@ -2278,6 +2323,43 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
+
+    /// Lay out one cached file the way hf-hub does: `refs/<rev>` naming a
+    /// snapshot folder that holds the file.
+    fn add_cached_model(cache: &Path, repo_id: &str, revision: &str, filename: &str) -> PathBuf {
+        let repo_dir = cache.join(format!("models--{}", repo_id.replace('/', "--")));
+        let snapshot = repo_dir.join("snapshots").join(revision).join(filename);
+        fs::create_dir_all(snapshot.parent().unwrap()).unwrap();
+        fs::create_dir_all(repo_dir.join("refs")).unwrap();
+        fs::write(repo_dir.join("refs").join(revision), revision).unwrap();
+        fs::write(&snapshot, b"model").unwrap();
+        snapshot
+    }
+
+    #[test]
+    fn test_hf_cached_path_falls_back_to_the_pre_portable_cache() {
+        let active = TempDir::new().unwrap();
+        let legacy = TempDir::new().unwrap();
+        let dirs = vec![active.path().to_path_buf(), legacy.path().to_path_buf()];
+
+        // Only in the cache used before portable mode redirected HF_HOME.
+        let old = add_cached_model(legacy.path(), "org/model", "main", "model.gguf");
+        assert_eq!(
+            hf_cached_path_among(&dirs, "org/model", "main", "model.gguf"),
+            Some(old)
+        );
+
+        // Present in both: the active cache wins.
+        let new = add_cached_model(active.path(), "org/model", "main", "model.gguf");
+        assert_eq!(
+            hf_cached_path_among(&dirs, "org/model", "main", "model.gguf"),
+            Some(new)
+        );
+        assert_eq!(
+            hf_cached_path_among(&dirs, "org/model", "main", "missing.gguf"),
+            None
+        );
+    }
 
     #[test]
     fn test_pick_hf_snapshot_follows_refs_and_survives_without_them() {

@@ -13,6 +13,8 @@ use crate::app_identity::{
 };
 
 static PORTABLE_DATA_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+/// `HF_HOME` as it was before portable mode redirected it (`None`: unset).
+static PREVIOUS_HF_HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Detect portable mode by looking for a `portable` marker file next to the exe.
 /// Must be called once at startup before Tauri initializes.
@@ -42,6 +44,7 @@ pub fn init() {
                 std::fs::create_dir_all(&data_dir).ok()?;
             }
             let hf_home = hugging_face_home(&data_dir);
+            let _ = PREVIOUS_HF_HOME.set(std::env::var_os("HF_HOME").map(PathBuf::from));
             // SAFETY: called once at startup, before any threads spawn; the
             // process is single-threaded at this point so set_var cannot race.
             unsafe { std::env::set_var("HF_HOME", &hf_home) };
@@ -58,6 +61,14 @@ pub fn init() {
 /// its own `hub` component to `HF_HOME` for model snapshots and blobs.
 fn hugging_face_home(data_dir: &Path) -> PathBuf {
     data_dir.join("huggingface")
+}
+
+/// The Hugging Face home configured before portable mode redirected it, when
+/// one was set. A model downloaded before the redirect (into this folder, or
+/// into hf-hub's default cache when it was unset) stays usable without copying
+/// gigabytes or touching a cache other tools share (upstream a94b403, #2116).
+pub fn previous_hf_home() -> Option<&'static PathBuf> {
+    PREVIOUS_HF_HOME.get().and_then(|path| path.as_ref())
 }
 
 /// Returns `true` if running in portable mode.
