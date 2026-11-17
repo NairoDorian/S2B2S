@@ -485,10 +485,10 @@ Cost: removes two crates; no new thread or poll.
 6.3 the allowlist in all five builders (`375de7b9`); 6.4 per-slot plans
 with one shared detector run and 6.5 the detector (pinned Q8_0, download
 only when needed, `get_language_status` line with a download button)
-(`6efcf51b`). The detector was checked on real speech: all seven FLEURS
+(`6efcf51b`); 6.7 the Chinese script setting with schema 11 (`15a39e2e`). The detector was checked on real speech: all seven FLEURS
 clips identified, ~68 ms per 5 s. Left: History language/source columns
 (6.5), the tray submenu and the onboarding suggestion (6.6), the Multi-STT
-page showing each slot's plan (6.6), the Chinese script setting (6.7), and
+page showing each slot's plan (6.6), and
 a real-microphone check of the allowlist (6.8).
 
 Three mechanisms, one setting:
@@ -755,7 +755,7 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 6   | `29bd2c0` | #2160 | list compute devices off the startup path                | Adapt, P3                                                                        | `175806e9`                                              |
 | 7   | `340defb` |       | PR template                                              | Adapt, P10                                                                       |                                                         |
 | 8   | `5ec58f6` |       | PR template                                              | Adapt, P10                                                                       |                                                         |
-| 9   | `0bb0428` | #2186 | Chinese script selector                                  | Phase 6.7                                                                        |                                                         |
+| 9   | `0bb0428` | #2186 | Chinese script selector                                  | Phase 6.7                                                                        | `15a39e2e`                                              |
 | 10  | `b38987a` | #2190 | cancel shortcut stays registered after a short recording | Adapt, P3                                                                        | `5a9659b9`                                              |
 | 11  | `14f6f0d` |       | release v0.9.8                                           | Skip (ZER0 versions via app-meta)                                                |                                                         |
 | 12  | `8605699` | #2117 | NSIS installer icon                                      | Port, P3                                                                         | `175806e9` (staged by the gate with it)                 |
@@ -831,8 +831,8 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 82  | `d654302` | #2418 | No Model Selected notice                                 | Adapt, P8                                                                        |                                                         |
 | 83  | `7102b63` | #2484 | OpenBLAS in Linux build docs                             | Verify, P10                                                                      |                                                         |
 | 84  | `d628da4` |       | bump handy-recorder                                      | Skip (D3)                                                                        |                                                         |
-| 85  | `c67ec6a` |       | Chinese script from the text                             | Phase 6.7                                                                        |                                                         |
-| 86  | `b5920f2` |       | leave Japanese and Korean alone                          | Phase 6.7                                                                        |                                                         |
+| 85  | `c67ec6a` |       | Chinese script from the text                             | Phase 6.7                                                                        | `15a39e2e`                                              |
+| 86  | `b5920f2` |       | leave Japanese and Korean alone                          | Phase 6.7                                                                        | `15a39e2e`                                              |
 | 87  | `56c7e21` | #2097 | tap vs hold by key event time                            | Adapt, P3                                                                        | `06e647f7`                                              |
 | 88  | `2eab8fc` | #2485 | replace the worker after a backend error                 | Adapt in-process, P7                                                             |                                                         |
 | 89  | `70f490e` | #2486 | say so when the mic sends only silence                   | Adapt, P8                                                                        |                                                         |
