@@ -331,6 +331,8 @@ src-tauri/Cargo.lock` must print nothing.
 
 ## Phase 3 — Upstream batch U1: small backend fixes
 
+n**Done 2026-11-16/17** — every row below landed or was verified; the ledger at the end carries the commit of each.
+
 Chronological. Each is one commit (see the ledger at the end for every row).
 
 | Upstream                                    | Change in ZER0                                                                                                                                                                                                                     |
@@ -715,107 +717,107 @@ Disposition: **Port** (near as-is), **Adapt** (re-implemented for ZER0 / Solid),
 update routine brings it), **Verify** (probably n/a, check), **Skip** (with
 reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 
-| #   | Upstream  | PR    | Title                                                    | Disposition                                        | ZER0 |
-| --- | --------- | ----- | -------------------------------------------------------- | -------------------------------------------------- | ---- |
-| 1   | `8ef8dd4` | #2156 | stop removing "Ha" as an English filler                  | Port, P3                                           |      |
-| 2   | `2d526b1` | #2147 | transcribe-cpp 0.2.4                                     | Covered, P2                                        |      |
-| 3   | `eb49dc0` | #2157 | keep the sentence capital after a leading filler         | Port, P3                                           |      |
-| 4   | `eea1f5f` | #2161 | don't record when no model can transcribe                | Adapt, P3                                          |      |
-| 5   | `f5c27e6` | #2158 | reject shortcuts the Tauri backend cannot parse          | Port, P3                                           |      |
-| 6   | `29bd2c0` | #2160 | list compute devices off the startup path                | Adapt, P3                                          |      |
-| 7   | `340defb` |       | PR template                                              | Adapt, P10                                         |      |
-| 8   | `5ec58f6` |       | PR template                                              | Adapt, P10                                         |      |
-| 9   | `0bb0428` | #2186 | Chinese script selector                                  | Phase 6.7                                          |      |
-| 10  | `b38987a` | #2190 | cancel shortcut stays registered after a short recording | Adapt, P3                                          |      |
-| 11  | `14f6f0d` |       | release v0.9.8                                           | Skip (ZER0 versions via app-meta)                  |      |
-| 12  | `8605699` | #2117 | NSIS installer icon                                      | Port, P3                                           |      |
-| 13  | `345caa8` | #1941 | refresh custom sounds when opening the picker            | Adapt, P4                                          |      |
-| 14  | `ffbc950` | #2203 | transcribe 0.3.0                                         | Covered, P2                                        |      |
-| 15  | `73ab851` | #2206 | Ubuntu 26.04 GNOME Wayland guide                         | Adapt, P10                                         |      |
-| 16  | `586a838` | #2212 | Ubuntu guide: overlay, wl-clipboard, non-QWERTY          | Adapt, P10                                         |      |
-| 17  | `a94b403` | #2116 | portable: legacy model cache                             | Adapt, P3                                          |      |
-| 18  | `c8262ab` | #2208 | transcribe.cpp in its own worker process                 | Skip (D2); ideas in P7                             |      |
-| 19  | `20a6685` | #2227 | show "loading model" instead of "Transcribing…"          | Adapt, P4                                          |      |
-| 20  | `417dc6a` |       | loading notice in the Live preview                       | Adapt, P4                                          |      |
-| 21  | `afe5a63` |       | format Ubuntu notes                                      | Adapt, P10                                         |      |
-| 22  | `f6b3f82` | #2235 | translation guide vs supported locales                   | Adapt, P10                                         |      |
-| 23  | `48a3d8e` | #2249 | Linux renderer opt-out                                   | Adapt, P10 (final form = row 68)                   |      |
-| 24  | `1b011a1` | #2265 | transcribe 0.4.0                                         | Covered, P2                                        |      |
-| 25  | `a42131d` | #2188 | move to handy-recorder                                   | Skip (D3)                                          |      |
-| 26  | `3985508` | #2267 | Silero VAD through transcribe.cpp                        | Phase 5 (engine Earshot instead)                   |      |
-| 27  | `7b2a28a` |       | don't re-emit hangover frames in pre-roll                | Phase 5 (VadGate never releases twice)             |      |
-| 28  | `14ae9c6` | #2257 | Anthropic Messages API format                            | Adapt, P7                                          |      |
-| 29  | `5732406` | #2256 | no duplicate History rows during live updates            | Adapt, P4                                          |      |
-| 30  | `53db4cb` | #2238 | setting names for screen readers                         | Adapt, P4                                          |      |
-| 31  | `cfcb650` | #2277 | ONNX → GGUF migration UI                                 | Skip (schema 6 remap since 2026-09-10)             |      |
-| 32  | `5197faf` | #2279 | remove ONNX                                              | Covered; `clang_rt.osx` link P10                   |      |
-| 33  | `4150a4a` | #2284 | custom words via the vocabulary API                      | Adapt, P7                                          |      |
-| 34  | `9e57a0d` | #2282 | long-form chunking with VAD                              | Defer                                              |      |
-| 35  | `93c9ee0` | #2299 | catalog from @handy-computer/models                      | Skip package (D7); deletion fixes P7               |      |
-| 36  | `5a9451e` | #2302 | paste off the main thread                                | Adapt, P7                                          |      |
-| 37  | `0e5e9ca` | #2303 | new onboarding                                           | Partial: P6.6 languages, P8 silent mic; rest Defer |      |
-| 38  | `f81e7e7` | #2326 | centre grade chip labels                                 | Skip (no GradeChip)                                |      |
-| 39  | `73c0958` | #2315 | transcribe files into History                            | Adapt, P9                                          |      |
-| 40  | `126bed7` | #2331 | language detection                                       | Phase 6                                            |      |
-| 41  | `2b3f7c8` | #2336 | Debian OpenSSL 3 dependency                              | Port, P10                                          |      |
-| 42  | `7bfb2e2` | #2340 | Metal off on Intel macOS                                 | Adapt, P10                                         |      |
-| 43  | `0ed36e1` | #2344 | one HTTP client for post-processing                      | Port, P7                                           |      |
-| 44  | `1607381` | #2348 | stale user manager and the input group                   | Adapt, P10                                         |      |
-| 45  | `889fca0` | #2290 | keep dictation when post-processing is blank             | Port, P7                                           |      |
-| 46  | `a537ec4` | #2253 | reset buttons name their setting                         | Adapt, P4                                          |      |
-| 47  | `298653c` | #2367 | Linux defaults avoid the ibus hotkey                     | Adapt, P10                                         |      |
-| 48  | `8fd85aa` | #2246 | Escape dismisses dropdowns                               | Adapt, P4                                          |      |
-| 49  | `e4869fc` |       | cargo fmt                                                | Skip                                               |      |
-| 50  | `4c811d7` |       | Playwright 1.64.1                                        | Covered (update routine)                           |      |
-| 51  | `b99b9af` | #2372 | error notices framework                                  | Adapt, P8                                          |      |
-| 52  | `090b370` | #2248 | ignore IME confirmation Enter                            | Adapt, P4                                          |      |
-| 53  | `0685192` | #2255 | report failed History deletions                          | Adapt, P4                                          |      |
-| 54  | `77ad955` | #2254 | name the playback position control                       | Adapt, P4                                          |      |
-| 55  | `26d2003` | #2247 | keep playback position when a seek starts                | Adapt, P4                                          |      |
-| 56  | `3b60fc7` | #2251 | Escape dismisses focused tooltips                        | Adapt, P4                                          |      |
-| 57  | `a1cb29d` | #2309 | release late audio sources after leaving History         | Adapt, P4                                          |      |
-| 58  | `8020c87` | #2327 | shortcut fallback when the manager fails to start        | Covered (readiness channel + fallback)             | —    |
-| 59  | `8c293dd` | #1991 | macOS AirPods mode                                       | Defer (needs handy-recorder)                       |      |
-| 60  | `033c627` | #930  | transcription hook                                       | Adapt, P7 (D4)                                     |      |
-| 61  | `ef3086e` | #1300 | Linux "None" keyboard implementation                     | Adapt, P10                                         |      |
-| 62  | `4ec61f0` | #2199 | dotool multi-line typing                                 | Port, P10                                          |      |
-| 63  | `693aa63` |       | better preferred languages                               | Phase 6.6                                          |      |
-| 64  | `815e73f` |       | state update while decoding a file                       | Adapt, P9                                          |      |
-| 65  | `1b13488` |       | merge                                                    | n/a                                                |      |
-| 66  | `3d94031` | #1319 | tray language submenu                                    | Phase 6.6                                          |      |
-| 67  | `4fd7ac4` |       | 0.10.0 release notes                                     | Skip (ZER0's own notes)                            |      |
-| 68  | `f3d8b87` | #2360 | WebKitGTK 2.54 transparent overlay                       | Adapt, P10                                         |      |
-| 69  | `69420ed` |       | release v0.10.0                                          | Skip                                               |      |
-| 70  | `82dfab9` |       | merge                                                    | n/a                                                |      |
-| 71  | `73cc857` | #2432 | TLS security advisories                                  | Covered (update + `cargo audit`), P3               |      |
-| 72  | `40b8e72` | #2403 | no WebView2 context menu on the overlay                  | Port, P4                                           |      |
-| 73  | `88185c8` | #2478 | async runtime before webview log streaming               | Verify (no webview log target), P3                 |      |
-| 74  | `0911f2b` |       | 60 s post-processing deadline                            | Adapt, P7 (D5)                                     |      |
-| 75  | `bd87c72` | #2453 | AppImage native Wayland opt-in                           | Adapt, P10                                         |      |
-| 76  | `e286103` | #2448 | updater off where the build cannot update                | Adapt, P10                                         |      |
-| 77  | `c530a49` | #2447 | X11 overlay stays resizable                              | Adapt, P10                                         |      |
-| 78  | `27322df` |       | model list request timeout                               | Port, P7                                           |      |
-| 79  | `dce2976` | #2057 | macOS: clear stale permission grants                     | Port, P10                                          |      |
-| 80  | `1fe3ae2` | #2482 | decode Opus files                                        | Adapt, P9                                          |      |
-| 81  | `ca4a611` | #2434 | punctuation-only transcript is empty                     | Port, P3                                           |      |
-| 82  | `d654302` | #2418 | No Model Selected notice                                 | Adapt, P8                                          |      |
-| 83  | `7102b63` | #2484 | OpenBLAS in Linux build docs                             | Verify, P10                                        |      |
-| 84  | `d628da4` |       | bump handy-recorder                                      | Skip (D3)                                          |      |
-| 85  | `c67ec6a` |       | Chinese script from the text                             | Phase 6.7                                          |      |
-| 86  | `b5920f2` |       | leave Japanese and Korean alone                          | Phase 6.7                                          |      |
-| 87  | `56c7e21` | #2097 | tap vs hold by key event time                            | Adapt, P3                                          |      |
-| 88  | `2eab8fc` | #2485 | replace the worker after a backend error                 | Adapt in-process, P7                               |      |
-| 89  | `70f490e` | #2486 | say so when the mic sends only silence                   | Adapt, P8                                          |      |
-| 90  | `f248301` | #2318 | hf-hub survives Range-stripping proxies                  | Verify (ZER0 on huggingface/hf-hub), P3            |      |
-| 91  | `0ff1ce1` | #2489 | bump transcribe.cpp                                      | Covered, P2                                        |      |
-| 92  | `2696c49` |       | libopus on Windows ARM                                   | Adapt, P9                                          |      |
-| 93  | `1472087` |       | libopus without SIMD on Windows ARM                      | Adapt, P9                                          |      |
-| 94  | `310749b` | #2454 | skip the Gamescope WSI Vulkan layer                      | Adapt, P10                                         |      |
-| 95  | `3c7a538` | #2427 | find the ydotoold socket                                 | Port, P10                                          |      |
-| 96  | `bd4b027` | #2495 | next paste tool when one fails                           | Adapt, P10                                         |      |
-| 97  | `e529447` | #2502 | warn about elevated windows                              | Adapt, P8                                          |      |
-| 98  | `d2ee871` | #2488 | X11 overlay does not steal focus                         | Port, P10                                          |      |
-| 99  | `f01b807` | #2505 | handy-keys 0.3.5                                         | Covered, P3                                        |      |
-| 100 | `1e10e71` | #2506 | drop custom words read back                              | Port, P7                                           |      |
-| 101 | `4a096e3` | #2504 | Linux Shift+Insert paste                                 | Adapt, P10                                         |      |
-| 102 | `aca8985` |       | release v0.10.1                                          | Skip                                               |      |
+| #   | Upstream  | PR    | Title                                                    | Disposition                                                                      | ZER0                                    |
+| --- | --------- | ----- | -------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------- |
+| 1   | `8ef8dd4` | #2156 | stop removing "Ha" as an English filler                  | Port, P3                                                                         | `23561e8e`                              |
+| 2   | `2d526b1` | #2147 | transcribe-cpp 0.2.4                                     | Covered, P2                                                                      | `eeb2e9a5`                              |
+| 3   | `eb49dc0` | #2157 | keep the sentence capital after a leading filler         | Port, P3                                                                         | `23561e8e`                              |
+| 4   | `eea1f5f` | #2161 | don't record when no model can transcribe                | Adapt, P3                                                                        | `47fe8c57`                              |
+| 5   | `f5c27e6` | #2158 | reject shortcuts the Tauri backend cannot parse          | Port, P3                                                                         | `5a9659b9`                              |
+| 6   | `29bd2c0` | #2160 | list compute devices off the startup path                | Adapt, P3                                                                        | `175806e9`                              |
+| 7   | `340defb` |       | PR template                                              | Adapt, P10                                                                       |                                         |
+| 8   | `5ec58f6` |       | PR template                                              | Adapt, P10                                                                       |                                         |
+| 9   | `0bb0428` | #2186 | Chinese script selector                                  | Phase 6.7                                                                        |                                         |
+| 10  | `b38987a` | #2190 | cancel shortcut stays registered after a short recording | Adapt, P3                                                                        | `5a9659b9`                              |
+| 11  | `14f6f0d` |       | release v0.9.8                                           | Skip (ZER0 versions via app-meta)                                                |                                         |
+| 12  | `8605699` | #2117 | NSIS installer icon                                      | Port, P3                                                                         | `175806e9` (staged by the gate with it) |
+| 13  | `345caa8` | #1941 | refresh custom sounds when opening the picker            | Adapt, P4                                                                        |                                         |
+| 14  | `ffbc950` | #2203 | transcribe 0.3.0                                         | Covered, P2                                                                      | `eeb2e9a5`                              |
+| 15  | `73ab851` | #2206 | Ubuntu 26.04 GNOME Wayland guide                         | Adapt, P10                                                                       |                                         |
+| 16  | `586a838` | #2212 | Ubuntu guide: overlay, wl-clipboard, non-QWERTY          | Adapt, P10                                                                       |                                         |
+| 17  | `a94b403` | #2116 | portable: legacy model cache                             | Adapt, P3                                                                        | `3d125dfd`                              |
+| 18  | `c8262ab` | #2208 | transcribe.cpp in its own worker process                 | Skip (D2); ideas in P7                                                           |                                         |
+| 19  | `20a6685` | #2227 | show "loading model" instead of "Transcribing…"          | Adapt, P4                                                                        |                                         |
+| 20  | `417dc6a` |       | loading notice in the Live preview                       | Adapt, P4                                                                        |                                         |
+| 21  | `afe5a63` |       | format Ubuntu notes                                      | Adapt, P10                                                                       |                                         |
+| 22  | `f6b3f82` | #2235 | translation guide vs supported locales                   | Adapt, P10                                                                       |                                         |
+| 23  | `48a3d8e` | #2249 | Linux renderer opt-out                                   | Adapt, P10 (final form = row 68)                                                 |                                         |
+| 24  | `1b011a1` | #2265 | transcribe 0.4.0                                         | Covered, P2                                                                      | `eeb2e9a5`                              |
+| 25  | `a42131d` | #2188 | move to handy-recorder                                   | Skip (D3)                                                                        |                                         |
+| 26  | `3985508` | #2267 | Silero VAD through transcribe.cpp                        | Phase 5 (engine Earshot instead)                                                 |                                         |
+| 27  | `7b2a28a` |       | don't re-emit hangover frames in pre-roll                | Phase 5 (VadGate never releases twice)                                           |                                         |
+| 28  | `14ae9c6` | #2257 | Anthropic Messages API format                            | Adapt, P7                                                                        |                                         |
+| 29  | `5732406` | #2256 | no duplicate History rows during live updates            | Adapt, P4                                                                        |                                         |
+| 30  | `53db4cb` | #2238 | setting names for screen readers                         | Adapt, P4                                                                        |                                         |
+| 31  | `cfcb650` | #2277 | ONNX → GGUF migration UI                                 | Skip (schema 6 remap since 2026-09-10)                                           |                                         |
+| 32  | `5197faf` | #2279 | remove ONNX                                              | Covered; `clang_rt.osx` link P10                                                 |                                         |
+| 33  | `4150a4a` | #2284 | custom words via the vocabulary API                      | Adapt, P7                                                                        |                                         |
+| 34  | `9e57a0d` | #2282 | long-form chunking with VAD                              | Defer                                                                            |                                         |
+| 35  | `93c9ee0` | #2299 | catalog from @handy-computer/models                      | Skip package (D7); deletion fixes P7                                             |                                         |
+| 36  | `5a9451e` | #2302 | paste off the main thread                                | Adapt, P7                                                                        |                                         |
+| 37  | `0e5e9ca` | #2303 | new onboarding                                           | Partial: P6.6 languages, P8 silent mic; rest Defer                               |                                         |
+| 38  | `f81e7e7` | #2326 | centre grade chip labels                                 | Skip (no GradeChip)                                                              |                                         |
+| 39  | `73c0958` | #2315 | transcribe files into History                            | Adapt, P9                                                                        |                                         |
+| 40  | `126bed7` | #2331 | language detection                                       | Phase 6                                                                          |                                         |
+| 41  | `2b3f7c8` | #2336 | Debian OpenSSL 3 dependency                              | Port, P10                                                                        |                                         |
+| 42  | `7bfb2e2` | #2340 | Metal off on Intel macOS                                 | Adapt, P10                                                                       |                                         |
+| 43  | `0ed36e1` | #2344 | one HTTP client for post-processing                      | Port, P7                                                                         |                                         |
+| 44  | `1607381` | #2348 | stale user manager and the input group                   | Adapt, P10                                                                       |                                         |
+| 45  | `889fca0` | #2290 | keep dictation when post-processing is blank             | Port, P7                                                                         |                                         |
+| 46  | `a537ec4` | #2253 | reset buttons name their setting                         | Adapt, P4                                                                        |                                         |
+| 47  | `298653c` | #2367 | Linux defaults avoid the ibus hotkey                     | Adapt, P10                                                                       |                                         |
+| 48  | `8fd85aa` | #2246 | Escape dismisses dropdowns                               | Adapt, P4                                                                        |                                         |
+| 49  | `e4869fc` |       | cargo fmt                                                | Skip                                                                             |                                         |
+| 50  | `4c811d7` |       | Playwright 1.64.1                                        | Covered (update routine)                                                         | `0759c8a4`                              |
+| 51  | `b99b9af` | #2372 | error notices framework                                  | Adapt, P8                                                                        |                                         |
+| 52  | `090b370` | #2248 | ignore IME confirmation Enter                            | Adapt, P4                                                                        |                                         |
+| 53  | `0685192` | #2255 | report failed History deletions                          | Adapt, P4                                                                        |                                         |
+| 54  | `77ad955` | #2254 | name the playback position control                       | Adapt, P4                                                                        |                                         |
+| 55  | `26d2003` | #2247 | keep playback position when a seek starts                | Adapt, P4                                                                        |                                         |
+| 56  | `3b60fc7` | #2251 | Escape dismisses focused tooltips                        | Adapt, P4                                                                        |                                         |
+| 57  | `a1cb29d` | #2309 | release late audio sources after leaving History         | Adapt, P4                                                                        |                                         |
+| 58  | `8020c87` | #2327 | shortcut fallback when the manager fails to start        | Covered (readiness channel + fallback)                                           | —                                       |
+| 59  | `8c293dd` | #1991 | macOS AirPods mode                                       | Defer (needs handy-recorder)                                                     |                                         |
+| 60  | `033c627` | #930  | transcription hook                                       | Adapt, P7 (D4)                                                                   |                                         |
+| 61  | `ef3086e` | #1300 | Linux "None" keyboard implementation                     | Adapt, P10                                                                       |                                         |
+| 62  | `4ec61f0` | #2199 | dotool multi-line typing                                 | Port, P10                                                                        |                                         |
+| 63  | `693aa63` |       | better preferred languages                               | Phase 6.6                                                                        |                                         |
+| 64  | `815e73f` |       | state update while decoding a file                       | Adapt, P9                                                                        |                                         |
+| 65  | `1b13488` |       | merge                                                    | n/a                                                                              |                                         |
+| 66  | `3d94031` | #1319 | tray language submenu                                    | Phase 6.6                                                                        |                                         |
+| 67  | `4fd7ac4` |       | 0.10.0 release notes                                     | Skip (ZER0's own notes)                                                          |                                         |
+| 68  | `f3d8b87` | #2360 | WebKitGTK 2.54 transparent overlay                       | Adapt, P10                                                                       |                                         |
+| 69  | `69420ed` |       | release v0.10.0                                          | Skip                                                                             |                                         |
+| 70  | `82dfab9` |       | merge                                                    | n/a                                                                              |                                         |
+| 71  | `73cc857` | #2432 | TLS security advisories                                  | Covered (update + `cargo audit`), P3                                             | `0759c8a4`                              |
+| 72  | `40b8e72` | #2403 | no WebView2 context menu on the overlay                  | Port, P4                                                                         |                                         |
+| 73  | `88185c8` | #2478 | async runtime before webview log streaming               | n/a: no webview log target (stdout/stderr/file only)                             | —                                       |
+| 74  | `0911f2b` |       | 60 s post-processing deadline                            | Adapt, P7 (D5)                                                                   |                                         |
+| 75  | `bd87c72` | #2453 | AppImage native Wayland opt-in                           | Adapt, P10                                                                       |                                         |
+| 76  | `e286103` | #2448 | updater off where the build cannot update                | Adapt, P10                                                                       |                                         |
+| 77  | `c530a49` | #2447 | X11 overlay stays resizable                              | Adapt, P10                                                                       |                                         |
+| 78  | `27322df` |       | model list request timeout                               | Port, P7                                                                         |                                         |
+| 79  | `dce2976` | #2057 | macOS: clear stale permission grants                     | Port, P10                                                                        |                                         |
+| 80  | `1fe3ae2` | #2482 | decode Opus files                                        | Adapt, P9                                                                        |                                         |
+| 81  | `ca4a611` | #2434 | punctuation-only transcript is empty                     | Port, P3                                                                         | `b1a98752`                              |
+| 82  | `d654302` | #2418 | No Model Selected notice                                 | Adapt, P8                                                                        |                                         |
+| 83  | `7102b63` | #2484 | OpenBLAS in Linux build docs                             | Verify, P10                                                                      |                                         |
+| 84  | `d628da4` |       | bump handy-recorder                                      | Skip (D3)                                                                        |                                         |
+| 85  | `c67ec6a` |       | Chinese script from the text                             | Phase 6.7                                                                        |                                         |
+| 86  | `b5920f2` |       | leave Japanese and Korean alone                          | Phase 6.7                                                                        |                                         |
+| 87  | `56c7e21` | #2097 | tap vs hold by key event time                            | Adapt, P3                                                                        | `06e647f7`                              |
+| 88  | `2eab8fc` | #2485 | replace the worker after a backend error                 | Adapt in-process, P7                                                             |                                         |
+| 89  | `70f490e` | #2486 | say so when the mic sends only silence                   | Adapt, P8                                                                        |                                         |
+| 90  | `f248301` | #2318 | hf-hub survives Range-stripping proxies                  | n/a: hf-hub 1.x never ranges a file, ZER0's downloader already restarts on a 200 | —                                       |
+| 91  | `0ff1ce1` | #2489 | bump transcribe.cpp                                      | Covered, P2                                                                      | `eeb2e9a5`                              |
+| 92  | `2696c49` |       | libopus on Windows ARM                                   | Adapt, P9                                                                        |                                         |
+| 93  | `1472087` |       | libopus without SIMD on Windows ARM                      | Adapt, P9                                                                        |                                         |
+| 94  | `310749b` | #2454 | skip the Gamescope WSI Vulkan layer                      | Adapt, P10                                                                       |                                         |
+| 95  | `3c7a538` | #2427 | find the ydotoold socket                                 | Port, P10                                                                        |                                         |
+| 96  | `bd4b027` | #2495 | next paste tool when one fails                           | Adapt, P10                                                                       |                                         |
+| 97  | `e529447` | #2502 | warn about elevated windows                              | Adapt, P8                                                                        |                                         |
+| 98  | `d2ee871` | #2488 | X11 overlay does not steal focus                         | Port, P10                                                                        |                                         |
+| 99  | `f01b807` | #2505 | handy-keys 0.3.5                                         | Covered, P3                                                                      | `0759c8a4`                              |
+| 100 | `1e10e71` | #2506 | drop custom words read back                              | Port, P7                                                                         |                                         |
+| 101 | `4a096e3` | #2504 | Linux Shift+Insert paste                                 | Adapt, P10                                                                       |                                         |
+| 102 | `aca8985` |       | release v0.10.1                                          | Skip                                                                             |                                         |
