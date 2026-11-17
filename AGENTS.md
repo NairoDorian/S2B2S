@@ -657,9 +657,13 @@ opened with `StreamOptions { enable_vad: false, .. }` (the live path —
 primary and every Multi Streaming STT slot —, `benchmark_stream` and the
 headless `replay_stream_once`), so the engine's own per-stream silence gate
 never runs on audio the app already filtered. Before 2026-11-17 the two ran in
-series with different thresholds and tails, and a quiet clip (FLEURS French,
-−62 dBFS RMS) streamed to an empty transcript through it. With the app's VAD
-off the user asked for every frame, and the engine gate stays off as well.
+series with different thresholds and tails, and the second one was out of
+reach of the VAD toggle and the slider. On the engine before `cfb07a12` it
+streamed a quiet clip (FLEURS French, −62 dBFS RMS) to an empty transcript
+(the November handoff, §3); at `cfb07a12` that clip passes it, but the old
+capture pre-gate (below) would have dropped the clip whole before any stream
+saw it. With the app's VAD off the user asked for every frame, and the engine
+gate stays off as well.
 
 - **Frame size** is `constants::VAD_FRAME_SAMPLES` (256 samples = 16 ms at
   16 kHz, `VAD_FRAME_MS`). The capture pipeline frames itself to the

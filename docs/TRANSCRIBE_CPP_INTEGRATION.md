@@ -174,5 +174,9 @@ audit about Rust Earshot, `SmoothedVad` and the double gate are history.
   two-threshold rule (`vad::voiced_ms`).
 - Removed crates: `earshot`, `nnnoiseless`.
 - Behaviour change: no −45 dBFS pre-gate; the quiet FLEURS French clip
-  (−62 dBFS RMS) reads 76 % voiced through `vad_speech_clock_probe`, where the
-  old pre-gate scored every frame 0.
+  (−62 dBFS RMS, peak −47.5 dBFS) reads 76 % voiced through
+  `vad_speech_clock_probe`, where the old pre-gate scored every frame 0 — the
+  live app lost that clip at capture. Correction to the 2026-11-14 note: at
+  `cfb07a12` the engine stream gate no longer empties that clip's stream
+  (a headless Nemotron replay transcribes it with the gate on and off); the
+  empty transcript was measured on the earlier engine.

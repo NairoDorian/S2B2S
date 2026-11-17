@@ -127,6 +127,20 @@ Anything added to startup goes after that line or on its own thread.
   samples, ≈ 600 KB/s at 30 Hz; `overlay_scope.wave_samples` can raise the
   window to 16384 samples (64 KB per poll). The 16-bucket level
   meter it replaced has been removed from the recorder.
+- Native streams run with the engine's silence gate off (`enable_vad: false`,
+  2026-11-17), so a stream now decodes what the capture gate keeps — the
+  hangover tail and very quiet speech included — instead of skipping the
+  chunks the engine gate judged silent. Measured interleaved (3 rounds,
+  Nemotron 3.5 Q4*K_M, 160 ms feeds, headless replay of the raw clip, median
+  encode time, gate off / on): continuous speech (fleurs-en) 1039 / 1127 ms on
+  the CPU, no difference beyond noise; the same clip with two 1.65 s silences
+  2353 / 2153 ms (+9 %) on the CPU and 1017 / 953 ms (+7 %) on an RTX 4070
+  (Vulkan); very quiet speech (fleurs-fr, −62 dBFS RMS, every frame under the
+  gate's −42 dBFS energy floor) 1047 / 794 ms (+32 %) and 453 / 377 ms
+  (+20 %). Transcripts were identical on the CPU; on Vulkan fleurs-en read
+  "slow \_dot* communication" with the gate off in all three rounds (correct
+  with it on) — one clip, one word, watch for it. Debug Rust build; the C++
+  engine dominates the measured time.
 - FFT resampling adds ~20 ms of buffering per stage; the denoise chain is
   two stages when the microphone is not 48 kHz. Prefer a 48 kHz device.
 - The first RNNoise frames after a reset are transient; the chain is reset

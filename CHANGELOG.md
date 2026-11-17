@@ -468,13 +468,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `nnnoiseless` crates are gone, along with ZER0's own `Hysteresis` and
   `SmoothedVad`. Every native stream is opened with the engine's per-stream
   silence gate off (`enable_vad: false`): before, ZER0's streams ran two
-  Earshots in series with different thresholds and tails, and the second one,
-  which the VAD toggle never reached, could drop a quiet utterance the first
-  had kept. **Behaviour change:** the old adapter scored every frame below
+  Earshots in series with different thresholds and tails, and the second one
+  was out of reach of the VAD toggle and the slider (on the engine before
+  `cfb07a12` it emptied a quiet clip's stream; at `cfb07a12` that clip passes
+  it). **Behaviour change:** the old adapter scored every frame below
   −45 dBFS RMS as 0 without running the model, so a very quiet microphone
   could not reach speech at any threshold; the engine scores every frame. On
-  the quiet FLEURS French clip (−62 dBFS RMS) the gate now reads 76 % of
-  frames as speech, where the old pre-gate read none. The speech clock, the
+  the quiet FLEURS French clip (−62 dBFS RMS, peak −47.5 dBFS) the gate now
+  reads 76 % of frames as speech, where the old pre-gate read none — so in
+  the live app that clip was lost at capture, before any stream. The speech clock, the
   slider, the live VAD test, the overlay's speaking indicator and WPM keep
   their behaviour; the History re-analysis uses the engine's batch scorer
   (`score_frames`, bit-identical to frame-by-frame scoring).
