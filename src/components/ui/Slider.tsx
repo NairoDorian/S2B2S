@@ -45,6 +45,7 @@ export const Slider = (props: SliderProps): JSX.Element => {
         <div class="flex items-center space-x-1 h-6">
           <input
             type="range"
+            aria-label={props.label}
             min={props.min}
             max={props.max}
             step={props.step ?? 0.01}

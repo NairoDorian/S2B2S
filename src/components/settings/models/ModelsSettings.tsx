@@ -29,6 +29,7 @@ import {
 } from "@/lib/constants/languages.ts";
 import { commands, type ArchPluginInfo, type ModelInfo } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
+import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -451,6 +452,7 @@ export const ModelsSettings = () => {
                             setLanguageSearch(e.currentTarget.value)
                           }
                           onKeyDown={(e) => {
+                            if (isComposingKeyEvent(e)) return;
                             if (
                               e.key === "Enter" &&
                               filteredLanguages().length > 0

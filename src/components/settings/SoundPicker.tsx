@@ -58,6 +58,8 @@ export const SoundPicker = (props: SoundPickerProps): JSX.Element => {
             updateSetting("sound_theme", value as "marimba" | "pop" | "custom")
           }
           options={options()}
+          // A theme folder changed while the app runs shows up on open.
+          onRefresh={() => void store.checkCustomSounds()}
         />
         <Button
           variant="ghost"

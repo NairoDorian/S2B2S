@@ -10,6 +10,7 @@ import {
   supportsLanguageCode,
 } from "../../lib/constants/languages";
 import type { JSX } from "@solidjs/web";
+import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 
 interface LanguageSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -103,6 +104,7 @@ export const LanguageSelector = (props: LanguageSelectorProps): JSX.Element => {
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (isComposingKeyEvent(event)) return;
     if (event.key === "Enter" && filteredLanguages().length > 0) {
       handleLanguageSelect(filteredLanguages()[0].value);
     } else if (event.key === "Escape") {

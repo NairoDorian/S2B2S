@@ -8,6 +8,7 @@ import {
 } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
+import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 
 export type SelectOption = {
   value: string;
@@ -254,7 +255,7 @@ export const Select = (props: SelectProps): JSX.Element => {
         setFocusedIndex(stepFocus(items().length, -1));
         break;
       case "Enter":
-        if (event.isComposing) return;
+        if (isComposingKeyEvent(event)) return;
         if (!isOpen() || focusedIndex() < 0) return;
         event.preventDefault();
         selectItem(items()[focusedIndex()]);

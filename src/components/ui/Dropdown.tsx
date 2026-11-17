@@ -1,6 +1,7 @@
 import { createSignal, createEffect, For } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
+import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 
 export interface DropdownOption {
   value: string;
@@ -29,11 +30,12 @@ export const Dropdown = (props: DropdownProps): JSX.Element => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = createSignal(false);
   let dropdownRef: HTMLDivElement | null = null;
+  let triggerRef: HTMLButtonElement | null = null;
 
-  // The compute tracks `isOpen`; the apply owns the outside-click listener
-  // and returns its teardown, so closing removes it. (Reading `isOpen()` in
-  // the apply is untracked: the listener would register once and never go
-  // away, and every mount would warn STRICT_READ_UNTRACKED.)
+  // The compute tracks `isOpen`; the apply owns the outside-click and Escape
+  // listeners and returns their teardown, so closing removes them. (Reading
+  // `isOpen()` in the apply is untracked: the listener would register once
+  // and never go away, and every mount would warn STRICT_READ_UNTRACKED.)
   createEffect(
     () => isOpen(),
     (open) => {
@@ -43,9 +45,24 @@ export const Dropdown = (props: DropdownProps): JSX.Element => {
           setIsOpen(false);
         }
       };
+      // Escape closes the open menu and hands focus back to its trigger, so
+      // a keyboard user is not left on an item that just disappeared. It is
+      // captured on the document so this menu consumes it before an
+      // enclosing dialog's own Escape handler closes the dialog too.
+      const handleEscape = (event: KeyboardEvent) => {
+        if (event.key !== "Escape" || props.disabled) return;
+        if (isComposingKeyEvent(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setIsOpen(false);
+        triggerRef?.focus();
+      };
       document.addEventListener("mousedown", handleClickOutside);
-      return () =>
+      document.addEventListener("keydown", handleEscape, true);
+      return () => {
         document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleEscape, true);
+      };
     },
   );
 
@@ -71,6 +88,9 @@ export const Dropdown = (props: DropdownProps): JSX.Element => {
       }}
     >
       <button
+        ref={(el) => {
+          triggerRef = el;
+        }}
         type="button"
         class={`px-2 py-[5px] text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded-md min-w-[200px] w-full text-start grid grid-cols-[1fr_auto] gap-2 items-center transition-all duration-150 ${props.disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-accent/10 cursor-pointer hover:border-accent"}`}
         onClick={handleToggle}

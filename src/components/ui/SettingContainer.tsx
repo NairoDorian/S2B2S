@@ -2,6 +2,7 @@ import { createSignal, createEffect, Show } from "solid-js";
 import { Tooltip } from "./Tooltip";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
+import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 
 interface SettingContainerProps {
   title: string;
@@ -32,9 +33,23 @@ export const SettingContainer = (props: SettingContainerProps): JSX.Element => {
           setShowTooltip(false);
         }
       };
+      // Escape dismisses the open tooltip (a focused info button otherwise
+      // keeps it up with no way to close it from the keyboard). Captured, and
+      // consumed only while the tooltip is open, so a dialog around it still
+      // gets the key at any other time.
+      const handleEscape = (event: KeyboardEvent) => {
+        if (event.key !== "Escape" || event.defaultPrevented) return;
+        if (isComposingKeyEvent(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setShowTooltip(false);
+      };
       document.addEventListener("mousedown", handleClickOutside);
-      return () =>
+      document.addEventListener("keydown", handleEscape, true);
+      return () => {
         document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleEscape, true);
+      };
     },
   );
 

@@ -331,7 +331,8 @@ src-tauri/Cargo.lock` must print nothing.
 
 ## Phase 3 — Upstream batch U1: small backend fixes
 
-n**Done 2026-11-16/17** — every row below landed or was verified; the ledger at the end carries the commit of each.
+**Done 2026-11-16/17** — every row below landed or was verified; the ledger
+at the end carries the commit of each.
 
 Chronological. Each is one commit (see the ledger at the end for every row).
 

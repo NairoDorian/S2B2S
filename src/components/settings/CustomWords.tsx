@@ -5,6 +5,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
+import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 
 interface CustomWordsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -51,6 +52,7 @@ export const CustomWords = (props: CustomWordsProps) => {
   };
 
   const handleKeyPress = (e: KeyboardEvent) => {
+    if (isComposingKeyEvent(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       handleAddWord();

@@ -4,6 +4,16 @@
 
 export type OSType = "macos" | "windows" | "linux" | "unknown";
 
+/**
+ * Whether a keydown belongs to an IME composition. The Enter that confirms a
+ * composition (Japanese, Chinese, Korean input) can arrive with
+ * `isComposing` already false while `keyCode` is still 229, so both are
+ * checked: acting on it would add a half-typed word or pick the wrong item.
+ */
+export const isComposingKeyEvent = (
+  event: Pick<KeyboardEvent, "isComposing" | "keyCode">,
+): boolean => event.isComposing || event.keyCode === 229;
+
 // Shortcut parsers require compact tokens; keep display labels separate.
 const COMPOUND_KEY_DISPLAY: Record<string, string> = {
   capslock: "Caps Lock",

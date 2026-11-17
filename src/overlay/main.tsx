@@ -19,6 +19,14 @@ import type { TypographySettings } from "@/bindings";
 // setting in case the overlay booted first, then follow live changes.
 applyTheme(getStoredTheme());
 applyTypography(getStoredTypography());
+
+// The overlay floats over other apps, so a stray right-click (a game, a
+// drawing tool) must not open the webview's default menu: its Print and Save
+// as entries can pop a window over the foreground app. Kept in development
+// builds for Inspect (upstream 40b8e72, #2403).
+if (import.meta.env.PROD) {
+  window.addEventListener("contextmenu", (event) => event.preventDefault());
+}
 applyAccentColor(getStoredAccentColor());
 void syncAppearanceFromSettings({ uiScale: false });
 
