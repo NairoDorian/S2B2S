@@ -381,6 +381,17 @@ row's handler). The accent colour's reset keeps its own existing label.
 
 ## Phase 5 — One VAD and denoise owner: the engine
 
+**Done 2026-11-17** — `a12ca902` (code), `560a5581` (measurement and a
+correction), engine `7b4df8da` (its integration note; committed locally, not
+pushed). Deviations from the recipe below: ZER0's `SpeechClock` stays (it
+counts the gate's raw `voiced`, keeps the per-recording pause hold and the
+`Disabled` path) instead of reading the gate's clock; the detector trait
+stays for the recorder tests' scripted detectors. The quiet-clip claim in
+the handoff is stale at `cfb07a12` (the stream gate no longer empties it);
+the old capture pre-gate was what lost it. Real-microphone checks of 5.6
+(slider mid-recording, denoise sliders, Live FFT taps, Live Mode and
+Multi-STT breaks) still need a person at the microphone.
+
 Recipe source: handoff §3.1. Upstream's own move (`3985508`, Silero through
 transcribe.cpp, and `7b2a28a`, a pre-roll double-release fix) is **superseded**
 by this phase: the engine's `VadGate` is the Earshot path ZER0 already tuned, and
@@ -751,8 +762,8 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 23  | `48a3d8e` | #2249 | Linux renderer opt-out                                   | Adapt, P10 (final form = row 68)                                                 |                                             |
 | 24  | `1b011a1` | #2265 | transcribe 0.4.0                                         | Covered, P2                                                                      | `eeb2e9a5`                                  |
 | 25  | `a42131d` | #2188 | move to handy-recorder                                   | Skip (D3)                                                                        |                                             |
-| 26  | `3985508` | #2267 | Silero VAD through transcribe.cpp                        | Phase 5 (engine Earshot instead)                                                 |                                             |
-| 27  | `7b2a28a` |       | don't re-emit hangover frames in pre-roll                | Phase 5 (VadGate never releases twice)                                           |                                             |
+| 26  | `3985508` | #2267 | Silero VAD through transcribe.cpp                        | Phase 5 (engine Earshot instead)                                                 | `a12ca902`                                  |
+| 27  | `7b2a28a` |       | don't re-emit hangover frames in pre-roll                | Phase 5 (VadGate never releases twice)                                           | `a12ca902`                                  |
 | 28  | `14ae9c6` | #2257 | Anthropic Messages API format                            | Adapt, P7                                                                        |                                             |
 | 29  | `5732406` | #2256 | no duplicate History rows during live updates            | Adapt, P4                                                                        | `2e9e849c`                                  |
 | 30  | `53db4cb` | #2238 | setting names for screen readers                         | Adapt, P4                                                                        | `b0b9c2fb`                                  |
