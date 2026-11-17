@@ -25,8 +25,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 use transcribe_cpp::{
-    Backend, Device, Feature, Model, ModelOptions, RunExtension, RunOptions, Session,
-    StreamOptions, Task, WhisperRunOptions,
+    AllowlistLetters, Backend, Device, Feature, Model, ModelOptions, RunExtension, RunOptions,
+    Session, StreamOptions, Task, WhisperRunOptions,
 };
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -1315,7 +1315,8 @@ impl TranscriptionManager {
 
         // The loaded session (not the ModelManager copy) is the source of truth
         // for run-path capabilities.
-        let (supports_streaming, supports_translate, languages) = match &engine {
+        let (supports_streaming, supports_translate, languages, supports_allowlist) = match &engine
+        {
             LoadedEngine::TranscribeCpp(session) => {
                 let model = session.model();
                 match model.capabilities() {
@@ -1335,6 +1336,7 @@ impl TranscriptionManager {
                             caps.supports_streaming,
                             caps.supports_translate,
                             caps.languages,
+                            model.supports(Feature::LanguageAllowlist),
                         )
                     }
                     Err(e) => {
@@ -1344,7 +1346,7 @@ impl TranscriptionManager {
                         // restores the engine and the caller sees NeverStarted
                         // instead of a worker panic.
                         warn!("model '{model_id}' capabilities unavailable: {e}");
-                        (false, false, Vec::new())
+                        (false, false, Vec::new(), false)
                     }
                 }
             }
@@ -1376,6 +1378,11 @@ impl TranscriptionManager {
             &effective_language,
             &languages,
             supports_translate,
+            SpokenLanguages {
+                languages: &settings.spoken_languages,
+                any_letters: settings.spoken_languages_any_letters,
+                model_supports_allowlist: supports_allowlist,
+            },
         );
         let output_language = resolve_output_language_evidence(
             &settings,
@@ -1387,6 +1394,8 @@ impl TranscriptionManager {
             task: run_plan.task,
             language: run_plan.language,
             target_language: run_plan.target_language,
+            allowed_languages: run_plan.allowed_languages,
+            allowlist_letters: run_plan.allowlist_letters,
             ..Default::default()
         };
 
@@ -1702,11 +1711,14 @@ impl TranscriptionManager {
                 &language,
                 &caps.languages,
                 caps.supports_translate,
+                SpokenLanguages::new(&settings, &model),
             );
             let options = RunOptions {
                 task: plan.task,
                 language: plan.language,
                 target_language: plan.target_language,
+                allowed_languages: plan.allowed_languages,
+                allowlist_letters: plan.allowlist_letters,
                 ..Default::default()
             };
             let family = if let Some(ms) = r2t2_chunk_ms {
@@ -2261,7 +2273,7 @@ impl TranscriptionManager {
             let mut output_was_translated = false;
             let mut applied_language_hint: Option<String> = None;
             let mut model_detected_language: Option<String> = None;
-            let (model_supports_translate, model_languages) = {
+            let (model_supports_translate, model_languages, model_supports_allowlist) = {
                 let LoadedEngine::TranscribeCpp(session) = &engine;
                 let model = session.model();
                 let caps = model
@@ -2277,7 +2289,11 @@ impl TranscriptionManager {
                     caps.supports_translate,
                     caps.languages
                 );
-                (caps.supports_translate, caps.languages)
+                (
+                    caps.supports_translate,
+                    caps.languages,
+                    model.supports(Feature::LanguageAllowlist),
+                )
             };
 
             let transcribe_result = catch_unwind(AssertUnwindSafe(|| -> Result<String> {
@@ -2302,6 +2318,11 @@ impl TranscriptionManager {
                             &validated_language,
                             &model_languages,
                             model_supports_translate,
+                            SpokenLanguages {
+                                languages: &settings.spoken_languages,
+                                any_letters: settings.spoken_languages_any_letters,
+                                model_supports_allowlist,
+                            },
                         );
                         output_was_translated = run_plan.target_language.as_deref() == Some("en");
                         applied_language_hint = run_plan.language.clone();
@@ -2310,14 +2331,18 @@ impl TranscriptionManager {
                             task: run_plan.task,
                             language: run_plan.language,
                             target_language: run_plan.target_language,
+                            allowed_languages: run_plan.allowed_languages,
+                            allowlist_letters: run_plan.allowlist_letters,
                             family,
                             ..Default::default()
                         };
 
                         debug!(
-                            "transcribe-cpp run: task={:?}, language={:?}, initial_prompt={}",
+                            "transcribe-cpp run: task={:?}, language={:?}, allowed_languages={:?} ({:?}), initial_prompt={}",
                             run_options.task,
                             run_options.language,
+                            run_options.allowed_languages,
+                            run_options.allowlist_letters,
                             run_options.family.is_some()
                         );
 
@@ -2771,6 +2796,82 @@ struct TranscribeCppRunPlan {
     task: Task,
     language: Option<String>,
     target_language: Option<String>,
+    /// The "languages I speak" list as the engine's allowlist; empty when it
+    /// does not apply to this run (see [`spoken_language_allowlist`]).
+    allowed_languages: Vec<String>,
+    allowlist_letters: AllowlistLetters,
+}
+
+/// What the "languages I speak" setting asks of one run on one model.
+#[derive(Clone, Copy)]
+struct SpokenLanguages<'a> {
+    /// The user's languages, in preference order (`settings.spoken_languages`).
+    languages: &'a [String],
+    /// Restrict only the detected language, not the letters written.
+    any_letters: bool,
+    /// The loaded model takes an allowlist (`Feature::LanguageAllowlist`).
+    model_supports_allowlist: bool,
+}
+
+impl<'a> SpokenLanguages<'a> {
+    fn new(settings: &'a AppSettings, model: &Model) -> Self {
+        Self {
+            languages: &settings.spoken_languages,
+            any_letters: settings.spoken_languages_any_letters,
+            model_supports_allowlist: model.supports(Feature::LanguageAllowlist),
+        }
+    }
+
+    #[cfg(test)]
+    fn none() -> SpokenLanguages<'static> {
+        SpokenLanguages {
+            languages: &[],
+            any_letters: false,
+            model_supports_allowlist: false,
+        }
+    }
+}
+
+/// The allowlist one run gets from the spoken languages.
+///
+/// A union, not a lock: the model's own language decision is limited to the
+/// listed languages (and, unless `any_letters`, so are the letters it may
+/// write), so a short utterance cannot come out in a language the user does
+/// not speak while a switch between two listed languages mid-sentence
+/// survives. No list when a language is pinned (the explicit choice wins),
+/// when the model has no allowlist (the engine refuses a non-empty list
+/// there), or when the model knows none of the listed languages (the engine
+/// answers `UnsupportedLanguage`); otherwise the whole list, since a listed
+/// language the model cannot name still widens the alphabet.
+fn spoken_language_allowlist(
+    language: Option<&str>,
+    spoken: SpokenLanguages<'_>,
+    model_languages: &[String],
+) -> Vec<String> {
+    if language.is_some() || spoken.languages.is_empty() || !spoken.model_supports_allowlist {
+        return Vec::new();
+    }
+    let mut list: Vec<String> = Vec::with_capacity(spoken.languages.len());
+    for code in spoken.languages {
+        let code = normalize_cjk_language(code.trim());
+        if code.is_empty() || code == "auto" {
+            continue;
+        }
+        let identity = crate::managers::model::canonical_language_code(code);
+        if !list
+            .iter()
+            .any(|known| crate::managers::model::canonical_language_code(known) == identity)
+        {
+            list.push(code.to_string());
+        }
+    }
+    let model_knows_one = list.iter().any(|code| {
+        let identity = crate::managers::model::canonical_language_code(code);
+        model_languages
+            .iter()
+            .any(|l| crate::managers::model::canonical_language_code(l) == identity)
+    });
+    if model_knows_one { list } else { Vec::new() }
 }
 
 /// Build the transcribe-cpp language/task options shared by batch and live
@@ -2780,6 +2881,7 @@ fn transcribe_cpp_run_plan(
     effective_language: &str,
     model_languages: &[String],
     model_supports_translate: bool,
+    spoken: SpokenLanguages<'_>,
 ) -> TranscribeCppRunPlan {
     let requested_language = match effective_language {
         "auto" => None,
@@ -2796,10 +2898,17 @@ fn transcribe_cpp_run_plan(
         language.as_deref(),
     );
 
+    let allowed_languages = spoken_language_allowlist(language.as_deref(), spoken, model_languages);
     TranscribeCppRunPlan {
         task,
         language,
         target_language,
+        allowed_languages,
+        allowlist_letters: if spoken.any_letters {
+            AllowlistLetters::Any
+        } else {
+            AllowlistLetters::Default
+        },
     }
 }
 
@@ -3941,11 +4050,14 @@ impl TranscriptionManager {
             &language,
             &caps.languages,
             caps.supports_translate,
+            SpokenLanguages::new(settings, &model),
         );
         let options = RunOptions {
             task: plan.task,
             language: plan.language,
             target_language: plan.target_language,
+            allowed_languages: plan.allowed_languages,
+            allowlist_letters: plan.allowlist_letters,
             ..Default::default()
         };
         let family = self.resolved_stream_extension(settings, &model, model_id);
@@ -4391,6 +4503,7 @@ fn transcribe_with_engine(
         &effective_language,
         &supported_languages,
         model_supports_translate,
+        SpokenLanguages::new(settings, &model),
     );
     let output_was_translated = run_plan.target_language.as_deref() == Some("en");
     let applied_language_hint = run_plan.language.clone();
@@ -4399,6 +4512,8 @@ fn transcribe_with_engine(
         task: run_plan.task,
         language: run_plan.language,
         target_language: run_plan.target_language,
+        allowed_languages: run_plan.allowed_languages,
+        allowlist_letters: run_plan.allowlist_letters,
         family,
         ..Default::default()
     };
@@ -5381,7 +5496,7 @@ mod tests {
             ..Default::default()
         };
         let supported = languages(&[]);
-        let plan = transcribe_cpp_run_plan(false, "en", &supported, false);
+        let plan = transcribe_cpp_run_plan(false, "en", &supported, false, SpokenLanguages::none());
 
         assert_eq!(plan.language, None);
         assert_eq!(
@@ -5438,7 +5553,13 @@ mod tests {
 
     #[test]
     fn transcribe_cpp_run_plan_maps_chinese_variants() {
-        let plan = transcribe_cpp_run_plan(false, "zh-Hant", &languages(&["zh"]), true);
+        let plan = transcribe_cpp_run_plan(
+            false,
+            "zh-Hant",
+            &languages(&["zh"]),
+            true,
+            SpokenLanguages::none(),
+        );
 
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("zh"));
@@ -5447,7 +5568,13 @@ mod tests {
 
     #[test]
     fn transcribe_cpp_run_plan_skips_english_translation() {
-        let plan = transcribe_cpp_run_plan(true, "en", &languages(&["en", "es"]), true);
+        let plan = transcribe_cpp_run_plan(
+            true,
+            "en",
+            &languages(&["en", "es"]),
+            true,
+            SpokenLanguages::none(),
+        );
 
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("en"));
@@ -5456,7 +5583,13 @@ mod tests {
 
     #[test]
     fn transcribe_cpp_run_plan_translates_supported_non_english() {
-        let plan = transcribe_cpp_run_plan(true, "es", &languages(&["en", "es"]), true);
+        let plan = transcribe_cpp_run_plan(
+            true,
+            "es",
+            &languages(&["en", "es"]),
+            true,
+            SpokenLanguages::none(),
+        );
 
         assert!(matches!(plan.task, Task::Translate));
         assert_eq!(plan.language.as_deref(), Some("es"));
@@ -5465,11 +5598,93 @@ mod tests {
 
     #[test]
     fn transcribe_cpp_run_plan_requires_model_translation_support() {
-        let plan = transcribe_cpp_run_plan(true, "es", &languages(&["en", "es"]), false);
+        let plan = transcribe_cpp_run_plan(
+            true,
+            "es",
+            &languages(&["en", "es"]),
+            false,
+            SpokenLanguages::none(),
+        );
 
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("es"));
         assert_eq!(plan.target_language, None);
+    }
+
+    fn spoken<'a>(list: &'a [String], any_letters: bool, supported: bool) -> SpokenLanguages<'a> {
+        SpokenLanguages {
+            languages: list,
+            any_letters,
+            model_supports_allowlist: supported,
+        }
+    }
+
+    #[test]
+    fn spoken_languages_reach_an_auto_run_as_the_allowlist() {
+        let list = languages(&["fr", "en"]);
+        let plan = transcribe_cpp_run_plan(
+            false,
+            "auto",
+            &languages(&["en", "fr", "de"]),
+            false,
+            spoken(&list, false, true),
+        );
+        assert_eq!(plan.language, None);
+        assert_eq!(plan.allowed_languages, languages(&["fr", "en"]));
+        assert_eq!(plan.allowlist_letters, AllowlistLetters::Default);
+    }
+
+    #[test]
+    fn a_pinned_language_wins_over_the_spoken_languages() {
+        let list = languages(&["fr", "en"]);
+        let plan = transcribe_cpp_run_plan(
+            false,
+            "de",
+            &languages(&["en", "fr", "de"]),
+            false,
+            spoken(&list, false, true),
+        );
+        assert_eq!(plan.language.as_deref(), Some("de"));
+        assert!(plan.allowed_languages.is_empty());
+    }
+
+    #[test]
+    fn the_allowlist_needs_the_feature_and_one_language_the_model_knows() {
+        let list = languages(&["fr", "ja"]);
+        let model = languages(&["en", "fr"]);
+        // No feature: the engine refuses any non-empty list.
+        let none =
+            transcribe_cpp_run_plan(false, "auto", &model, false, spoken(&list, false, false));
+        assert!(none.allowed_languages.is_empty());
+        // The model knows none of them: UnsupportedLanguage otherwise.
+        let unknown = languages(&["de", "ko"]);
+        let none =
+            transcribe_cpp_run_plan(false, "auto", &model, false, spoken(&unknown, false, true));
+        assert!(none.allowed_languages.is_empty());
+        // It knows one: the whole list goes, the other still widens the alphabet.
+        let whole =
+            transcribe_cpp_run_plan(false, "auto", &model, false, spoken(&list, false, true));
+        assert_eq!(whole.allowed_languages, languages(&["fr", "ja"]));
+        // Language-agnostic or unknown model: nothing to restrict.
+        let agnostic =
+            transcribe_cpp_run_plan(false, "auto", &[], false, spoken(&list, false, true));
+        assert!(agnostic.allowed_languages.is_empty());
+    }
+
+    #[test]
+    fn spoken_languages_are_normalized_and_the_letters_toggle_is_carried() {
+        let list = languages(&["zh-Hans", " auto ", "", "zh", "nb", "no", "en"]);
+        let plan = transcribe_cpp_run_plan(
+            false,
+            "auto",
+            &languages(&["zh", "no", "en"]),
+            false,
+            spoken(&list, true, true),
+        );
+        // zh-Hans → zh, auto and blanks dropped, one code per language
+        // (nb and no are the same language), order kept.
+        assert_eq!(plan.allowed_languages, languages(&["zh", "nb", "en"]));
+        assert_eq!(plan.allowlist_letters, AllowlistLetters::Any);
     }
 
     /// The two directions of the Multi-STT panel's slot numbering have to agree:

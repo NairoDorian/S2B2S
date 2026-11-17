@@ -877,6 +877,21 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   transcript, instead of after a fixed delay
 - `recall` - One nested `RecallSettings` struct (`output_dir`, the vault root;
   default `<app data>/recall`); see Recall
+- `spoken_languages` (default empty = off) / `spoken_languages_any_letters`
+  (default off) - "Languages I speak" (General page, `SpokenLanguages.tsx`):
+  recognition codes in preference order, normalized by
+  `change_spoken_languages_setting` (`settings::normalize_spoken_languages`:
+  trimmed, `auto` dropped, `zh-Hans`/`zh-Hant` → `zh`, one per language).
+  While the language is Auto, every run on a model with
+  `Feature::LanguageAllowlist` gets them as `RunOptions::allowed_languages`
+  (`transcribe_cpp_run_plan` → `spoken_language_allowlist`, all five
+  builders: live stream, batch, Multi-STT extras, the two benchmarks): a union,
+  so a switch between two listed languages survives, and with
+  `spoken_languages_any_letters` only the detected language is restricted, not
+  the letters (`AllowlistLetters::Any`). No list when a language is pinned
+  (global or a Multi-STT slot's), when the model lacks the feature, or when it
+  knows none of the listed languages. Upstream's name and meaning for
+  `spoken_languages`, so a shared store reads the same
 - `vad_threshold_earshot` (default 0.5) - Speech-probability threshold the
   detector is built with (0.05–0.95; lower = more sensitive).
   `create_audio_recorder` reads it, so `change_vad_threshold_setting` writes

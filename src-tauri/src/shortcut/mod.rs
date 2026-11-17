@@ -833,6 +833,32 @@ pub fn change_selected_language_setting(app: AppHandle, language: String) -> Res
     Ok(())
 }
 
+/// The languages the user speaks (see `AppSettings::spoken_languages`).
+/// Applies from the next run; a live stream keeps the list it started with.
+#[tauri::command]
+#[specta::specta]
+pub fn change_spoken_languages_setting(
+    app: AppHandle,
+    languages: Vec<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.spoken_languages = settings::normalize_spoken_languages(languages);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_spoken_languages_any_letters_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.spoken_languages_any_letters = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Result<(), String> {

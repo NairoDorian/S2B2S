@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Languages I speak (2026-11-17).** A list on the General page of the
+  languages you speak. While the language is Auto, every model that takes a
+  language allowlist (transcribe.cpp's `Feature::LanguageAllowlist`) is limited
+  to them, so a short phrase can no longer come out in a language you don't
+  speak (or in Cyrillic or Hangul) while switching between two of them
+  mid-sentence still works. "Allow foreign words" restricts only the detected
+  language and lets names keep their own spelling. An explicit language, global
+  or a Multi-STT slot's, still wins. Applies to the live stream, the batch
+  decode, every Multi-STT extra and both benchmarks. Same setting name and
+  meaning as upstream's `spoken_languages`.
+
 - **The fork is now ZER0 (2026-09-12).** The project has its own name, its own
   mark (a rounded badge with a slashed zero), its own links and its own version
   line: the window and tray titles, the binary (`zer0`, `zer0.exe`), the bundle

@@ -11,6 +11,7 @@ import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { ModelSettingsCard } from "./ModelSettingsCard";
+import { SpokenLanguages } from "../SpokenLanguages";
 
 export const GeneralSettings = () => {
   const { t } = useTranslation();
@@ -24,6 +25,9 @@ export const GeneralSettings = () => {
         {!isLinux && <ShortcutInput shortcutId="cancel" grouped={true} />}
       </SettingsGroup>
       <ModelSettingsCard />
+      <SettingsGroup title={t("settings.general.spokenLanguages.groupTitle")}>
+        <SpokenLanguages descriptionMode="tooltip" grouped={true} />
+      </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <ChannelSelector descriptionMode="tooltip" grouped={true} />

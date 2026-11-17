@@ -242,6 +242,60 @@ test.describe("settings window", () => {
     expect(crashes).toEqual([]);
   });
 
+  test("the spoken-languages picker adds and removes a language", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await boot(page);
+
+    const writes = async () =>
+      (await calls(page)).filter(
+        (c) => c.cmd === "change_spoken_languages_setting",
+      );
+    // Off by default, and the letters toggle only shows once a language is in.
+    await expect(
+      page.getByRole("checkbox", { name: "Allow foreign words" }),
+    ).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Add a language" }).click();
+    const search = page.getByRole("textbox", { name: "Search languages" });
+    await expect(search).toBeFocused();
+    await search.fill("fren");
+    await search.press("Enter");
+
+    await expect
+      .poll(writes)
+      .toEqual([
+        { cmd: "change_spoken_languages_setting", args: { languages: ["fr"] } },
+      ]);
+    const remove = page.getByRole("button", { name: "Remove French" });
+    await expect(remove).toBeVisible();
+    await expect(
+      page.getByRole("checkbox", { name: "Allow foreign words" }),
+    ).toBeVisible();
+
+    // Escape clears the query first, then closes and hands focus back.
+    await search.fill("ger");
+    await search.press("Escape");
+    await expect(search).toHaveValue("");
+    await search.press("Escape");
+    await expect(search).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Add another" }),
+    ).toBeFocused();
+
+    await remove.click();
+    await expect
+      .poll(async () => (await writes()).at(-1))
+      .toEqual({
+        cmd: "change_spoken_languages_setting",
+        args: { languages: [] },
+      });
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+
   test("a backend event surfaces as a toast", async ({ page }) => {
     const crashes = watchForCrashes(page);
 

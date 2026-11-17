@@ -440,6 +440,31 @@ pub const DEFAULT_VAD_THRESHOLD_EARSHOT: f32 = 0.5;
 pub const MIN_VAD_THRESHOLD: f32 = 0.05;
 pub const MAX_VAD_THRESHOLD: f32 = 0.95;
 
+/// The spoken-language list as stored: trimmed, `auto` and blanks dropped,
+/// Chinese script tags folded to the recognition code (`zh-Hans` → `zh`),
+/// one entry per language (`nb` and `no` are one), first occurrence kept.
+pub fn normalize_spoken_languages(languages: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(languages.len());
+    for language in languages {
+        let code = language.trim();
+        let code = match code {
+            "zh-Hans" | "zh-Hant" => "zh",
+            other => other,
+        };
+        if code.is_empty() || code.eq_ignore_ascii_case("auto") {
+            continue;
+        }
+        let identity = crate::managers::model::canonical_language_code(code);
+        if !out
+            .iter()
+            .any(|known| crate::managers::model::canonical_language_code(known) == identity)
+        {
+            out.push(code.to_string());
+        }
+    }
+    out
+}
+
 pub fn clamp_vad_threshold(threshold: f32) -> f32 {
     if threshold.is_finite() {
         threshold.clamp(MIN_VAD_THRESHOLD, MAX_VAD_THRESHOLD)
@@ -1536,6 +1561,20 @@ pub struct AppSettings {
     pub translate_to_english: bool,
     #[serde(default = "default_selected_language")]
     pub selected_language: String,
+    /// The languages the user speaks, in preference order, as recognition
+    /// codes (`zh`, not `zh-Hans`); empty = off. The upstream project's name and
+    /// meaning, so a store shared with it reads the same. While the language
+    /// is Auto, a model with an allowlist (`Feature::LanguageAllowlist`) is
+    /// limited to them — a union, so a switch between two of them survives —
+    /// and an explicit language (global or a Multi-STT slot's) still wins.
+    /// Written through `change_spoken_languages_setting`, which normalizes it.
+    #[serde(default)]
+    pub spoken_languages: Vec<String>,
+    /// Let the spoken languages restrict only the language a model detects,
+    /// not the letters it writes (`AllowlistLetters::Any`), so a foreign name
+    /// keeps its own spelling. Fork-only.
+    #[serde(default)]
+    pub spoken_languages_any_letters: bool,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
     /// When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
@@ -2494,6 +2533,8 @@ pub fn get_default_settings() -> AppSettings {
         selected_output_device: None,
         translate_to_english: false,
         selected_language: "auto".to_string(),
+        spoken_languages: Vec::new(),
+        spoken_languages_any_letters: false,
         overlay_position: default_overlay_position(),
         recording_overlay_use_manual_position: false,
         recording_overlay_has_saved_custom_position: false,
@@ -3165,6 +3206,21 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spoken_languages_are_normalized_for_storage() {
+        let input = ["fr", " en ", "auto", "", "zh-Hant", "zh", "nb", "no", "fr"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            normalize_spoken_languages(input),
+            ["fr", "en", "zh", "nb"].map(String::from).to_vec()
+        );
+        // An old store without the fields reads as "off".
+        let settings = get_default_settings();
+        assert!(settings.spoken_languages.is_empty());
+        assert!(!settings.spoken_languages_any_letters);
+    }
 
     #[test]
     fn stored_binding_returns_the_requested_binding() {

@@ -286,6 +286,16 @@
           "push_to_talk": "सर्टकट थिचिराखेसम्म रेकर्ड गर्छ",
           "toggle": "रेकर्डिङ सुरु गर्न सर्टकट ट्याप गर्नुहोस्, रोक्न फेरि ट्याप गर्नुहोस्"
         }
+      },
+      "spokenLanguages": {
+        "groupTitle": "Languages",
+        "title": "Languages I speak",
+        "description": "While the language is Auto, models that support it only transcribe in these languages, so a short phrase can no longer come out in one you don't speak. Switching between them mid-sentence still works, and a language you pick explicitly always wins.",
+        "add": "Add a language",
+        "anyLetters": {
+          "label": "Allow foreign words",
+          "description": "Names and words from other languages keep their own spelling. Off, the model only writes the letters of the languages you speak."
+        }
       }
     },
     "models": {
@@ -2266,5 +2276,10 @@
     "preview": "A clear voice, a thought in writing. 0123456789",
     "note": "Only Libron is bundled. Other named fonts must be installed; unavailable fonts fall back to Libron. Characters outside a font's coverage use system fallback fonts. Font changes apply immediately in both windows.",
     "reset": "Reset fonts to Libron"
+  },
+  "languagePicker": {
+    "search": "भाषाहरू खोज्नुहोस्",
+    "addAnother": "अर्को थप्नुहोस्",
+    "remove": "{{language}} हटाउनुहोस्"
   }
 }

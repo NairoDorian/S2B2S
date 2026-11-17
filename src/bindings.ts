@@ -25,6 +25,12 @@ export const commands = {
 	changeAutostartSetting: (enabled: boolean, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_autostart_setting", { enabled }, options)),
 	changeTranslateToEnglishSetting: (enabled: boolean, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_translate_to_english_setting", { enabled }, options)),
 	changeSelectedLanguageSetting: (language: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_selected_language_setting", { language }, options)),
+	/**
+	 *  The languages the user speaks (see `AppSettings::spoken_languages`).
+	 *  Applies from the next run; a live stream keeps the list it started with.
+	 */
+	changeSpokenLanguagesSetting: (languages: string[], options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_spoken_languages_setting", { languages }, options)),
+	changeSpokenLanguagesAnyLettersSetting: (enabled: boolean, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_spoken_languages_any_letters_setting", { enabled }, options)),
 	changeOverlayPositionSetting: (position: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_overlay_position_setting", { position }, options)),
 	changeOverlayStyleSetting: (style: string, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style }, options)),
 	changeOverlayDirectModeSetting: (enabled: boolean, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled }, options)),
@@ -659,6 +665,22 @@ export type AppSettings_Deserialize = {
 	selected_output_device?: string | null,
 	translate_to_english?: boolean,
 	selected_language?: string,
+	/**
+	 *  The languages the user speaks, in preference order, as recognition
+	 *  codes (`zh`, not `zh-Hans`); empty = off. The upstream project's name and
+	 *  meaning, so a store shared with it reads the same. While the language
+	 *  is Auto, a model with an allowlist (`Feature::LanguageAllowlist`) is
+	 *  limited to them — a union, so a switch between two of them survives —
+	 *  and an explicit language (global or a Multi-STT slot's) still wins.
+	 *  Written through `change_spoken_languages_setting`, which normalizes it.
+	 */
+	spoken_languages?: string[],
+	/**
+	 *  Let the spoken languages restrict only the language a model detects,
+	 *  not the letters it writes (`AllowlistLetters::Any`), so a foreign name
+	 *  keeps its own spelling. Fork-only.
+	 */
+	spoken_languages_any_letters?: boolean,
 	overlay_position?: OverlayPosition_Deserialize,
 	/**
 	 *  When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
@@ -1005,6 +1027,22 @@ export type AppSettings_Serialize = {
 	selected_output_device: string | null,
 	translate_to_english: boolean,
 	selected_language: string,
+	/**
+	 *  The languages the user speaks, in preference order, as recognition
+	 *  codes (`zh`, not `zh-Hans`); empty = off. The upstream project's name and
+	 *  meaning, so a store shared with it reads the same. While the language
+	 *  is Auto, a model with an allowlist (`Feature::LanguageAllowlist`) is
+	 *  limited to them — a union, so a switch between two of them survives —
+	 *  and an explicit language (global or a Multi-STT slot's) still wins.
+	 *  Written through `change_spoken_languages_setting`, which normalizes it.
+	 */
+	spoken_languages: string[],
+	/**
+	 *  Let the spoken languages restrict only the language a model detects,
+	 *  not the letters it writes (`AllowlistLetters::Any`), so a foreign name
+	 *  keeps its own spelling. Fork-only.
+	 */
+	spoken_languages_any_letters: boolean,
 	overlay_position: OverlayPosition_Serialize,
 	/**
 	 *  When true the overlay is placed at the saved `recording_overlay_custom_x_px` /

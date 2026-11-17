@@ -193,6 +193,11 @@
     //   the test asserts on the write leaving the webview rather than on the
     //   value coming back.
     change_post_process_model_setting: null,
+    //   "Languages I speak" on the General page: the picker's add / remove
+    //   and the "Allow foreign words" toggle beside it. Asserted on the write
+    //   leaving the webview, like the combobox above.
+    change_spoken_languages_setting: null,
+    change_spoken_languages_any_letters_setting: null,
     cancel_operation: null,
     cancel_file_transcription: null,
     live_fft_reset: null,
