@@ -1915,7 +1915,9 @@
     "moreInformation": "מידע נוסף",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "איפוס {{setting}} לערך ברירת המחדל",
+    "playbackPosition": "מיקום ההשמעה"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} צריך הרשאות נגישות כדי להקליד את הטקסט המתומלל.",

@@ -72,6 +72,9 @@ export const OutputDeviceSelector = (
           onRefresh={refreshOutputDevices}
         />
         <ResetButton
+          ariaLabel={t("common.resetSetting", {
+            setting: t("settings.sound.outputDevice.title"),
+          })}
           onClick={handleReset}
           disabled={
             (props.disabled ?? false) ||

@@ -1915,7 +1915,9 @@
     "moreInformation": "Thêm thông tin",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Đặt lại {{setting}} về mặc định",
+    "playbackPosition": "Vị trí phát"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} cần quyền truy cập để gõ văn bản đã chuyển đổi.",

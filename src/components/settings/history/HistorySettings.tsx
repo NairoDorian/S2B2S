@@ -181,9 +181,17 @@ export const HistorySettings = () => {
       );
       if (result.status === "ok") {
         const { entries: newEntries, has_more } = result.data;
-        setEntries((prev) =>
-          isFirstPage ? newEntries : [...prev, ...newEntries],
-        );
+        // A live "added" event can land while a page is in flight, so the
+        // next page may repeat a row the list already shows (upstream
+        // 5732406, #2256): append only rows it does not have.
+        setEntries((prev) => {
+          if (isFirstPage) return newEntries;
+          const known = new Set(prev.map((entry) => entry.id));
+          return [
+            ...prev,
+            ...newEntries.filter((entry) => !known.has(entry.id)),
+          ];
+        });
         setHasMore(has_more);
       } else {
         console.error("Failed to load history entries:", result.error);
@@ -242,7 +250,10 @@ export const HistorySettings = () => {
       const unlisten = events.historyUpdatePayload.listen((event) => {
         const payload: HistoryUpdatePayload = event.payload;
         if (payload.action === "added") {
-          setEntries((prev) => [payload.entry, ...prev]);
+          setEntries((prev) => [
+            payload.entry,
+            ...prev.filter((entry) => entry.id !== payload.entry.id),
+          ]);
         } else if (payload.action === "updated") {
           setEntries((prev) =>
             prev.map((e) => (e.id === payload.entry.id ? payload.entry : e)),

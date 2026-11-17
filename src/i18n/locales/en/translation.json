@@ -1918,7 +1918,9 @@
     "moreInformation": "More information",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Reset {{setting}} to default",
+    "playbackPosition": "Playback position"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} needs accessibility permissions to type transcribed text.",

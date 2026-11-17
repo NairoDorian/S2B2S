@@ -1915,7 +1915,9 @@
     "moreInformation": "Подробнее",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Сбросить «{{setting}}» к значению по умолчанию",
+    "playbackPosition": "Позиция воспроизведения"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} необходимы разрешения на доступ для ввода расшифрованного текста.",

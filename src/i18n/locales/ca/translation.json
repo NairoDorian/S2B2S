@@ -1918,7 +1918,9 @@
     "moreInformation": "Més informació",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Restableix {{setting}} al valor predeterminat",
+    "playbackPosition": "Posició de reproducció"
   },
   "accessibility": {
     "permissionsDescription": "El {{app}} necessita permisos d'accessibilitat per escriure el text transcrit.",

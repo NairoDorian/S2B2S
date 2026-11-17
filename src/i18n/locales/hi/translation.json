@@ -1918,7 +1918,9 @@
     "moreInformation": "अधिक जानकारी",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "{{setting}}: डिफ़ॉल्ट मान पर रीसेट करें",
+    "playbackPosition": "प्लेबैक का स्थान"
   },
   "accessibility": {
     "permissionsDescription": "ट्रांसक्राइब किया गया टेक्स्ट टाइप करने के लिए, {{app}} को ऐक्सेसिबिलिटी अनुमतियों की ज़रूरत है.",

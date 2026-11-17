@@ -1915,7 +1915,9 @@
     "moreInformation": "مزيد من المعلومات",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "إعادة تعيين {{setting}} إلى القيمة الافتراضية",
+    "playbackPosition": "موضع التشغيل"
   },
   "accessibility": {
     "permissionsDescription": ".يحتاج {{app}} إلى أذونات إمكانية الوصول لكتابة النص المفرغ",

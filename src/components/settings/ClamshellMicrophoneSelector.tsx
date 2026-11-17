@@ -89,6 +89,9 @@ export const ClamshellMicrophoneSelector = (
             onRefresh={refreshAudioDevices}
           />
           <ResetButton
+            ariaLabel={t("common.resetSetting", {
+              setting: t("settings.debug.clamshellMicrophone.title"),
+            })}
             onClick={handleReset}
             disabled={isUpdating("clamshell_microphone") || isLoading()}
           />

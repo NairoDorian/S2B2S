@@ -1915,7 +1915,9 @@
     "moreInformation": "詳細情報",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "{{setting}}を既定値に戻す",
+    "playbackPosition": "再生位置"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} が文字起こしテキストを入力するには、アクセシビリティ権限が必要です。",

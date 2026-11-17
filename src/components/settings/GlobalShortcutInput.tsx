@@ -236,6 +236,12 @@ export const GlobalShortcutInput = (props: GlobalShortcutInputProps) => {
                 </button>
               )}
               <ResetButton
+                ariaLabel={t("common.resetSetting", {
+                  setting: t(
+                    `settings.general.shortcut.bindings.${props.shortcutId}.name`,
+                    b().name,
+                  ),
+                })}
                 onClick={() => resetBinding(props.shortcutId)}
                 disabled={isUpdating(`binding_${props.shortcutId}`)}
               />

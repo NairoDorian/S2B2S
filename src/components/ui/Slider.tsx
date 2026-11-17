@@ -1,6 +1,7 @@
 import { SettingContainer } from "./SettingContainer";
 import { ResetButton } from "./ResetButton";
 import type { JSX } from "@solidjs/web";
+import { useTranslation } from "@/i18n/useTranslation";
 
 interface SliderProps {
   value: number;
@@ -20,6 +21,7 @@ interface SliderProps {
 }
 
 export const Slider = (props: SliderProps): JSX.Element => {
+  const { t } = useTranslation();
   // Accessors, not destructured locals: a component body runs once, so a
   // destructured prop is a mount-time snapshot and the slider would never
   // follow a settings change (or a reset written by another surface).
@@ -64,6 +66,7 @@ export const Slider = (props: SliderProps): JSX.Element => {
           )}
           {props.onReset && (
             <ResetButton
+              ariaLabel={t("common.resetSetting", { setting: props.label })}
               onClick={props.onReset}
               disabled={disabled() || (props.isResetting ?? false)}
             />

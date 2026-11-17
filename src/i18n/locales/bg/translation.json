@@ -1915,7 +1915,9 @@
     "moreInformation": "Повече информация",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Възстановяване на стойността по подразбиране за {{setting}}",
+    "playbackPosition": "Позиция на възпроизвеждане"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} се нуждае от разрешения за достъпност, за да въвежда транскрибирания текст.",

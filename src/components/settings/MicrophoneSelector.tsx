@@ -68,6 +68,9 @@ export const MicrophoneSelector = (
           onRefresh={refreshAudioDevices}
         />
         <ResetButton
+          ariaLabel={t("common.resetSetting", {
+            setting: t("settings.sound.microphone.title"),
+          })}
           onClick={handleReset}
           disabled={isUpdating("selected_microphone") || isLoading()}
         />

@@ -1915,7 +1915,9 @@
     "moreInformation": "更多資訊",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "將{{setting}}重設為預設值",
+    "playbackPosition": "播放位置"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} 需要輔助使用權限才能輸入轉錄的文字",

@@ -1918,7 +1918,9 @@
     "moreInformation": "Flere oplysninger",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Nulstil {{setting}} til standardværdien",
+    "playbackPosition": "Afspilningsposition"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} har brug for tilgængelighedstilladelser for at skrive den transskriberede tekst.",

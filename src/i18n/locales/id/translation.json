@@ -1918,7 +1918,9 @@
     "moreInformation": "Informasi lebih lanjut",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Atur ulang {{setting}} ke nilai bawaan",
+    "playbackPosition": "Posisi pemutaran"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} memerlukan izin aksesibilitas untuk mengetik teks hasil transkripsi.",

@@ -1915,7 +1915,9 @@
     "moreInformation": "Daha fazla bilgi",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "{{setting}} ayarını varsayılan değere sıfırla",
+    "playbackPosition": "Oynatma konumu"
   },
   "accessibility": {
     "permissionsDescription": "{{app}}, transkribe edilen metni yazabilmek için erişilebilirlik izinlerine ihtiyaç duyar.",

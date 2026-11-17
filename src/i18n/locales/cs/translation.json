@@ -1915,7 +1915,9 @@
     "moreInformation": "Další informace",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Obnovit výchozí hodnotu: {{setting}}",
+    "playbackPosition": "Pozice přehrávání"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} potřebuje oprávnění usnadnění přístupu, aby mohlo psát přepsaný text.",

@@ -1915,7 +1915,9 @@
     "moreInformation": "Plus d’informations",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "Rétablir la valeur par défaut de {{setting}}",
+    "playbackPosition": "Position de lecture"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} a besoin des autorisations d'accessibilité pour taper le texte transcrit.",

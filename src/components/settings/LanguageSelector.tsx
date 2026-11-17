@@ -206,6 +206,9 @@ export const LanguageSelector = (props: LanguageSelectorProps): JSX.Element => {
           )}
         </div>
         <ResetButton
+          ariaLabel={t("common.resetSetting", {
+            setting: t("settings.general.language.title"),
+          })}
           onClick={handleReset}
           disabled={isUpdating("selected_language")}
         />

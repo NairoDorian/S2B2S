@@ -1918,7 +1918,9 @@
     "moreInformation": "Meer informatie",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "{{setting}} terugzetten naar de standaardwaarde",
+    "playbackPosition": "Afspeelpositie"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} heeft toegankelijkheidsmachtigingen nodig om getranscribeerde tekst te kunnen typen.",

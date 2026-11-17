@@ -62,6 +62,10 @@ const formatTime = (time: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 };
 
+const revokeBlobSource = (src: string | null) => {
+  if (src?.startsWith("blob:")) URL.revokeObjectURL(src);
+};
+
 export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
   const { t } = useTranslation();
   const group = useContext(AudioPlayerGroupContext);
@@ -79,6 +83,10 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
   let audioRef!: HTMLAudioElement;
   let animationRef: number | undefined = undefined;
   let dragTimeRef: number = 0;
+  // Set when the player is disposed: a recording whose load resolves after
+  // that has nothing to play in, and its blob URL would leak (upstream
+  // a1cb29d, #2309).
+  let disposed = false;
 
   // The tick loop runs outside any tracking scope (a rAF callback), so the
   // reads below are untracked on purpose — they only need the current value,
@@ -203,8 +211,8 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
   // source at disposal time, not at mount.
   onSettled(() => {
     return () => {
-      const url = loadedSrc();
-      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      disposed = true;
+      revokeBlobSource(loadedSrc());
     };
   });
 
@@ -223,7 +231,11 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
             newSrc = await props.onLoadRequest();
           } finally {
             // A rejected load must not leave the button locked on "loading".
-            setIsLoading(false);
+            if (!disposed) setIsLoading(false);
+          }
+          if (disposed) {
+            revokeBlobSource(newSrc);
+            return;
           }
           if (newSrc) setLoadedSrc(newSrc);
         } else if (loadedSrc()) {
@@ -242,8 +254,17 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
     if (!isDragging() && audioRef) audioRef.currentTime = newTime;
   };
 
-  const handleSliderMouseDown = () => setIsDragging(true);
-  const handleSliderTouchStart = () => setIsDragging(true);
+  // A drag starts from where playback is, not from the previous drag's end:
+  // a press that does not move would otherwise jump back to it on release
+  // (upstream 26d2003, #2247).
+  const handleSliderMouseDown = () => {
+    dragTimeRef = currentTime();
+    setIsDragging(true);
+  };
+  const handleSliderTouchStart = () => {
+    dragTimeRef = currentTime();
+    setIsDragging(true);
+  };
 
   const getProgressPercent = (): number => {
     if (duration() <= 0) return 0;
@@ -280,6 +301,7 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
         </span>
         <input
           type="range"
+          aria-label={t("common.playbackPosition")}
           min="0"
           max={duration() || 0}
           step="0.01"

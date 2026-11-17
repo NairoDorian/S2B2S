@@ -291,6 +291,12 @@ export const NativeKeysShortcutInput = (
                 </button>
               )}
               <ResetButton
+                ariaLabel={t("common.resetSetting", {
+                  setting: t(
+                    `settings.general.shortcut.bindings.${props.shortcutId}.name`,
+                    b().name,
+                  ),
+                })}
                 onClick={() => resetBinding(props.shortcutId)}
                 disabled={isUpdating(`binding_${props.shortcutId}`)}
               />

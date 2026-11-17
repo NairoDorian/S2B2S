@@ -191,6 +191,13 @@ export const KeyComboInput = (props: KeyComboInputProps): JSX.Element => {
       </button>
       {!editing() && (
         <ResetButton
+          ariaLabel={t("common.resetSetting", {
+            setting:
+              props.settingKey ===
+              "multi_stt_performance_mode_full_power_shortcut"
+                ? t("multiStt.performanceMode.fullPowerLabel")
+                : t("multiStt.performanceMode.normalModeLabel"),
+          })}
           onClick={handleReset}
           disabled={isUpdating(props.settingKey)}
         />

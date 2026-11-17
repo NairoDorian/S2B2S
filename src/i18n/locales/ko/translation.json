@@ -1915,7 +1915,9 @@
     "moreInformation": "자세한 정보",
     "selectOption": "Select an option...",
     "unknownSize": "Unknown size",
-    "charsPerSecond": "{{value}} chars/s"
+    "charsPerSecond": "{{value}} chars/s",
+    "resetSetting": "{{setting}} 기본값으로 초기화",
+    "playbackPosition": "재생 위치"
   },
   "accessibility": {
     "permissionsDescription": "{{app}}는 녹음된 텍스트를 입력하기 위해 접근성 권한이 필요합니다.",
