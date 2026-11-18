@@ -125,3 +125,56 @@ Every case produced the same transcript on both pins.
 - One CPU outlier (the first new-arm round of the Nemotron stream, up to
   2105 ms) did not repeat in the three later rounds (1334-1480 vs
   1325-1482).
+
+### CUDA and the Intel iGPU (same day)
+
+CUDA needs the fast lane, so both pins were also built with the `dev:fast`
+environment (`TRANSCRIBE_CUDA_ARCHITECTURES=auto`, the `FAST_BUILD_OPTIONS`
+CMake args, the `local-<hash>` cache root) as debug `cargo build`s, and run
+the same way: 4 alternating rounds on CUDA (2 on the slow Intel iGPU), one
+benchmark at a time, nothing building alongside. Transcripts identical in
+every case.
+
+| CUDA                      | fleurs-en 10.5 s, old → new    | dots 35 s, old → new           |
+| ------------------------- | ------------------------------ | ------------------------------ |
+| Nemotron 3.5 Q8_0, batch  | 196 → 95 ms, 2.06x             | 615 → 251 ms, 2.45x            |
+| Nemotron 3.5 Q8_0, stream | 389 → 227 ms, 1.71x            | 1442 → 886 ms, 1.63x           |
+| Parakeet Ultra Q8_0       | 112 → 79 ms, 1.42x             | 356 → 198 ms, 1.80x            |
+| Parakeet TDT v3 Q4_K_M    | 100 → 75 ms, 1.34x             | 322 → 193 ms, 1.67x            |
+| Parakeet Redux TQ1        | 108 → 80 ms, 1.35x             | 365 → 236 ms, 1.55x            |
+| Granite 4.1 2B Q4_K_M     | 260 → 258 ms, level            | 1097 → 1065 ms, 1.03x          |
+| Qwen3-ASR 1.7B Q5_K_M     | 296 → 298 ms, level            | 1157 → 1146 ms, level          |
+| R2T2 Q4_K_M, batch        | 264 → 262 ms, level            | 995 → 985 ms, level            |
+| R2T2 Q4_K_M, stream       | 1540 → 1572 ms, +2 % (overlap) | 6446 → 6520 ms, +1 % (overlap) |
+
+| Vulkan, Intel Iris Xe (iGPU)   | old → new                                        | new, `TRANSCRIBE_PARAKEET_DEVICE_DECODER=0` |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------------- |
+| Nemotron 3.5, batch            | 490 → 540 ms, **10 % slower** (decode 107 → 158) | 500 ms (decode 112)                         |
+| Nemotron 3.5, stream           | 1958 → 1995 ms, 2 % slower (decode 169 → 219)    | 1951 ms                                     |
+| Parakeet Redux                 | 263 → 286 ms, **9 % slower**                     | 264 ms                                      |
+| Parakeet TDT v3                | 317 → 331 ms, 4 % slower                         | 319 ms                                      |
+| Parakeet Ultra                 | 429 → 442 ms, 3 % slower                         | 430 ms                                      |
+| Granite 4.1 2B                 | 1853 → 1675 ms, 1.11x faster                     |                                             |
+| Qwen3-ASR, R2T2 batch / stream | level                                            |                                             |
+
+- **The one regression, with its cause:** the engine's new default runs the
+  Parakeet / Nemotron TDT and RNN-T decoder on the GPU for every Vulkan
+  device, the integrated Intel GPU included, where it is slower than the CPU
+  decoder it replaced. Turning only that off restores the old numbers. Fix
+  belongs in the engine: `session_device_decoder` in
+  `src/arch/parakeet/model.cpp` should leave a
+  `GGML_BACKEND_DEVICE_TYPE_IGPU` device on the host decoder by default
+  (ggml's Vulkan backend reports it from `is_integrated_gpu`), keeping
+  `TRANSCRIBE_PARAKEET_DEVICE_DECODER=1` to force it. The app does not set
+  the variable itself: it is process-wide, and a Multi-STT setup can run a
+  Parakeet model on CUDA and another on the iGPU at once.
+- **R2T2 streaming on Vulkan (RTX), measured 1-3 % slower above, has no
+  code-level cause.** With `TRANSCRIBE_PERF_DEBUG=1` on the 35 s clip both
+  pins do identical work (112 ticks, 674 steps, the same prefilled tokens);
+  every GPU compute stage is 1-3 % up together, the step pipeline on or off
+  makes no difference (tick time 9966 / 10034 vs 9725 ms), and the same old
+  exe drifted 8554 → 10980 ms within the session as the laptop GPU heated up.
+  An even spread across stages is the GPU's clock, not a changed path. CUDA
+  is level. Side finding for the engine: on Vulkan the step pipeline gains
+  nothing here (its event waits move into `tensor_get`, 106 → 302 ms, with
+  the step loop unchanged).

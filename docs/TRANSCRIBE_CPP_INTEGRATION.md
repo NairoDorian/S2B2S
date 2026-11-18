@@ -217,9 +217,16 @@ changed. What it means here:
   Measured through the app on the CPU lane's Vulkan and CPU devices, old pin
   against new, same app code: transcripts identical in all 18 cases, Vulkan
   1.24-1.51x faster for Nemotron and the three Parakeets, R2T2 batch 1.10x,
-  Granite and Qwen3 level, CPU level everywhere; one small regression, R2T2
-  streaming on Vulkan +3.6 % (about 2 ms per 320 ms tick), not caused by the
-  step pipeline. Details in [STT_BENCHMARKS.md](STT_BENCHMARKS.md). Switches
+  Granite and Qwen3 level, CPU level everywhere. On CUDA (fast-lane builds of
+  both pins): Nemotron 2.06-2.45x batch and 1.63-1.71x streaming, Parakeet
+  Ultra / v3 / Redux 1.34-1.80x, Granite / Qwen3 / R2T2 level. **One
+  regression:** on the Intel iGPU (Vulkan) the Parakeet-family models are
+  3-10 % slower because the engine now runs their decoder on every Vulkan GPU,
+  integrated ones included; `TRANSCRIBE_PARAKEET_DEVICE_DECODER=0` restores
+  the old numbers, and the fix (keep an IGPU on the host decoder by default)
+  is the engine's. R2T2 streaming on the RTX's Vulkan read 1-3 % slower but
+  showed no code-level cause (laptop GPU clock drift). Details in
+  [STT_BENCHMARKS.md](STT_BENCHMARKS.md). Switches
   to turn each engine change off are in the engine's `docs/fork/README.md`.
 - **Streaming fixes the app inherits.** Stream text never commits or shows
   half a UTF-8 character. The silence fast-path fixes (timeline mapping, the
