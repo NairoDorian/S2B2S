@@ -398,6 +398,13 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   dispatches to actions
 - `transcription_coordinator.rs` - Pure state machine that turns key presses
   / external inputs into start/stop/cancel decisions (toggle vs push-to-talk)
+- `transcription_hook.rs` - The optional user hook (upstream `033c627`, D4):
+  `<app data>/hooks/transcription` (on Windows `.exe` / `.cmd` / `.bat` /
+  `.ps1`, the last through a UTF-8 PowerShell wrapper; no console window)
+  gets the text about to be pasted on stdin and its stdout is pasted instead;
+  30 s, cancellable, the original text on any failure. Both actions run it
+  after post-processing / the merge and after the History row, never on text
+  already typed (direct streaming, `owns_typing`) or sent to Recall
 - `settings.rs` - Application settings management, defaults, schema
   migrations (includes Multi-STT settings)
 - `overlay.rs` - Recording overlay window (platform-specific), plus

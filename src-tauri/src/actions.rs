@@ -1137,7 +1137,33 @@ impl ShortcutAction for TranscribeAction {
                             }
                         }
 
-                        if processed.final_text.is_empty() || was_direct_stream_written {
+                        // The user's transcription hook only changes what gets
+                        // pasted: History above keeps the text as produced, and
+                        // text direct streaming already typed is not sent again.
+                        let final_text = if was_direct_stream_written
+                            || processed.final_text.is_empty()
+                        {
+                            processed.final_text
+                        } else {
+                            match complete_unless_cancelled(
+                                crate::transcription_hook::apply(&ah, processed.final_text),
+                                || rm.was_cancelled_since(cancel_generation),
+                            )
+                            .await
+                            {
+                                Some(text) => text,
+                                None => {
+                                    debug!(
+                                        "Transcription operation cancelled during the transcription hook"
+                                    );
+                                    utils::hide_recording_overlay(&ah);
+                                    set_tray_state(&ah, TrayIconState::Idle);
+                                    return;
+                                }
+                            }
+                        };
+
+                        if final_text.is_empty() || was_direct_stream_written {
                             debug!(
                                 "Direct streaming or empty output - skipping final paste action (direct_streamed: {})",
                                 was_direct_stream_written
@@ -1147,7 +1173,6 @@ impl ShortcutAction for TranscribeAction {
                         } else {
                             let ah_clone = ah.clone();
                             let paste_time = Instant::now();
-                            let final_text = processed.final_text;
                             let rm_for_paste = Arc::clone(&rm);
                             // Preview-only live stream: the polished text goes
                             // in through the default clipboard paste.
@@ -2857,6 +2882,26 @@ impl ShortcutAction for MultiSttAction {
             // is the one case the experimental mode changes about the paste
             // contract (see `Direct Streaming` in AGENTS.md), and it is why the
             // final text is *not* routed through `final_paste_method`.
+            // The transcription hook, as in the dictation path: only text
+            // about to be pasted, after the merge; History keeps the merge.
+            let merged = if typed_by_session || merged.is_empty() {
+                merged
+            } else {
+                match complete_unless_cancelled(
+                    crate::transcription_hook::apply(&ah, merged),
+                    || rm.was_cancelled_since(cancel_generation),
+                )
+                .await
+                {
+                    Some(text) => text,
+                    None => {
+                        debug!("Multi-STT: Cancelled during the transcription hook");
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                        return;
+                    }
+                }
+            };
             if typed_by_session {
                 debug!("Multi-STT streaming: the session typed the text; no paste");
                 utils::hide_recording_overlay(&ah);

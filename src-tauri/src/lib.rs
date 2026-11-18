@@ -38,6 +38,7 @@ mod signal_handle;
 mod system_languages;
 mod system_monitor;
 mod transcription_coordinator;
+mod transcription_hook;
 mod tray;
 mod tray_i18n;
 mod utils;

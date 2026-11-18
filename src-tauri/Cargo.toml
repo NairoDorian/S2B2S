@@ -101,7 +101,9 @@ hound = "3.5.1"
 # page. Same crate + features rodio already pulls in, so no new transitive deps.
 symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
 log = "^0.4.35"
-tokio = "^1.54.1"
+# process: the transcription hook (transcription_hook.rs); io-util and time
+# are what it uses beside it, named so it does not lean on another crate's.
+tokio = { version = "^1.54.1", features = ["process", "io-util", "time"] }
 # In-app llama.cpp server manager: release archives are unpacked with the
 # pure-Rust zip crate (no PowerShell / tar shell-outs).
 zip = { version = "^9.6.0", default-features = false, features = ["deflate"] }

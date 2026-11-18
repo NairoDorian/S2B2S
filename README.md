@@ -190,6 +190,53 @@ zer0 --start-hidden --no-tray
 > /Applications/ZER0.app/Contents/MacOS/zer0 --toggle-transcription
 > ```
 
+### Transcription Hook
+
+Advanced users can rewrite the text right before ZER0 pastes it. Put an
+executable in a `hooks` folder inside ZER0's app data directory (About → App
+Data Directory; the usual paths are listed under
+[Manual Model Installation](#manual-model-installation-for-proxy-users-or-network-restrictions)):
+
+- **Windows**: `hooks\transcription.exe`, `transcription.cmd`,
+  `transcription.bat` or `transcription.ps1` (the first one found is used).
+  A `.ps1` runs in Windows PowerShell with UTF-8 on both pipes and receives
+  the text as its pipeline input. No console window opens.
+- **macOS / Linux**: `hooks/transcription`, made executable (`chmod +x`).
+
+ZER0 writes the text to the hook's stdin, after any post-processing or
+Multi-STT merge, and pastes what it prints. One trailing line ending is
+removed, and empty output pastes nothing, so a hook can do its own pasting
+instead. If the hook fails, exits with an error or runs longer than 30 seconds,
+the original text is pasted; cancelling the recording stops the hook. History
+always keeps the text as transcribed, and the hook is skipped for text that is
+already typed into the app (direct streaming, the Multi-STT streaming mode) and
+for dictation into the Recall editor.
+
+The hook does not get your shell's `PATH`: on macOS, ZER0 started from the
+Dock or Finder only sees `/usr/bin:/bin:/usr/sbin:/sbin`. Use absolute paths
+for anything else, such as `/opt/homebrew/bin/opencc`.
+
+Windows example that turns a spoken "new line" into a line break:
+
+```powershell
+# %APPDATA%\com.nairodorian.zer0\hooks\transcription.ps1
+$text = -join $input
+$text -replace '\s*\bnew line\b\s*', "`n"
+```
+
+macOS example that prefixes `#` when Terminal is the frontmost app:
+
+```bash
+mkdir -p ~/Library/Application\ Support/com.nairodorian.zer0/hooks
+cd ~/Library/Application\ Support/com.nairodorian.zer0/hooks
+cat > transcription << 'EOF'
+#!/bin/bash
+app=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true')
+if [ "$app" = "Terminal" ]; then echo "# $(cat)"; else cat; fi
+EOF
+chmod +x transcription
+```
+
 ## Known Issues & Current Limitations
 
 This project is actively being developed and has some [known issues](https://github.com/NairoDorian/S2B2S/issues). We believe in transparency about the current state:

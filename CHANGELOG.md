@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Transcription hook (2026-11-18).** A script or program in the `hooks`
+  folder of the app data directory (`transcription.ps1`, `.cmd`, `.bat` or
+  `.exe` on Windows; an executable `transcription` on macOS and Linux) gets
+  the text about to be pasted and prints the text to paste instead, after
+  post-processing or the Multi-STT merge. History keeps the original; a hook
+  that fails or takes over 30 seconds leaves the text unchanged. See the
+  README. Ported from upstream, with Windows script support added.
+
 - **Anthropic Messages endpoints for post-processing (2026-11-18).** The
   Custom provider has an "API Format" choice, OpenAI-compatible (as before)
   or Anthropic Messages, for endpoints such as Claude on Microsoft Foundry
