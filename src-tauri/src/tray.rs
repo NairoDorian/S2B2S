@@ -64,6 +64,29 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    /// The Language submenu, when the selected model has languages to pick.
+    language: Option<LanguageMenu>,
+}
+
+/// What the Language submenu shows. Codes are spelled the way the settings
+/// window's picker saves `selected_language` ([`picker_language`]), so a pick
+/// here checks the same entry there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LanguageMenu {
+    /// The checked entry: `auto` or a code. What transcription will use, as
+    /// the settings picker shows it (`language_detection::status_for`).
+    active: String,
+    /// Auto works for this model and these languages; otherwise it is shown
+    /// greyed out, as in settings (the detector is missing, or Auto cannot
+    /// work with the spoken languages).
+    auto_enabled: bool,
+    /// The spoken languages the model hears, in the user's order, plus the
+    /// active language when it is not one of them. `(code, English name)`.
+    main: Vec<(String, String)>,
+    /// The model's other languages, by name, under "Other Languages": about
+    /// a hundred for Whisper, which would bury the two or three people switch
+    /// between.
+    others: Vec<(String, String)>,
 }
 
 /// Complete description of what the tray should look like.
@@ -239,6 +262,13 @@ pub fn update_tray_menu(app: &AppHandle) {
     sync_tray(app);
 }
 
+/// Rebuilds the menu even when nothing it shows changed: a click toggles a
+/// check item natively, so re-picking the checked language would otherwise
+/// leave it unchecked.
+pub fn rebuild_tray_menu(app: &AppHandle) {
+    sync_tray_with(app, |inner| inner.applied_menu = None);
+}
+
 /// Records the current desired tray state and schedules one apply on the main
 /// thread (or lets an already-pending apply pick it up). Never blocks on the
 /// main thread.
@@ -323,14 +353,37 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     let warning = crate::secure_input::tray_warning_active(app);
     let model_loaded = app.state::<Arc<TranscriptionManager>>().is_model_loaded();
 
-    let mut downloaded_models: Vec<(String, String)> = app
-        .state::<Arc<ModelManager>>()
+    let model_manager = app.state::<Arc<ModelManager>>();
+    let mut downloaded_models: Vec<(String, String)> = model_manager
         .get_available_models()
         .into_iter()
         .filter(|m| m.is_downloaded)
         .map(|m| (m.id, m.name))
         .collect();
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
+
+    // The busy menu has no Language submenu, so the detector lookup (a disk
+    // probe, the Hugging Face cache included) stays off the dictation path;
+    // going idle rebuilds the menu with a fresh one.
+    let language = if icon_state.is_busy() {
+        None
+    } else {
+        model_manager
+            .get_model_info(&settings.selected_model)
+            .filter(|model| model.supports_language_selection)
+            .and_then(|model| {
+                let status = crate::language_detection::status_for(
+                    &settings,
+                    Some(&model),
+                    model_manager.language_detector_path().is_some(),
+                );
+                language_menu(
+                    status,
+                    &settings.spoken_languages,
+                    &model.supported_languages,
+                )
+            })
+    };
 
     TrayDesired {
         icon_path: get_icon_path(theme, icon_state, warning),
@@ -342,8 +395,150 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             downloaded_models,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
+            language,
         },
     }
+}
+
+/// The code the settings window's language picker saves for `code`: the
+/// primary subtag, with Bokmål as Norwegian and Filipino as Tagalog
+/// (`recognitionLanguage` in `src/lib/constants/languages.ts`). `en-US` →
+/// `en`, `zh-Hans` → `zh`, `nb` → `no`; `jw` stays, as the picker spells it.
+fn picker_language(code: &str) -> String {
+    match code.split(['-', '_']).next().unwrap_or(code) {
+        "nb" => "no".to_string(),
+        "fil" => "tl".to_string(),
+        base => base.to_string(),
+    }
+}
+
+/// A language's English name for the tray, which has no `Intl.DisplayNames`
+/// to name it in the interface language as the settings window does. Falls
+/// back to the code.
+fn language_name(code: &str) -> String {
+    // Names people use where ISO 639's differ ("Modern Greek", "Pushto").
+    const OVERRIDES: &[(&str, &str)] = &[
+        ("el", "Greek"),
+        ("ht", "Haitian Creole"),
+        ("no", "Norwegian"),
+        ("pa", "Punjabi"),
+        ("ps", "Pashto"),
+        ("yue", "Cantonese"),
+    ];
+    let code = picker_language(code);
+    // The legacy codes Whisper still uses are not ISO 639-1 any more.
+    let iso = crate::managers::model::canonical_language_code(&code);
+    if let Some((_, name)) = OVERRIDES.iter().find(|(c, _)| *c == iso) {
+        return (*name).to_string();
+    }
+    match iso.len() {
+        2 => isolang::Language::from_639_1(iso),
+        3 => isolang::Language::from_639_3(iso),
+        _ => None,
+    }
+    .map(|language| language.to_name().to_string())
+    .unwrap_or(code)
+}
+
+/// The Language submenu for a model hearing `model_languages`, mirroring the
+/// settings picker: what is checked is what transcription will use. `None`
+/// when there is nothing to choose between.
+fn language_menu(
+    status: crate::language_detection::LanguageStatus,
+    spoken_languages: &[String],
+    model_languages: &[String],
+) -> Option<LanguageMenu> {
+    use crate::language_detection::LanguageStatus;
+
+    let (active, auto_enabled) = match status {
+        LanguageStatus::Auto => ("auto".to_string(), true),
+        LanguageStatus::Selected { language } => (picker_language(&language), true),
+        LanguageStatus::DetectorMissing { fallback: language }
+        | LanguageStatus::AutoUnavailable { language, .. } => (picker_language(&language), false),
+    };
+
+    let mut codes: Vec<String> = Vec::new();
+    for code in model_languages.iter().map(|c| picker_language(c)) {
+        if !codes.contains(&code) {
+            codes.push(code);
+        }
+    }
+
+    let mut main: Vec<String> = Vec::new();
+    let spoken = spoken_languages.iter().map(|c| picker_language(c));
+    for code in spoken.chain((active != "auto").then(|| active.clone())) {
+        if codes.contains(&code) && !main.contains(&code) {
+            main.push(code);
+        }
+    }
+
+    let named = |code: &String| (code.clone(), language_name(code));
+    let mut others: Vec<(String, String)> = codes
+        .iter()
+        .filter(|code| !main.contains(code))
+        .map(named)
+        .collect();
+    others.sort_by(|a, b| a.1.cmp(&b.1));
+
+    if usize::from(auto_enabled) + main.len() + others.len() < 2 {
+        return None;
+    }
+    Some(LanguageMenu {
+        active,
+        auto_enabled,
+        main: main.iter().map(named).collect(),
+        others,
+    })
+}
+
+fn language_submenu(
+    app: &AppHandle,
+    strings: &crate::tray_i18n::TrayStrings,
+    menu: &LanguageMenu,
+) -> tauri::Result<Submenu<tauri::DynRuntime>> {
+    let active_label = if menu.active == "auto" {
+        strings.auto_language.clone()
+    } else {
+        language_name(&menu.active)
+    };
+    let submenu = Submenu::with_id(
+        app,
+        "language_submenu",
+        format!("{} ({active_label})", strings.language),
+        true,
+    )?;
+    let item = |code: &str, label: &str, enabled: bool| {
+        CheckMenuItem::with_id(
+            app,
+            format!("language_select:{code}"),
+            label,
+            enabled,
+            menu.active == code,
+            None::<&str>,
+        )
+    };
+
+    submenu.append(&item("auto", &strings.auto_language, menu.auto_enabled)?)?;
+    if !menu.main.is_empty() {
+        submenu.append(&PredefinedMenuItem::separator(app)?)?;
+        for (code, name) in &menu.main {
+            submenu.append(&item(code, name, true)?)?;
+        }
+    }
+    if !menu.others.is_empty() {
+        let others = Submenu::with_id(
+            app,
+            "language_other_submenu",
+            &strings.other_languages,
+            true,
+        )?;
+        for (code, name) in &menu.others {
+            others.append(&item(code, name, true)?)?;
+        }
+        submenu.append(&PredefinedMenuItem::separator(app)?)?;
+        submenu.append(&others)?;
+    }
+    Ok(submenu)
 }
 
 fn post_apply(app: &AppHandle) {
@@ -571,7 +766,7 @@ fn build_menu(
             None::<&str>,
         )?;
 
-        Menu::with_items(
+        let menu = Menu::with_items(
             app,
             &[
                 &version_i,
@@ -586,7 +781,13 @@ fn build_menu(
                 &separator()?,
                 &quit_i,
             ],
-        )?
+        )?;
+        // Right below the model submenu (version, separator, copy, separator,
+        // model): the language belongs to the model it lists.
+        if let Some(language) = &inputs.language {
+            menu.insert(&language_submenu(app, &strings, language)?, 5)?;
+        }
+        menu
     };
 
     // When update checks are forced off (e.g. by the Nix package, which sets
@@ -688,8 +889,109 @@ pub fn copy_last_transcript(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{MenuInputs, TrayDesired, TrayIconState, last_transcript_text, load_tray_icon};
+    use super::{
+        MenuInputs, TrayDesired, TrayIconState, language_menu, language_name, last_transcript_text,
+        load_tray_icon,
+    };
+    use crate::language_detection::{LanguageStatus, policy::AutoUnavailableReason};
     use crate::managers::history::HistoryEntry;
+
+    fn codes(list: &str) -> Vec<String> {
+        list.split_whitespace().map(String::from).collect()
+    }
+
+    fn entries(list: &[(String, String)]) -> Vec<&str> {
+        list.iter().map(|(code, _)| code.as_str()).collect()
+    }
+
+    #[test]
+    fn language_menu_leads_with_spoken_languages() {
+        let menu = language_menu(
+            LanguageStatus::Auto,
+            &codes("fr en"),
+            &codes("en de fr es ja"),
+        )
+        .expect("menu");
+        assert_eq!(menu.active, "auto");
+        assert!(menu.auto_enabled);
+        assert_eq!(entries(&menu.main), ["fr", "en"]);
+        // The rest by English name: German, Japanese, Spanish.
+        assert_eq!(entries(&menu.others), ["de", "ja", "es"]);
+    }
+
+    #[test]
+    fn language_menu_shows_the_active_language_beside_the_spoken_ones() {
+        let menu = language_menu(
+            LanguageStatus::Selected {
+                language: "de".to_string(),
+            },
+            &codes("fr"),
+            &codes("en de fr"),
+        )
+        .expect("menu");
+        assert_eq!(menu.active, "de");
+        assert_eq!(entries(&menu.main), ["fr", "de"]);
+        assert_eq!(entries(&menu.others), ["en"]);
+    }
+
+    #[test]
+    fn language_menu_checks_the_fallback_and_greys_auto() {
+        let menu = language_menu(
+            LanguageStatus::DetectorMissing {
+                fallback: "en".to_string(),
+            },
+            &codes("en fr"),
+            &codes("en fr de"),
+        )
+        .expect("menu");
+        assert_eq!(menu.active, "en");
+        assert!(!menu.auto_enabled);
+        let menu = language_menu(
+            LanguageStatus::AutoUnavailable {
+                language: "fr".to_string(),
+                reason: AutoUnavailableReason::OneLanguage,
+            },
+            &codes("fr"),
+            &codes("en fr"),
+        )
+        .expect("menu");
+        assert_eq!(menu.active, "fr");
+        assert!(!menu.auto_enabled);
+    }
+
+    #[test]
+    fn language_menu_hidden_without_a_choice() {
+        let fixed = LanguageStatus::AutoUnavailable {
+            language: "en".to_string(),
+            reason: AutoUnavailableReason::OneLanguage,
+        };
+        assert_eq!(language_menu(fixed, &codes("en"), &codes("en")), None);
+    }
+
+    #[test]
+    fn language_menu_uses_the_pickers_spelling() {
+        // Model codes the picker spells differently collapse onto its entry,
+        // so a tray pick checks the same item in settings.
+        let menu = language_menu(
+            LanguageStatus::Auto,
+            &codes("no"),
+            &codes("en-US nb zh-Hans zh-Hant fil"),
+        )
+        .expect("menu");
+        assert_eq!(entries(&menu.main), ["no"]);
+        assert_eq!(entries(&menu.others), ["zh", "en", "tl"]);
+    }
+
+    #[test]
+    fn languages_are_named_however_spelled() {
+        assert_eq!(language_name("en-US"), "English");
+        assert_eq!(language_name("zh"), "Chinese");
+        assert_eq!(language_name("nb"), "Norwegian");
+        assert_eq!(language_name("yue"), "Cantonese");
+        assert_eq!(language_name("jw"), "Javanese");
+        assert_eq!(language_name("iw"), "Hebrew");
+        assert_eq!(language_name("xx"), "xx");
+    }
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
         HistoryEntry {
@@ -725,6 +1027,7 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            language: None,
         }
     }
 

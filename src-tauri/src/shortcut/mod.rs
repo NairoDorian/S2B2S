@@ -828,8 +828,17 @@ pub fn change_translate_to_english_setting(app: AppHandle, enabled: bool) -> Res
 #[specta::specta]
 pub fn change_selected_language_setting(app: AppHandle, language: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.selected_language = language;
+    settings.selected_language = language.clone();
     settings::write_settings(&app, settings);
+    tray::update_tray_menu(&app);
+    // The tray can change it too; keep the settings window in sync.
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "selected_language",
+            "value": language
+        }),
+    );
     Ok(())
 }
 
@@ -844,6 +853,7 @@ pub fn change_spoken_languages_setting(
     let mut settings = settings::get_settings(&app);
     settings.spoken_languages = settings::normalize_spoken_languages(languages);
     settings::write_settings(&app, settings.clone());
+    tray::update_tray_menu(&app);
     // Decision D8: fetch the detector as soon as a model would want it,
     // rather than at the first dictation that needs it.
     let model_manager = app.state::<std::sync::Arc<crate::managers::model::ModelManager>>();

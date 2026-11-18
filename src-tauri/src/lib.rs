@@ -463,6 +463,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     tray::update_tray_menu(&app_clone);
                 });
             }
+            id if id.starts_with("language_select:") => {
+                let language = id.strip_prefix("language_select:").unwrap().to_string();
+                if let Err(e) =
+                    shortcut::change_selected_language_setting(app.clone(), language.clone())
+                {
+                    log::error!("Failed to switch language via tray: {}", e);
+                    return;
+                }
+                log::info!("Language switched to {} via tray.", language);
+                tray::rebuild_tray_menu(app);
+            }
             _ => {}
         })
         .build(app_handle);
@@ -489,6 +500,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.listen("model-state-changed", move |_| {
         tray::update_tray_menu(&app_handle_for_listener);
     });
+    // A download or a delete can change what the Language submenu offers: the
+    // language detector arriving makes Auto usable.
+    for event in ["model-download-complete", "model-deleted"] {
+        let app_handle_for_listener = app_handle.clone();
+        app_handle.listen(event, move |_| {
+            tray::update_tray_menu(&app_handle_for_listener);
+        });
+    }
 
     // Apply the autostart preference (SMAppService login item on macOS 13+,
     // tauri-plugin-autostart elsewhere)

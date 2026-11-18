@@ -487,7 +487,17 @@ download_language_detector`) when a plan wants it or when the list is
   receipt-sequenced "reliable" paste on Windows/macOS), key-combo simulation
 - `input.rs` - Keyboard simulation (`simulate_shortcut`) used by performance mode
 - `secure_input.rs` - macOS Secure Input detection and fallback bindings
-- `tray.rs`, `tray_i18n.rs` - System tray and its generated translations
+- `tray.rs`, `tray_i18n.rs` - System tray and its generated translations.
+  The idle menu carries a Language submenu for the selected model (upstream
+  `3d94031`): Auto (greyed when `language_detection::status_for` says it
+  cannot work, e.g. the detector is not downloaded), the spoken languages the
+  model hears plus the active one, and the model's other languages by English
+  name (`isolang`) under "Other Languages". Codes are spelled as the
+  settings picker saves them (`picker_language`: primary subtag, `nb` →
+  `no`, `fil` → `tl`), the check mark is what transcription will use, and
+  a pick goes through `change_selected_language_setting`, which emits
+  `settings-changed` so the settings window follows. The busy menu has no
+  submenu, so the detector lookup (a disk probe) stays off the dictation path
 - `autostart.rs`, `portable.rs`, `apple_intelligence.rs`, `audio_feedback.rs`,
   `memory.rs`, `helpers/clamshell.rs` - Platform helpers
 - `catalog/` - Bundled model catalog (`catalog.json`)

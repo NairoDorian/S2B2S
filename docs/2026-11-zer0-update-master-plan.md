@@ -499,10 +499,10 @@ Cost: removes two crates; no new thread or poll.
 with one shared detector run and 6.5 the detector (pinned Q8_0, download
 only when needed, `get_language_status` line with a download button)
 (`6efcf51b`); 6.7 the Chinese script setting with schema 11 (`15a39e2e`). The detector was checked on real speech: all seven FLEURS
-clips identified, ~68 ms per 5 s. Left: History language/source columns
-(6.5), the tray submenu and the onboarding suggestion (6.6), the Multi-STT
-page showing each slot's plan (6.6), and
-a real-microphone check of the allowlist (6.8).
+clips identified, ~68 ms per 5 s. 6.6's tray Language submenu landed on
+2026-11-18. Left: History language/source columns (6.5), the onboarding
+suggestion (6.6), the Multi-STT page showing each slot's plan (6.6), and a
+real-microphone check of the allowlist (6.8).
 
 Three mechanisms, one setting:
 

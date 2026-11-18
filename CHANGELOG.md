@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Language submenu in the tray (2026-11-18).** Switching the transcription
+  language no longer needs the settings window: the tray lists Auto, the
+  languages you speak (plus the active one) and the model's other languages
+  under "Other Languages". The check mark is what the next transcription
+  will use: when Auto cannot work (the language detector is not downloaded
+  yet, or only one of your languages fits the model) Auto is greyed out and
+  the language it falls back to is checked. The settings window follows a
+  pick made in the tray. Ported from upstream.
+
 - **Chinese script as its own setting (2026-11-17).** Mandarin and Cantonese
   output can be written in Simplified characters or in Traditional characters
   with Taiwan's or Hong Kong's forms, on the live preview, the typed text and
@@ -820,8 +829,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cohere / GigaAM attention kept on the GPU, pipelined Granite / Qwen3 / R2T2
   token steps that no longer stall the other Multi-STT models, and streams
   that never show half a UTF-8 character; transcripts are unchanged
-  (measured through the app: Vulkan 1.24-1.51x faster for Nemotron and the
-  Parakeets, CPU level, R2T2 streaming on Vulkan 3.6 % slower). The
+  (measured through the app: on CUDA Nemotron 1.6-2.5x and the Parakeets
+  1.3-1.8x faster, on the NVIDIA card's Vulkan 1.24-1.51x, Granite, Qwen3 and
+  R2T2 level, CPU level; on an Intel integrated GPU the Parakeet models are
+  3-10 % slower, an engine default to fix there). The
   engine's third-party notices (Earshot, RNNoise, Silero, cJSON, audio.cpp)
   now ship with the app.
 
