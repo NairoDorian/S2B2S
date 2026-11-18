@@ -856,6 +856,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pasting no longer freezes the app's window (2026-11-18).** The final paste
+  of a dictation or a Multi-STT result ran on the window's main thread and
+  held it through the paste delays; it now runs on its own thread, which also
+  lets a paste land in one of the app's own text fields. Two pastes finishing
+  together no longer save each other's text as your clipboard, and a paste
+  finishing after you started the next recording no longer hides that
+  recording's overlay. Ported from upstream.
+
 - **An LLM that never answers no longer holds the dictation (2026-11-18).**
   Post-processing and the Multi-STT merge now give up after 60 seconds and
   keep the transcription; before, a provider that accepted the request and

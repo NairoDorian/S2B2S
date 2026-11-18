@@ -378,8 +378,9 @@ fn run_direct_stream_worker(
     // Auto submit
     if settings.auto_submit {
         thread::sleep(Duration::from_millis(50));
-        if let Err(e) = crate::clipboard::with_enigo(&app_handle, |enigo| {
-            crate::clipboard::send_return_key(enigo, settings.auto_submit_key)
+        let auto_submit_key = settings.auto_submit_key;
+        if let Err(e) = crate::clipboard::with_enigo(&app_handle, move |enigo| {
+            crate::clipboard::send_return_key(enigo, auto_submit_key)
         }) {
             warn!("DirectStreamWriter: failed to auto-submit: {}", e);
         }

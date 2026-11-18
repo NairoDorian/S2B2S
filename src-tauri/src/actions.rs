@@ -31,6 +31,31 @@ use tauri::{AppHandle, Emitter};
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
+/// Bumped each time a recording session takes over the tray and overlay
+/// (upstream `5a9451e`). A paste still finishing for an earlier session
+/// compares against it, so its cleanup does not hide the new session's
+/// overlay or reset its tray icon.
+static RECORDING_SESSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Marks the start of a recording session that owns the tray and overlay.
+pub(crate) fn begin_recording_session() {
+    RECORDING_SESSION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The current recording session, taken before a paste thread starts.
+fn current_recording_session() -> u64 {
+    RECORDING_SESSION.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Hides the overlay and resets the tray after a paste, unless a newer
+/// recording session took them over while it ran.
+fn finish_paste_ui(ah: &AppHandle, session: u64) {
+    if current_recording_session() == session {
+        utils::hide_recording_overlay(ah);
+        set_tray_state(ah, TrayIconState::Idle);
+    }
+}
+
 #[derive(Clone, serde::Serialize)]
 struct RecordingErrorEvent {
     error_type: String,
@@ -610,6 +635,7 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
+        begin_recording_session();
         set_tray_state(app, TrayIconState::Recording);
         let tray_elapsed = tray_started.elapsed();
 
@@ -1126,36 +1152,43 @@ impl ShortcutAction for TranscribeAction {
                             // Preview-only live stream: the polished text goes
                             // in through the default clipboard paste.
                             let paste_override = final_paste_method(preview_only);
-                            ah.run_on_main_thread(move || {
-                                if rm_for_paste.was_cancelled_since(cancel_generation) {
-                                    debug!("Transcription operation cancelled before paste");
-                                    utils::hide_recording_overlay(&ah_clone);
-                                    set_tray_state(&ah_clone, TrayIconState::Idle);
-                                    return;
-                                }
-
-                                match utils::paste_with_method(
-                                    final_text,
-                                    ah_clone.clone(),
-                                    paste_override,
-                                ) {
-                                    Ok(()) => debug!(
-                                        "Text pasted successfully in {:?}",
-                                        paste_time.elapsed()
-                                    ),
-                                    Err(e) => {
-                                        error!("Failed to paste transcription: {}", e);
-                                        let _ = ah_clone.emit("paste-error", ());
+                            // Taken before the paste thread exists, so before the
+                            // next session can start.
+                            let session = current_recording_session();
+                            // The paste runs on its own thread, not the main one
+                            // (upstream `5a9451e`): it sleeps between steps, and a
+                            // paste aimed at one of this app's own windows needs
+                            // the main thread free to land.
+                            std::thread::Builder::new()
+                                .name("paste".into())
+                                .spawn(move || {
+                                    if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                        debug!("Transcription operation cancelled before paste");
+                                        finish_paste_ui(&ah_clone, session);
+                                        return;
                                     }
-                                }
-                                utils::hide_recording_overlay(&ah_clone);
-                                set_tray_state(&ah_clone, TrayIconState::Idle);
-                            })
-                            .unwrap_or_else(|e| {
-                                error!("Failed to run paste on main thread: {:?}", e);
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                            });
+                                    match utils::paste_with_method(
+                                        final_text,
+                                        ah_clone.clone(),
+                                        paste_override,
+                                    ) {
+                                        Ok(()) => debug!(
+                                            "Text pasted successfully in {:?}",
+                                            paste_time.elapsed()
+                                        ),
+                                        Err(e) => {
+                                            error!("Failed to paste transcription: {}", e);
+                                            let _ = ah_clone.emit("paste-error", ());
+                                        }
+                                    }
+                                    finish_paste_ui(&ah_clone, session);
+                                })
+                                .map(|_| ())
+                                .unwrap_or_else(|e| {
+                                    error!("Failed to start the paste thread: {:?}", e);
+                                    utils::hide_recording_overlay(&ah);
+                                    set_tray_state(&ah, TrayIconState::Idle);
+                                });
                         }
                     }
                     Err(err) => {
@@ -1819,6 +1852,7 @@ impl ShortcutAction for MultiSttAction {
         }
 
         let binding_id = binding_id.to_string();
+        begin_recording_session();
         set_tray_state(app, TrayIconState::Recording);
         let settings = get_settings(app);
         let is_always_on = settings.always_on_microphone;
@@ -2861,38 +2895,42 @@ impl ShortcutAction for MultiSttAction {
                 // the result goes in through the default clipboard paste.
                 let paste_override =
                     final_paste_method(live_stream_is_preview_only(&normal_settings, true));
-                // If the main-thread dispatch itself fails the closure never
-                // runs, so keep what the fallback needs to restore power.
+                // If the paste thread cannot start the closure never runs, so
+                // keep what the fallback needs to restore power.
                 let fallback_normal_shortcut = need_normal_mode.then(|| normal_shortcut.clone());
-                ah.run_on_main_thread(move || {
-                    if rm_for_paste.was_cancelled_since(cancel_generation) {
-                        debug!("Multi-STT: Cancelled before paste");
-                        utils::hide_recording_overlay(&ah_clone);
-                        set_tray_state(&ah_clone, TrayIconState::Idle);
-                        return;
-                    }
-                    match utils::paste_with_method(final_text, ah_clone.clone(), paste_override) {
-                        Ok(()) => debug!("Multi-STT: Text pasted successfully"),
-                        Err(e) => {
-                            error!("Multi-STT: Failed to paste transcription: {}", e);
-                            let _ = ah_clone.emit("paste-error", ());
+                let session = current_recording_session();
+                // On its own thread, like the dictation's paste (see there).
+                std::thread::Builder::new()
+                    .name("paste".into())
+                    .spawn(move || {
+                        if rm_for_paste.was_cancelled_since(cancel_generation) {
+                            debug!("Multi-STT: Cancelled before paste");
+                            finish_paste_ui(&ah_clone, session);
+                            return;
                         }
-                    }
-                    // LLM didn't respond — restore normal power after paste.
-                    if need_normal_mode {
-                        restore_normal_power(&ah_clone, normal_shortcut.clone());
-                    }
-                    utils::hide_recording_overlay(&ah_clone);
-                    set_tray_state(&ah_clone, TrayIconState::Idle);
-                })
-                .unwrap_or_else(|e| {
-                    error!("Multi-STT: Failed to run paste on main thread: {:?}", e);
-                    if let Some(shortcut) = fallback_normal_shortcut {
-                        restore_normal_power(&ah, shortcut);
-                    }
-                    utils::hide_recording_overlay(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
-                });
+                        match utils::paste_with_method(final_text, ah_clone.clone(), paste_override)
+                        {
+                            Ok(()) => debug!("Multi-STT: Text pasted successfully"),
+                            Err(e) => {
+                                error!("Multi-STT: Failed to paste transcription: {}", e);
+                                let _ = ah_clone.emit("paste-error", ());
+                            }
+                        }
+                        // LLM didn't respond — restore normal power after paste.
+                        if need_normal_mode {
+                            restore_normal_power(&ah_clone, normal_shortcut.clone());
+                        }
+                        finish_paste_ui(&ah_clone, session);
+                    })
+                    .map(|_| ())
+                    .unwrap_or_else(|e| {
+                        error!("Multi-STT: Failed to start the paste thread: {:?}", e);
+                        if let Some(shortcut) = fallback_normal_shortcut {
+                            restore_normal_power(&ah, shortcut);
+                        }
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                    });
             }
         });
 

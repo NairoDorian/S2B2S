@@ -522,7 +522,14 @@ download_language_detector`) when a plan wants it or when the list is
   `actions::LLM_STEP_TIMEOUT` (60 s, decision D5)
   - Includes `erase_llama_server_conversations()` for llama.cpp conversation cleanup (only called for the `custom` provider)
 - `clipboard.rs`, `paste_tx/` - Paste strategies (clipboard, direct typing,
-  receipt-sequenced "reliable" paste on Windows/macOS), key-combo simulation
+  receipt-sequenced "reliable" paste on Windows/macOS), key-combo simulation.
+  The two actions paste on a `paste` thread, never the main one (it sleeps
+  between steps, and a paste into this app's own windows needs the main
+  thread free); `PASTE_LOCK` serializes pastes, and `RECORDING_SESSION`
+  (`actions::begin_recording_session`) keeps a late paste from hiding a newer
+  session's overlay or resetting its tray. `with_enigo` hops to the main
+  thread on macOS only (TIS); elsewhere it runs on the caller, so the
+  direct-streaming typewriter's keystrokes never queue behind the UI
 - `input.rs` - Keyboard simulation (`simulate_shortcut`) used by performance mode
 - `secure_input.rs` - macOS Secure Input detection and fallback bindings
 - `tray.rs`, `tray_i18n.rs` - System tray and its generated translations.

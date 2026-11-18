@@ -100,6 +100,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
             crate::actions::spawn_recording_ready_cue(app, &rm, readiness);
 
             crate::shortcut::register_cancel_shortcut(app);
+            crate::actions::begin_recording_session();
             set_tray_state(app, TrayIconState::Recording);
 
             info!("Overlay preview started (streaming: {model_supports_streaming})");

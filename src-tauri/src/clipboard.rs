@@ -23,7 +23,44 @@ use crate::utils::{is_gnome_wayland, is_kde_wayland, is_wayland};
 ///
 /// An uninitialized state is an error rather than a silent no-op, so a caller
 /// cannot mistake "no input happened" for "input succeeded".
-pub(crate) fn with_enigo<T>(
+/// Runs `f` with the shared Enigo and returns its result.
+///
+/// macOS: the call hops to the main thread and waits, because the TIS
+/// keyboard-layout APIs Enigo uses must run there, and the paste itself now
+/// runs on a worker (upstream `5a9451e`). Tauri runs the task inline when it
+/// is already on the main thread, so a nested call cannot deadlock. This also
+/// covers the direct-streaming typewriter, which types from its own thread.
+#[cfg(target_os = "macos")]
+pub(crate) fn with_enigo<T: Send + 'static>(
+    app_handle: &AppHandle,
+    f: impl FnOnce(&mut Enigo) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let app = app_handle.clone();
+    app_handle
+        .run_on_main_thread(move || {
+            let _ = tx.send(run_with_enigo(&app, f));
+        })
+        .map_err(|e| format!("Failed to run input on the main thread: {e}"))?;
+    // A dropped task (the event loop shutting down) closes the channel.
+    rx.recv()
+        .map_err(|_| "Main thread dropped the input request".to_string())?
+}
+
+/// Runs `f` with the shared Enigo and returns its result, on the calling
+/// thread: Windows and Linux input injection has no main-thread rule, and a
+/// hop per call would queue the direct-streaming typewriter's keystrokes
+/// behind the UI. The bounds match the macOS version, so callers are the same
+/// everywhere.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn with_enigo<T: Send + 'static>(
+    app_handle: &AppHandle,
+    f: impl FnOnce(&mut Enigo) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    run_with_enigo(app_handle, f)
+}
+
+fn run_with_enigo<T>(
     app_handle: &AppHandle,
     f: impl FnOnce(&mut Enigo) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -37,12 +74,19 @@ pub(crate) fn with_enigo<T>(
     f(&mut enigo)
 }
 
+/// Serializes pastes. Each one snapshots and restores the clipboard, so two
+/// overlapping pastes (a dictation and a Multi-STT result finishing together)
+/// would save each other's transcript as "the user's clipboard". Taken only
+/// by `paste_with_method`, which never runs on the main thread.
+static PASTE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Best-effort simulation of a keyboard shortcut (e.g. "ctrl+space") using
 /// the managed enigo instance. Logs a warning on failure rather than
 /// propagating — performance-mode toggling must never break transcription.
 pub fn simulate_key_combination(app_handle: &AppHandle, shortcut: &str) {
-    if let Err(e) = with_enigo(app_handle, |enigo| {
-        input::simulate_shortcut(enigo, shortcut)
+    let combo = shortcut.to_string();
+    if let Err(e) = with_enigo(app_handle, move |enigo| {
+        input::simulate_shortcut(enigo, &combo)
     }) {
         warn!("Failed to simulate shortcut '{}': {}", shortcut, e);
     }
@@ -107,7 +151,8 @@ fn paste_via_clipboard(
 
         // Fall back to enigo if no native tool handled it
         if !key_combo_sent {
-            with_enigo(app_handle, |enigo| match paste_method {
+            let paste_method = *paste_method;
+            with_enigo(app_handle, move |enigo| match paste_method {
                 // The legacy path cannot detect a mistimed chord, so it keeps the
                 // conservative 100ms modifier hold.
                 PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo, 100),
@@ -743,7 +788,10 @@ pub(crate) fn paste_direct(
         info!("Falling back to enigo for direct text input");
     }
 
-    with_enigo(app_handle, |enigo| input::paste_text_direct(enigo, text))
+    let text = text.to_string();
+    with_enigo(app_handle, move |enigo| {
+        input::paste_text_direct(enigo, &text)
+    })
 }
 
 /// Sends backspace keystrokes directly.
@@ -755,7 +803,7 @@ pub(crate) fn backspace_direct(
     if count == 0 {
         return Ok(());
     }
-    with_enigo(app_handle, |enigo| {
+    with_enigo(app_handle, move |enigo| {
         for _ in 0..count {
             enigo
                 .key(Key::Backspace, Direction::Click)
@@ -821,6 +869,9 @@ pub fn paste_with_method(
     app_handle: AppHandle,
     method_override: Option<PasteMethod>,
 ) -> Result<(), String> {
+    let _paste = PASTE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let settings = get_settings(&app_handle);
     let paste_method = method_override.unwrap_or(settings.paste_method);
     let paste_delay_ms = settings.paste_delay_ms;
@@ -866,15 +917,23 @@ pub fn paste_with_method(
             // the legacy path untouched.
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             if settings.reliable_paste {
-                let reliable_result = with_enigo(&app_handle, |enigo| {
+                // Entirely inside one with_enigo call, so on macOS the whole
+                // receipt-sequenced paste runs on the main thread, as it requires.
+                let (owned_text, app) = (text.clone(), app_handle.clone());
+                let (auto_submit, auto_submit_key, clipboard_handling) = (
+                    settings.auto_submit,
+                    settings.auto_submit_key,
+                    settings.clipboard_handling,
+                );
+                let reliable_result = with_enigo(&app_handle, move |enigo| {
                     crate::paste_tx::try_reliable_paste(
-                        &text,
-                        &app_handle,
+                        &owned_text,
+                        &app,
                         &paste_method,
                         enigo,
-                        settings.auto_submit,
-                        settings.auto_submit_key,
-                        settings.clipboard_handling,
+                        auto_submit,
+                        auto_submit_key,
+                        clipboard_handling,
                     )
                 });
                 match reliable_result {
@@ -904,8 +963,9 @@ pub fn paste_with_method(
 
     if should_send_auto_submit(settings.auto_submit, paste_method) {
         std::thread::sleep(Duration::from_millis(50));
-        if let Err(error) = with_enigo(&app_handle, |enigo| {
-            send_return_key(enigo, settings.auto_submit_key)
+        let auto_submit_key = settings.auto_submit_key;
+        if let Err(error) = with_enigo(&app_handle, move |enigo| {
+            send_return_key(enigo, auto_submit_key)
         }) {
             log::warn!("Paste succeeded, but auto-submit failed: {error}");
         }
