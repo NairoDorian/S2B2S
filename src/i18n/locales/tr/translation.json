@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "Metin yapıştırılamadı",
     "pasteFailed": "Metin etkin uygulamaya yapıştırılamadı.",
     "transcriptionFailedTitle": "Transkripsiyon başarısız oldu",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Kayıt başlatılamadı",
+    "modelLoadFailedTitle": "Model yüklenemedi",
+    "postProcessFailedTitle": "Son işlem olmadan yapıştırıldı",
+    "postProcessFailed": "Son işlem tamamlanmadı, bu yüzden metin olduğu gibi yapıştırıldı.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "Dosya transkripsiyonu başarısız oldu",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} hata",
+    "errorMany": "{{n}} hata",
+    "warningOne": "{{n}} uyarı",
+    "warningMany": "{{n}} uyarı",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Uygulama Dili",

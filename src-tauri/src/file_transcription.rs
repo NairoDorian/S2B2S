@@ -466,6 +466,13 @@ impl FileTranscriptionManager {
             Err(e) => (Vec::new(), Some(e)),
         };
 
+        // (file name, error) of each file that failed, for the notice.
+        let mut failures: Vec<(String, String)> = Vec::new();
+        let file_name = |path: &std::path::Path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string())
+        };
         for (index, path) in paths.iter().enumerate() {
             let index = index as u32;
             let path_str = path.to_string_lossy().to_string();
@@ -494,6 +501,7 @@ impl FileTranscriptionManager {
                 continue;
             }
             if let Some(err) = &preload_error {
+                failures.push((file_name(path), err.clone()));
                 emit(FileTranscriptionEvent {
                     error: Some(err.clone()),
                     ..base(FileJobStatus::Failed)
@@ -536,6 +544,7 @@ impl FileTranscriptionManager {
                 }
                 Err(JobError::Failed(err)) => {
                     error!("File transcription failed for {}: {err}", path.display());
+                    failures.push((file_name(path), err.clone()));
                     emit(FileTranscriptionEvent {
                         error: Some(err),
                         elapsed_ms: Some(started.elapsed().as_secs_f64() * 1000.0),
@@ -572,6 +581,29 @@ impl FileTranscriptionManager {
             batch_finished: true,
         });
         info!("File transcription job {job_id} finished");
+        // The job's outcome, as a notice: a file job runs while the user does
+        // something else. A job with no failure clears the last one's.
+        match failures.first() {
+            Some((name, err)) => {
+                let detail = if failures.len() == 1 {
+                    format!("{name}: {err}")
+                } else {
+                    format!("{} of {total} files, first {name}: {err}", failures.len())
+                };
+                crate::notices::raise(
+                    &app,
+                    crate::notices::Notice::new(
+                        crate::notices::NoticeCode::FileTranscriptionFailed,
+                        crate::notices::NoticeSource::File,
+                    )
+                    .with_detail(detail),
+                );
+            }
+            None if !self.cancelled() => {
+                crate::notices::clear(&app, crate::notices::NoticeSource::File)
+            }
+            None => {}
+        }
     }
 
     async fn preload_models(

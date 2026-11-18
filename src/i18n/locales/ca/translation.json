@@ -2000,7 +2000,30 @@
     "pasteFailedTitle": "No s'ha pogut enganxar el text",
     "pasteFailed": "No s'ha pogut enganxar el text a l'aplicació activa.",
     "transcriptionFailedTitle": "La transcripció ha fallat",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "No s'ha pogut iniciar l'enregistrament",
+    "modelLoadFailedTitle": "No s'ha pogut carregar el model",
+    "postProcessFailedTitle": "Enganxat sense postprocessament",
+    "postProcessFailed": "El postprocessament no ha acabat, així que la transcripció s'ha enganxat tal qual.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "La transcripció del fitxer ha fallat",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} error",
+    "errorMany": "{{n}} errors",
+    "warningOne": "{{n}} avís",
+    "warningMany": "{{n}} avisos",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Llengua de l'aplicació",

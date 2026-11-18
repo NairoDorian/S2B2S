@@ -505,7 +505,8 @@ fn split_versioned_so(name: &str) -> Option<(&str, usize)> {
 /// Generate tray menu translations from frontend locale files.
 ///
 /// Source of truth: src/i18n/locales/*/translation.json
-/// The English "tray" section defines the struct fields.
+/// The English "tray" section defines the struct fields, plus every
+/// `errors.*Title`: the notice titles the tray names (`notices.rs`).
 fn generate_tray_translations() {
     use std::collections::BTreeMap;
     use std::fs;
@@ -533,7 +534,16 @@ fn generate_tray_translations() {
         let content = fs::read_to_string(&json_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-        if let Some(tray) = parsed.get("tray").cloned() {
+        if let Some(mut tray) = parsed.get("tray").cloned() {
+            let titles = parsed
+                .get("errors")
+                .and_then(|errors| errors.as_object())
+                .into_iter()
+                .flatten()
+                .filter(|(key, value)| key.ends_with("Title") && value.is_string());
+            for (key, title) in titles {
+                tray[key] = title.clone();
+            }
             translations.insert(lang, tray);
         }
     }

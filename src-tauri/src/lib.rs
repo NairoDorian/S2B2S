@@ -25,6 +25,7 @@ mod managers;
 mod memory;
 mod multi_streaming;
 mod multi_stt_stream;
+mod notices;
 mod overlay;
 mod overlay_preview;
 mod paste_tx;
@@ -199,6 +200,8 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 
 fn initialize_core_logic(app_handle: &AppHandle) {
     let startup_started = std::time::Instant::now();
+    // First, so a failure during startup (a model load) already has a store.
+    app_handle.manage(notices::NoticeStore::default());
     // Already done right after `build()` (see `run`); repeated here as the
     // idempotent fallback, a no-op whenever the new directories exist.
     portable::migrate_legacy_app_data(app_handle);
@@ -415,6 +418,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "secure_input_warning" => {
                 // Full explanation lives in the settings-window banner
                 show_main_window(app);
+            }
+            "notice" => {
+                // The footer's notice panel has the details.
+                show_main_window(app);
+                let _ = app.emit("open-notices", ());
             }
             "check_updates" => {
                 let settings = settings::get_settings(app);
@@ -1076,6 +1084,8 @@ pub fn run(cli_args: CliArgs) {
             overlay::stop_recording_overlay_drag,
             overlay::remember_recording_overlay_window_position,
             overlay::reset_recording_overlay_manual_position,
+            notices::get_active_notices,
+            notices::dismiss_notice,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -1093,6 +1103,7 @@ pub fn run(cli_args: CliArgs) {
             live_fft::LiveFftStateEvent,
             multi_stt_stream::MultiSttStreamChunkFailedEvent,
             recall::insertion::RecallInsertTextEvent,
+            notices::NoticesChanged,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

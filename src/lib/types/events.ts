@@ -53,15 +53,3 @@ export interface BenchmarkProgressEvent {
   total_runs?: number | null;
   error?: string | null;
 }
-
-/**
- * A recording failed before it produced text (`recording-error`).
- *
- * `detail` is `| null` rather than optional, for the same reason as
- * `ModelStateEvent`: the key is always serialized and is `null` when the
- * emitter had no detail to add.
- */
-export interface RecordingErrorEvent {
-  error_type: string;
-  detail?: string | null;
-}

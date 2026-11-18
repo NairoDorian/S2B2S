@@ -4,6 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import ModelSelector from "../model-selector";
 import UpdateChecker from "../update-checker";
 import BrainIndicator from "./BrainIndicator";
+import NoticeChip from "./NoticeChip";
 import SystemMeters from "./SystemMeters";
 
 function Footer() {
@@ -29,6 +30,7 @@ function Footer() {
         <SystemMeters />
 
         <div class="flex shrink-0 items-center gap-1 ms-auto">
+          <NoticeChip />
           <UpdateChecker />
           <span>•</span>
           <span>{version() ? `v${version()}` : null}</span>

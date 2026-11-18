@@ -2000,7 +2000,30 @@
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
     "transcriptionFailedTitle": "Transcription Failed",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Failed to Start Recording",
+    "modelLoadFailedTitle": "Failed to Load Model",
+    "postProcessFailedTitle": "Pasted Without Post-Processing",
+    "postProcessFailed": "Post Process didn't finish, so the transcript was pasted as is.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "File Transcription Failed",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} error",
+    "errorMany": "{{n}} errors",
+    "warningOne": "{{n}} warning",
+    "warningMany": "{{n}} warnings",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Application Language",

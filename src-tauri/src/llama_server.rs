@@ -183,12 +183,35 @@ impl LlamaServerManager {
     }
 
     fn set_state(&self, update: impl FnOnce(&mut LlamaServerStateEvent)) {
-        let snapshot = {
+        let (before, snapshot) = {
             let mut state = self.state.lock().unwrap();
+            let before = state.status;
             update(&mut state);
-            state.clone()
+            (before, state.clone())
         };
         let _ = snapshot.emit(&self.app);
+        // A failed start or a crash is a notice until the server next comes up:
+        // post-processing and merges that need it fail meanwhile.
+        match snapshot.status {
+            LlamaStatus::Error if before != LlamaStatus::Error => {
+                let detail = snapshot
+                    .message
+                    .as_deref()
+                    .map(|message| message.lines().take(3).collect::<Vec<_>>().join("\n"));
+                crate::notices::raise(
+                    &self.app,
+                    crate::notices::Notice::new(
+                        crate::notices::NoticeCode::LlamaServerFailed,
+                        crate::notices::NoticeSource::LocalLlm,
+                    )
+                    .with_detail(detail),
+                );
+            }
+            LlamaStatus::Ready if before != LlamaStatus::Ready => {
+                crate::notices::clear(&self.app, crate::notices::NoticeSource::LocalLlm);
+            }
+            _ => {}
+        }
     }
 
     fn push_log(&self, line: String) {

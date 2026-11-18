@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "텍스트 붙여넣기 실패",
     "pasteFailed": "활성 애플리케이션에 텍스트를 붙여넣을 수 없습니다.",
     "transcriptionFailedTitle": "음성 인식 실패",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "녹음을 시작하지 못했습니다",
+    "modelLoadFailedTitle": "모델을 불러오지 못했습니다",
+    "postProcessFailedTitle": "후처리 없이 붙여넣음",
+    "postProcessFailed": "후처리가 완료되지 않아 받아쓰기 결과를 그대로 붙여넣었습니다.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "파일 음성 인식 실패",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "오류 {{n}}개",
+    "errorMany": "오류 {{n}}개",
+    "warningOne": "경고 {{n}}개",
+    "warningMany": "경고 {{n}}개",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "애플리케이션 언어",

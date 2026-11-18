@@ -11,6 +11,7 @@ use crate::managers::statistics::{StatisticsManager, StatisticsRunStatus};
 use crate::managers::transcription::{
     StreamFinalization, StreamWorkKind, TrackedTranscription, TranscriptionManager,
 };
+use crate::notices::{self, Notice, NoticeCode, NoticeSource};
 use crate::settings::{
     APPLE_INTELLIGENCE_PROVIDER_ID, AppSettings, OverlayStyle, PasteMethod, get_settings,
 };
@@ -26,8 +27,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tauri::AppHandle;
 use tauri::Manager;
-use tauri::{AppHandle, Emitter};
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -56,10 +57,21 @@ fn finish_paste_ui(ah: &AppHandle, session: u64) {
     }
 }
 
-#[derive(Clone, serde::Serialize)]
-struct RecordingErrorEvent {
-    error_type: String,
-    detail: Option<String>,
+/// A recording that could not start, as a dictation notice: the microphone is
+/// missing or blocked, or the start failed some other way (the raw error is the
+/// detail either way).
+fn report_recording_error(app: &AppHandle, err: String) {
+    let code = if is_microphone_access_denied(&err) {
+        NoticeCode::MicPermissionDenied
+    } else if is_no_input_device_error(&err) {
+        NoticeCode::NoMicrophone
+    } else {
+        NoticeCode::RecordingFailed
+    };
+    notices::raise(
+        app,
+        Notice::new(code, NoticeSource::Dictation).with_detail(err),
+    );
 }
 
 /// Drop guard that notifies the [`TranscriptionCoordinator`] when the
@@ -530,6 +542,10 @@ pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
+    /// Post-processing was asked for on a non-empty transcript and produced
+    /// nothing (it failed, timed out, or is not set up): the transcript is
+    /// used as it is, and the caller reports it.
+    pub post_process_failed: bool,
 }
 
 pub(crate) async fn process_transcription_output(
@@ -568,10 +584,13 @@ pub(crate) async fn process_transcription_output(
         post_processed_text = Some(final_text.clone());
     }
 
+    let post_process_failed =
+        post_process && !transcription.trim().is_empty() && post_processed_text.is_none();
     ProcessedTranscription {
         final_text,
         post_processed_text,
         post_process_prompt,
+        post_process_failed,
     }
 }
 
@@ -756,20 +775,7 @@ impl ShortcutAction for TranscribeAction {
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
-                let error_type = if is_microphone_access_denied(&err) {
-                    "microphone_permission_denied"
-                } else if is_no_input_device_error(&err) {
-                    "no_input_device"
-                } else {
-                    "unknown"
-                };
-                let _ = app.emit(
-                    "recording-error",
-                    RecordingErrorEvent {
-                        error_type: error_type.to_string(),
-                        detail: Some(err),
-                    },
-                );
+                report_recording_error(app, err);
             }
         }
 
@@ -1072,6 +1078,16 @@ impl ShortcutAction for TranscribeAction {
                         attempt.finish(StatisticsRunStatus::Success);
                         statistics.finish(StatisticsRunStatus::Success);
 
+                        // The dictation worked: its old notice goes, and a
+                        // post-processing that did not run is this one's.
+                        notices::clear(&ah, NoticeSource::Dictation);
+                        if processed.post_process_failed {
+                            notices::raise(
+                                &ah,
+                                Notice::new(NoticeCode::PostProcessFailed, NoticeSource::Dictation),
+                            );
+                        }
+
                         // Recall insertion mode: the Recall editor is armed,
                         // so this transcription belongs to the note at the
                         // caret — the text goes to the webview, nothing is
@@ -1203,7 +1219,14 @@ impl ShortcutAction for TranscribeAction {
                                         ),
                                         Err(e) => {
                                             error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
+                                            notices::raise(
+                                                &ah_clone,
+                                                Notice::new(
+                                                    NoticeCode::PasteFailed,
+                                                    NoticeSource::Dictation,
+                                                )
+                                                .with_detail(e),
+                                            );
                                         }
                                     }
                                     finish_paste_ui(&ah_clone, session);
@@ -1227,9 +1250,13 @@ impl ShortcutAction for TranscribeAction {
 
                         statistics.finish(StatisticsRunStatus::Failed);
                         error!("Transcription failed: {}", err);
-                        // Surface the failure to the UI (toast). The full
+                        // A notice: the tray, the footer and a toast. The full
                         // message is also in the app's log file via the line above.
-                        let _ = ah.emit("transcription-error", err.to_string());
+                        notices::raise(
+                            &ah,
+                            Notice::new(NoticeCode::TranscriptionFailed, NoticeSource::Dictation)
+                                .with_detail(err.to_string()),
+                        );
                         // Save entry with empty text so user can retry
                         if wav_saved
                             && let Err(save_err) =
@@ -2049,20 +2076,7 @@ impl ShortcutAction for MultiSttAction {
                 );
             }
             if let Some(err) = recording_error {
-                let error_type = if is_microphone_access_denied(&err) {
-                    "microphone_permission_denied"
-                } else if is_no_input_device_error(&err) {
-                    "no_input_device"
-                } else {
-                    "unknown"
-                };
-                let _ = app.emit(
-                    "recording-error",
-                    RecordingErrorEvent {
-                        error_type: error_type.to_string(),
-                        detail: Some(err),
-                    },
-                );
+                report_recording_error(app, err);
             }
         }
 
@@ -2484,35 +2498,45 @@ impl ShortcutAction for MultiSttAction {
             // as it stands instead of finalizing a second time — a stream can be
             // consumed exactly once, and the second call would come back
             // `NeverStarted` and quietly re-decode the whole recording.
-            let task1 = tauri::async_runtime::spawn_blocking(move || match stream_tracked {
-                Some(tracked) if !tracked.text.trim().is_empty() => {
-                    info!(
-                        "Multi-STT: Model 1 (primary) transcription: '{}'",
-                        utils::redact_text(&tracked.text)
-                    );
-                    Some(tracked)
-                }
-                Some(_) => tm1.transcribe_tracked(s1, stats1).ok(),
-                None => match tm1.finalize_stream() {
-                    StreamFinalization::Completed(tracked) if !tracked.text.trim().is_empty() => {
+            // The primary's error is kept: a session where no model produced
+            // anything and the primary failed is a failed dictation.
+            let task1 = tauri::async_runtime::spawn_blocking(move || {
+                let batch = |s1, stats1| match tm1.transcribe_tracked(s1, stats1) {
+                    Ok(tracked) => (Some(tracked), None),
+                    Err(e) => (None, Some(e.to_string())),
+                };
+                match stream_tracked {
+                    Some(tracked) if !tracked.text.trim().is_empty() => {
                         info!(
                             "Multi-STT: Model 1 (primary) transcription: '{}'",
                             utils::redact_text(&tracked.text)
                         );
-                        Some(tracked)
+                        (Some(tracked), None)
                     }
-                    StreamFinalization::Completed(_) | StreamFinalization::NeverStarted => {
-                        tm1.transcribe_tracked(s1, stats1).ok()
-                    }
-                    StreamFinalization::Failed(err) => {
-                        error!("Multi-STT: Model 1 finalize failed: {}", err);
-                        tm1.transcribe_tracked(s1, stats1).ok()
-                    }
-                    StreamFinalization::Timeout(err) => {
-                        error!("Multi-STT: Model 1 finalize timeout: {}", err);
-                        None
-                    }
-                },
+                    Some(_) => batch(s1, stats1),
+                    None => match tm1.finalize_stream() {
+                        StreamFinalization::Completed(tracked)
+                            if !tracked.text.trim().is_empty() =>
+                        {
+                            info!(
+                                "Multi-STT: Model 1 (primary) transcription: '{}'",
+                                utils::redact_text(&tracked.text)
+                            );
+                            (Some(tracked), None)
+                        }
+                        StreamFinalization::Completed(_) | StreamFinalization::NeverStarted => {
+                            batch(s1, stats1)
+                        }
+                        StreamFinalization::Failed(err) => {
+                            error!("Multi-STT: Model 1 finalize failed: {}", err);
+                            batch(s1, stats1)
+                        }
+                        StreamFinalization::Timeout(err) => {
+                            error!("Multi-STT: Model 1 finalize timeout: {}", err);
+                            (None, Some(err.to_string()))
+                        }
+                    },
+                }
             });
 
             // One batch decode per configured extra slot. The nested mode has
@@ -2544,7 +2568,7 @@ impl ShortcutAction for MultiSttAction {
                 })
                 .collect();
 
-            let mut tracked1 = task1.await.unwrap_or(None);
+            let (mut tracked1, primary_error) = task1.await.unwrap_or((None, None));
             // The row's language is the primary's (Model 1, whose text the
             // merge starts from); the extras may have run in their own.
             let primary_language = tracked1.as_ref().map(|t| t.language.clone());
@@ -2652,6 +2676,16 @@ impl ShortcutAction for MultiSttAction {
                 return;
             }
 
+            if let Some(err) = &primary_error
+                && outputs.iter().all(|text| text.trim().is_empty())
+            {
+                notices::raise(
+                    &ah,
+                    Notice::new(NoticeCode::TranscriptionFailed, NoticeSource::Dictation)
+                        .with_detail(err.clone()),
+                );
+            }
+
             // === MERGE TRANSCRIPTIONS ===
             // In the streaming mode there is nothing left to merge here: every
             // chunk already went through the extras and the LLM, and the session's
@@ -2746,6 +2780,22 @@ impl ShortcutAction for MultiSttAction {
                 StatisticsRunStatus::Success,
             );
             statistics.finish(StatisticsRunStatus::Success);
+
+            // A merge that was set up and did not land: the outputs were
+            // concatenated (batch), or some chunk kept its fallback (streaming).
+            let merge_failed = match &streaming_final {
+                Some((_, _, _, failed_chunks, _)) => *failed_chunks > 0,
+                None => merge_requested && !llm_merge_succeeded,
+            };
+            if !merged.trim().is_empty() {
+                notices::clear(&ah, NoticeSource::Dictation);
+                if merge_failed {
+                    notices::raise(
+                        &ah,
+                        Notice::new(NoticeCode::MergeFailed, NoticeSource::Dictation),
+                    );
+                }
+            }
 
             // === PERFORMANCE MODE: NORMAL after LLM merge succeeds ===
             // If the Brain LLM merged the outputs, signal normal power mode
@@ -2958,7 +3008,11 @@ impl ShortcutAction for MultiSttAction {
                             Ok(()) => debug!("Multi-STT: Text pasted successfully"),
                             Err(e) => {
                                 error!("Multi-STT: Failed to paste transcription: {}", e);
-                                let _ = ah_clone.emit("paste-error", ());
+                                notices::raise(
+                                    &ah_clone,
+                                    Notice::new(NoticeCode::PasteFailed, NoticeSource::Dictation)
+                                        .with_detail(e),
+                                );
                             }
                         }
                         // LLM didn't respond — restore normal power after paste.

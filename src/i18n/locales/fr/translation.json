@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "Échec du collage du texte",
     "pasteFailed": "Le texte n'a pas pu être collé dans l'application active.",
     "transcriptionFailedTitle": "Échec de la transcription",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Échec de l'enregistrement",
+    "modelLoadFailedTitle": "Échec du chargement du modèle",
+    "postProcessFailedTitle": "Collé sans post-traitement",
+    "postProcessFailed": "Le post-traitement n'a pas abouti, la transcription a donc été collée telle quelle.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "Échec de la transcription du fichier",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} erreur",
+    "errorMany": "{{n}} erreurs",
+    "warningOne": "{{n}} avertissement",
+    "warningMany": "{{n}} avertissements",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Langue de l'application",

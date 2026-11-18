@@ -422,6 +422,17 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
 - `overlay.rs` - Recording overlay window (platform-specific), plus
   `SpeechActivityEvent` and the cached emit gates for the readiness /
   speech-activity events
+- `notices.rs` - Backend-owned notices (upstream `b99b9af`, adapted): a
+  failure that must stay visible until it is resolved or dismissed. One slot
+  per `NoticeSource` (dictation, file, model, gpu, local_llm), newest first;
+  `raise` / `clear` / `clear_matching`, one `NoticesChanged` event,
+  `get_active_notices` / `dismiss_notice` (dismissal matches source **and**
+  code). The tray badges its idle icon and names the headline notice in its
+  menu and tooltip (`build.rs` copies every `errors.*Title` into the tray
+  strings); a no-op without a managed store (headless). Raised by both
+  dictation actions (recording, transcription, paste, post-processing, merge),
+  model loads, the GPU CPU fallback, file jobs and the llama server. Toasts
+  stay `sessionToast` for everything transient
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`
   - `MultiSttAction` runs the primary + every configured extra model in parallel, merges outputs via LLM
@@ -601,6 +612,11 @@ download_language_detector`) when a plan wants it or when the list is
   `stores/toastStore.ts`; there is no sonner) and records error/warning
   toasts for the Debug page's `SessionToastHistory`; import it (as `toast`)
   in app code, so no error disappears unread
+- `stores/noticeStore.ts` + `lib/notices.ts` + `footer/NoticeChip.tsx` - The
+  mirror of the backend notices: the footer chip counts them and opens a
+  panel (title, explanation, detail, Show = the source's page, dismiss); a
+  newly raised one pops up once through `sessionToast`, so the Debug page's
+  history lists it too. `lib/notices.ts` maps each `NoticeCode` to its text
 - `components/` - Solid UI components:
   - `settings/` - Settings UI, grouped by page (`general/`, `advanced/`,
     `models/`, `history/`, `statistics/`, `post-processing/`, `about/`, `debug/`) plus the
@@ -1696,7 +1712,8 @@ render so no raw keys are painted.
 >   `jsx-a11y` on a custom widget — `ui/Dialog.tsx`, `ui/Select.tsx`,
 >   `ui/Toaster.tsx`, `Sidebar.tsx`, `HotkeySidebar.tsx`,
 >   `onboarding/ModelCard.tsx` and the status-bar popovers
->   (`model-selector/StatusBarPopover.tsx`, `ModelBackendPanel.tsx`) — plus one
+>   (`model-selector/StatusBarPopover.tsx`, `ModelBackendPanel.tsx`,
+>   `footer/NoticeChip.tsx`) — plus one
 >   `oxc/approx-constant` on `liveFftPresets.ts`.
 >   `// eslint-disable-next-line i18next/no-literal-string` is unreliable here
 >   anyway — oxlint honours it for JSX text on a single line but not when the

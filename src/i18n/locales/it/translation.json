@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "Impossibile incollare il testo",
     "pasteFailed": "Non è stato possibile incollare il testo nell'applicazione attiva.",
     "transcriptionFailedTitle": "Trascrizione non riuscita",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Impossibile avviare la registrazione",
+    "modelLoadFailedTitle": "Impossibile caricare il modello",
+    "postProcessFailedTitle": "Incollato senza post-elaborazione",
+    "postProcessFailed": "La post-elaborazione non è terminata, quindi la trascrizione è stata incollata così com'è.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "Trascrizione del file non riuscita",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} errore",
+    "errorMany": "{{n}} errori",
+    "warningOne": "{{n}} avviso",
+    "warningMany": "{{n}} avvisi",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Lingua Applicazione",

@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "Không thể dán văn bản",
     "pasteFailed": "Không thể dán văn bản vào ứng dụng đang hoạt động.",
     "transcriptionFailedTitle": "Phiên âm thất bại",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Không thể bắt đầu ghi âm",
+    "modelLoadFailedTitle": "Không thể tải mô hình",
+    "postProcessFailedTitle": "Đã dán không qua xử lý sau",
+    "postProcessFailed": "Xử lý sau chưa hoàn tất nên bản chép lời được dán nguyên trạng.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "Phiên âm tệp thất bại",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} lỗi",
+    "errorMany": "{{n}} lỗi",
+    "warningOne": "{{n}} cảnh báo",
+    "warningMany": "{{n}} cảnh báo",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Ngôn ngữ ứng dụng",

@@ -2232,7 +2232,9 @@ fn save_accelerator_and_reload_next_use(app: &AppHandle, s: settings::AppSetting
     settings::write_settings(app, s);
     // An explicit backend choice asks for the GPU again, even for a model that
     // fell back to CPU after a backend error this session.
-    crate::managers::transcription::clear_cpu_fallbacks();
+    if crate::managers::transcription::clear_cpu_fallbacks() {
+        crate::notices::clear(app, crate::notices::NoticeSource::Gpu);
+    }
 
     let tm = app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
     tm.reload_model_on_next_use();

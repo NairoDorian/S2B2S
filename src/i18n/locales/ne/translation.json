@@ -2000,7 +2000,30 @@
     "pasteFailedTitle": "टेक्स्ट पेस्ट गर्न सकिएन",
     "pasteFailed": "सक्रिय एपमा टेक्स्ट पेस्ट गर्न सकिएन।",
     "transcriptionFailedTitle": "ट्रान्सक्रिप्सन गर्न सकिएन",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "रेकर्डिङ सुरु गर्न सकिएन",
+    "modelLoadFailedTitle": "मोडेल लोड गर्न सकिएन",
+    "postProcessFailedTitle": "पोस्ट प्रोसेस बिना पेस्ट गरियो",
+    "postProcessFailed": "पोस्ट प्रोसेस पूरा भएन, त्यसैले ट्रान्सक्रिप्ट जस्तो थियो त्यस्तै पेस्ट गरियो।",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "फाइल ट्रान्सक्रिप्सन गर्न सकिएन",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} त्रुटि",
+    "errorMany": "{{n}} त्रुटिहरू",
+    "warningOne": "{{n}} चेतावनी",
+    "warningMany": "{{n}} चेतावनीहरू",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "एपको भाषा",

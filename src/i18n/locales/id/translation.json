@@ -2000,7 +2000,30 @@
     "pasteFailedTitle": "Gagal Menempelkan Teks",
     "pasteFailed": "Teks tidak dapat ditempelkan ke aplikasi aktif.",
     "transcriptionFailedTitle": "Transkripsi Gagal",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Gagal Memulai Perekaman",
+    "modelLoadFailedTitle": "Gagal Memuat Model",
+    "postProcessFailedTitle": "Ditempel Tanpa Pascaproses",
+    "postProcessFailed": "Pascaproses tidak selesai, jadi transkrip ditempelkan apa adanya.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "Transkripsi File Gagal",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} kesalahan",
+    "errorMany": "{{n}} kesalahan",
+    "warningOne": "{{n}} peringatan",
+    "warningMany": "{{n}} peringatan",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Bahasa Aplikasi",

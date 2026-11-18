@@ -57,7 +57,10 @@ impl TrayIconState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MenuInputs {
     busy: bool,
+    /// macOS Secure Input is blocking keyboard shortcuts.
     warning: bool,
+    /// The notice the menu names (`notices::tray_headline`).
+    notice: Option<crate::notices::NoticeCode>,
     model_loaded: bool,
     selected_model: String,
     /// `(id, name)` of downloaded models, sorted by name.
@@ -209,9 +212,10 @@ fn windows_taskbar_theme() -> Option<AppTheme> {
 
 /// Gets the appropriate icon path for the given theme and state.
 ///
-/// `warning` overlays a badge on the idle icon while keyboard shortcuts are
-/// blocked (macOS Secure Input); recording/transcribing states keep their
-/// normal icons so in-flight activity stays recognizable.
+/// `warning` overlays a badge on the idle icon while something needs
+/// attention: keyboard shortcuts are blocked (macOS Secure Input), or a notice
+/// is active (`notices.rs`; the menu line says which). Recording/transcribing
+/// states keep their normal icons so in-flight activity stays recognizable.
 ///
 /// The files are named `tray_<theme>_<state>.png` after the **taskbar** theme,
 /// not after the ink: `tray_dark_*` is the set for a dark taskbar and carries
@@ -224,8 +228,8 @@ pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'
         return match theme {
             AppTheme::Dark => "resources/tray_dark_idle_warning.png",
             AppTheme::Light => "resources/tray_light_idle_warning.png",
-            // Linux never sets the warning flag (Secure Input is macOS-only),
-            // but fall back to the normal icon just in case.
+            // The colour theme (Linux) has no badged icon: the notice shows
+            // in the menu and tooltip only.
             AppTheme::Colored => "resources/tray_color_idle.png",
         };
     }
@@ -351,6 +355,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     let settings = settings::get_settings(app);
     let theme = get_current_theme(app);
     let warning = crate::secure_input::tray_warning_active(app);
+    let notice = crate::notices::tray_headline(app).map(|notice| notice.code);
     let model_loaded = app.state::<Arc<TranscriptionManager>>().is_model_loaded();
 
     let model_manager = app.state::<Arc<ModelManager>>();
@@ -386,10 +391,11 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
     };
 
     TrayDesired {
-        icon_path: get_icon_path(theme, icon_state, warning),
+        icon_path: get_icon_path(theme, icon_state, warning || notice.is_some()),
         menu: MenuInputs {
             busy: icon_state.is_busy(),
             warning,
+            notice,
             model_loaded,
             selected_model: settings.selected_model,
             downloaded_models,
@@ -691,6 +697,22 @@ fn build_menu(
         None
     };
 
+    // The active notice, by its title: clicking opens the window, whose
+    // footer lists the details. A locale without the title gets English.
+    let notice_line = inputs
+        .notice
+        .map(|code| {
+            let title = code.tray_title(&strings);
+            let label = if title.is_empty() {
+                code.tray_title(&get_tray_translations(Some("en".to_string())))
+                    .to_string()
+            } else {
+                title.to_string()
+            };
+            MenuItem::with_id(app, "notice", format!("⚠ {label}"), true, None::<&str>)
+        })
+        .transpose()?;
+
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
     let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
@@ -801,13 +823,17 @@ fn build_menu(
         menu.remove(&check_updates_i)?;
     }
 
-    // Both layouts start with [version, separator, ...]; slot the warning in
-    // right below the version line so it's the first actionable thing seen.
+    // Both layouts start with [version, separator, ...]; slot the warnings in
+    // right below the version line so they're the first actionable thing seen.
     let mut tooltip = version_label;
-    if let Some(warning_item) = secure_input_warning {
-        menu.insert(&warning_item, 2)?;
-        menu.insert(&separator()?, 3)?;
-        tooltip = format!("{} — {}", tooltip, warning_item.text().unwrap_or_default());
+    let mut position = 2;
+    for item in [secure_input_warning, notice_line].into_iter().flatten() {
+        menu.insert(&item, position)?;
+        position += 1;
+        tooltip = format!("{} — {}", tooltip, item.text().unwrap_or_default());
+    }
+    if position > 2 {
+        menu.insert(&separator()?, position)?;
     }
 
     Ok((menu, tooltip))
@@ -1023,6 +1049,7 @@ mod tests {
         MenuInputs {
             busy,
             warning: false,
+            notice: None,
             model_loaded: true,
             selected_model: "small".to_string(),
             downloaded_models: vec![("small".to_string(), "Small".to_string())],

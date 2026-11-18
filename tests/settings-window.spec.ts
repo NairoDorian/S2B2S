@@ -456,15 +456,31 @@ test.describe("settings window", () => {
     const crashes = watchForCrashes(page);
 
     await boot(page);
-    await waitForListener(page, "recording-error");
+    await waitForListener(page, "notices-changed");
 
-    // The app listens for this at the shell and turns it into a toast. Emitting
-    // it through the mock is the only way to reach that listener without a
-    // microphone, and it exercises the event plugin end to end.
+    // A recording that could not start is a notice; the notice store pops a
+    // newly raised one up as a toast. Emitting it through the mock is the only
+    // way to reach that listener without a microphone, and it exercises the
+    // event plugin end to end.
     await page.evaluate(() =>
       (window as any).__TAURI_INTERNALS__.invoke("plugin:event|emit", {
-        event: "recording-error",
-        payload: { error_type: "no_input_device", detail: null },
+        event: "notices-changed",
+        payload: {
+          notices: [
+            {
+              code: "NoMicrophone",
+              level: "error",
+              source: "dictation",
+              detail: null,
+            },
+          ],
+          raised: {
+            code: "NoMicrophone",
+            level: "error",
+            source: "dictation",
+            detail: null,
+          },
+        },
       }),
     );
 
@@ -783,12 +799,12 @@ test.describe("language switch", () => {
 
     await boot(page);
 
-    // The shell binds this at mount and translates inside its callback, so it
-    // is the one place the hook's per-language `t` is observable from here.
-    await waitForListener(page, "recording-error");
+    // The notice store binds this once at mount and translates inside its
+    // callback, so it is where a language switch is observable from here.
+    await waitForListener(page, "notices-changed");
     const bindingsWhileEnglish = await listenerRegistrations(
       page,
-      "recording-error",
+      "notices-changed",
     );
 
     await sidebarButton(page, "About").click();
@@ -818,15 +834,30 @@ test.describe("language switch", () => {
       ]);
 
     // The listeners are bound once: a language switch does not re-bind them.
-    expect(await listenerRegistrations(page, "recording-error")).toBe(
+    expect(await listenerRegistrations(page, "notices-changed")).toBe(
       bindingsWhileEnglish,
     );
 
     // And the listener bound in English now speaks German.
     await page.evaluate(() =>
       (window as any).__TAURI_INTERNALS__.invoke("plugin:event|emit", {
-        event: "recording-error",
-        payload: { error_type: "no_input_device", detail: null },
+        event: "notices-changed",
+        payload: {
+          notices: [
+            {
+              code: "NoMicrophone",
+              level: "error",
+              source: "dictation",
+              detail: null,
+            },
+          ],
+          raised: {
+            code: "NoMicrophone",
+            level: "error",
+            source: "dictation",
+            detail: null,
+          },
+        },
       }),
     );
     await expect(
@@ -910,6 +941,61 @@ test.describe("recording overlay window", () => {
 
     await emit("model-state-changed", modelEvent("loading_completed"));
     await expect(notice).toBeHidden();
+    expect(crashes).toEqual([]);
+  });
+});
+
+test.describe("notices", () => {
+  test("the footer counts active notices and the panel opens, shows and dismisses them", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await page.addInitScript(() => {
+      (window as any).__TAURI_MOCK_REPLIES__ = {
+        get_active_notices: [
+          {
+            code: "FileTranscriptionFailed",
+            level: "error",
+            source: "file",
+            detail: "meeting.wav: unsupported codec",
+          },
+          {
+            code: "GpuFallback",
+            level: "warning",
+            source: "gpu",
+            detail: "Nemotron 3.5",
+          },
+        ],
+      };
+    });
+    await boot(page);
+
+    const chip = page.getByRole("button", { name: "1 error, 1 warning" });
+    await expect(chip).toBeVisible();
+    await chip.click();
+
+    const panel = page.getByRole("dialog", { name: "Notices" });
+    await expect(panel.getByText("File Transcription Failed")).toBeVisible();
+    await expect(
+      panel.getByText("meeting.wav: unsupported codec"),
+    ).toBeVisible();
+    await expect(
+      panel.getByText("Running on CPU After a GPU Error"),
+    ).toBeVisible();
+
+    // "Show" opens the source's page and ends that notice.
+    await panel.getByRole("button", { name: "Show" }).first().click();
+    await expect(sidebarButton(page, "Transcribe Files")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect
+      .poll(async () =>
+        (await calls(page))
+          .filter((c) => c.cmd === "dismiss_notice")
+          .map((c) => [c.args.source, c.args.code]),
+      )
+      .toEqual([["file", "FileTranscriptionFailed"]]);
     expect(crashes).toEqual([]);
   });
 });

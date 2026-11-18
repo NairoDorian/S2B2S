@@ -617,6 +617,12 @@ export const commands = {
 	rememberRecordingOverlayWindowPosition: (xPx: number, yPx: number, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("remember_recording_overlay_window_position", { xPx, yPx }, options)),
 	/**  Reset any saved drag-grip position back to the auto (Top/Bottom) anchor. */
 	resetRecordingOverlayManualPosition: (options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("reset_recording_overlay_manual_position", undefined, options)),
+	getActiveNotices: (options?: InvokeOptions) => __TAURI_INVOKE<Notice_Serialize[]>("get_active_notices", undefined, options),
+	/**
+	 *  The user is done with a notice. Matching the code leaves alone a newer
+	 *  notice that replaced it after the user's view was drawn.
+	 */
+	dismissNotice: (source: NoticeSource, code: NoticeCode, options?: InvokeOptions) => __TAURI_INVOKE<void>("dismiss_notice", { source, code }, options),
 };
 
 /** Events */
@@ -629,6 +635,7 @@ export const events = {
 	llamaDownloadEvent: makeEvent<LlamaDownloadEvent_Serialize, LlamaDownloadEvent_Deserialize>("llama-download-event"),
 	llamaServerStateEvent: makeEvent<LlamaServerStateEvent_Serialize, LlamaServerStateEvent_Deserialize>("llama-server-state-event"),
 	multiSttStreamChunkFailedEvent: makeEvent<MultiSttStreamChunkFailedEvent, MultiSttStreamChunkFailedEvent>("multi-stt-stream-chunk-failed-event"),
+	noticesChanged: makeEvent<NoticesChanged_Serialize, NoticesChanged_Deserialize>("notices-changed"),
 	recallInsertTextEvent: makeEvent<RecallInsertTextEvent, RecallInsertTextEvent>("recall-insert-text-event"),
 	speechActivityEvent: makeEvent<SpeechActivityEvent, SpeechActivityEvent>("speech-activity-event"),
 	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent, StatisticsUpdatedEvent>("statistics-updated-event"),
@@ -3139,6 +3146,62 @@ export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cac
  *  (runtime default — no stream extension attached), so it is the unit value.
  */
 export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "accurate";
+
+export type Notice = Notice_Serialize | Notice_Deserialize;
+
+/**  The frontend maps each code to its text in `src/lib/notices.ts`. */
+export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "NoMicrophone" | "MicPermissionDenied" | "RecordingFailed" | "ModelLoadFailed" | "PostProcessFailed" | "MergeFailed" | "FileTranscriptionFailed" | "GpuFallback" | "LlamaServerFailed";
+
+export type NoticeLevel = 
+/**  Nothing came out, or the app cannot do its job. */
+"error" | 
+/**  The user got a result, but not the one they set up. */
+"warning";
+
+/**  Each source has one slot in the store. */
+export type NoticeSource = 
+/**  A dictation (the transcribe or Multi-STT hotkeys). */
+"dictation" | 
+/**  A Transcribe Files job. */
+"file" | 
+/**  Loading a speech model, the primary or a Multi-STT extra. */
+"model" | 
+/**  A model running on CPU after its GPU backend failed. */
+"gpu" | 
+/**  The in-app llama.cpp server. */
+"local_llm";
+
+export type Notice_Deserialize = {
+	code: NoticeCode,
+	level: NoticeLevel,
+	source: NoticeSource,
+	/**  What only Rust knows, such as a model name or a raw error. */
+	detail?: string | null,
+};
+
+export type Notice_Serialize = {
+	code: NoticeCode,
+	level: NoticeLevel,
+	source: NoticeSource,
+	/**  What only Rust knows, such as a model name or a raw error. */
+	detail: string | null,
+};
+
+export type NoticesChanged = NoticesChanged_Serialize | NoticesChanged_Deserialize;
+
+export type NoticesChanged_Deserialize = {
+	/**  Every active notice, newest first. */
+	notices: Notice_Deserialize[],
+	/**  The notice just raised; `None` when one was cleared. */
+	raised?: Notice_Deserialize | null,
+};
+
+export type NoticesChanged_Serialize = {
+	/**  Every active notice, newest first. */
+	notices: Notice_Serialize[],
+	/**  The notice just raised; `None` when one was cleared. */
+	raised: Notice_Serialize | null,
+};
 
 export type OverlayPosition = OverlayPosition_Serialize | OverlayPosition_Deserialize;
 

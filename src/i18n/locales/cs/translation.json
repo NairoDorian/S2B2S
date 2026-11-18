@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "Vložení textu se nezdařilo",
     "pasteFailed": "Text nebylo možné vložit do aktivní aplikace.",
     "transcriptionFailedTitle": "Přepis selhal",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "Nepodařilo se spustit nahrávání",
+    "modelLoadFailedTitle": "Nepodařilo se načíst model",
+    "postProcessFailedTitle": "Vloženo bez následného zpracování",
+    "postProcessFailed": "Následné zpracování se nedokončilo, takže byl přepis vložen beze změn.",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "Přepis souboru selhal",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} chyba",
+    "errorMany": "{{n}} chyby",
+    "warningOne": "{{n}} upozornění",
+    "warningMany": "{{n}} upozornění",
+    "errorsAndWarnings": "{{errors}}, {{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "Jazyk aplikace",

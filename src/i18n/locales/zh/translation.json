@@ -1997,7 +1997,30 @@
     "pasteFailedTitle": "粘贴文本失败",
     "pasteFailed": "无法将文本粘贴到当前活动的应用程序中。",
     "transcriptionFailedTitle": "转录失败",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "recordingFailedTitle": "录音启动失败",
+    "modelLoadFailedTitle": "加载模型失败",
+    "postProcessFailedTitle": "已粘贴，未经后处理",
+    "postProcessFailed": "后处理未完成，因此按原样粘贴转录内容。",
+    "mergeFailedTitle": "Pasted Without the Merge",
+    "mergeFailed": "The Multi-STT merge didn't finish, so the models' outputs were pasted one per line.",
+    "fileTranscriptionFailedTitle": "文件转录失败",
+    "gpuFallbackTitle": "Running on CPU After a GPU Error",
+    "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
+    "llamaServerFailedTitle": "Local LLM Failed to Start",
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+  },
+  "notices": {
+    "errorOne": "{{n}} 个错误",
+    "errorMany": "{{n}} 个错误",
+    "warningOne": "{{n}} 个警告",
+    "warningMany": "{{n}} 个警告",
+    "errorsAndWarnings": "{{errors}}，{{warnings}}",
+    "title": "Notices",
+    "subtitle": "Problems that happened in the background. Each one clears when it next works.",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "show": "Show"
   },
   "appLanguage": {
     "title": "应用语言",

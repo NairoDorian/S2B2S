@@ -694,6 +694,16 @@ that must stay visible until resolved or dismissed.
 
 Cost: no thread, no poll; one event per notice change.
 
+**Status 2026-11-18.** Step 1 is in place without the overlay line: the
+store, the event and commands, the tray badge / menu line / tooltip, the
+footer chip and panel, and `sessionToast` for a newly raised notice (so step 3
+holds). Raised today: transcription, paste and recording failures (both
+actions), post-processing that did not run, a Multi-STT merge that did not
+land (batch, or a streaming chunk left on its fallback), model loads (primary
+and extras), the GPU CPU fallback of Phase 7, file jobs, the llama server.
+Left: the overlay notice line, and the three notices that need new detection
+(No model selected, microphone silence, paste blocked by an elevated window).
+
 ---
 
 ## Phase 9 — Upstream batch U5: files
@@ -868,7 +878,7 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 85  | `c67ec6a` |       | Chinese script from the text                             | Phase 6.7                                                                        | `15a39e2e`                                              |
 | 86  | `b5920f2` |       | leave Japanese and Korean alone                          | Phase 6.7                                                                        | `15a39e2e`                                              |
 | 87  | `56c7e21` | #2097 | tap vs hold by key event time                            | Adapt, P3                                                                        | `06e647f7`                                              |
-| 88  | `2eab8fc` | #2485 | replace the worker after a backend error                 | Adapt in-process, P7                                                             |                                                         |
+| 88  | `2eab8fc` | #2485 | replace the worker after a backend error                 | Adapt in-process, P7                                                             | `bb2d8ed6`                                              |
 | 89  | `70f490e` | #2486 | say so when the mic sends only silence                   | Adapt, P8                                                                        |                                                         |
 | 90  | `f248301` | #2318 | hf-hub survives Range-stripping proxies                  | n/a: hf-hub 1.x never ranges a file, ZER0's downloader already restarts on a 200 | —                                                       |
 | 91  | `0ff1ce1` | #2489 | bump transcribe.cpp                                      | Covered, P2                                                                      | `eeb2e9a5`                                              |

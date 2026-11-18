@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Notices for failures you might not see (2026-11-18).** A dictation that
+  fails while the window is hidden, a file job that fails while you work
+  elsewhere, a model that could not load or fell back to the CPU, a Local LLM
+  that would not start: each now badges the tray icon, is named in the tray
+  menu and tooltip, and waits in the footer, whose panel lists them with the
+  error and a link to the page concerned. Each one clears itself when the
+  same thing next works, or when you dismiss it. Toasts are unchanged for
+  everything else. Adapted from upstream.
+
 - **Transcription hook (2026-11-18).** A script or program in the `hooks`
   folder of the app data directory (`transcription.ps1`, `.cmd`, `.bat` or
   `.exe` on Windows; an executable `transcription` on macOS and Linux) gets

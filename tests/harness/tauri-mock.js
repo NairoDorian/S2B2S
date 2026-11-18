@@ -241,6 +241,8 @@
     get_language_status: { kind: "auto" },
     //   The same per extra Multi-STT slot; no slot has a model in the fixture.
     get_multi_stt_language_statuses: [],
+    get_active_notices: [],
+    dismiss_notice: null,
     //   The OS preferred languages the suggestion is made from.
     get_system_languages: ["fr-FR", "en-US"],
   };

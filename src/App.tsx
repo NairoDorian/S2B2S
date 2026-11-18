@@ -9,13 +9,11 @@ import {
 import { Toaster } from "@/components/ui/Toaster";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { useTranslation, currentLanguage } from "@/i18n/useTranslation";
-import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
 } from "tauri-plugin-macos-permissions-api";
-import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
@@ -194,109 +192,9 @@ function App() {
     },
   );
 
-  createEffect(
-    () => undefined,
-    () => {
-      const unlisten = listen<RecordingErrorEvent>(
-        "recording-error",
-        (event) => {
-          const { error_type, detail } = event.payload;
-
-          if (error_type === "microphone_permission_denied") {
-            const currentPlatform = platform();
-            const platformKey = `errors.micPermissionDenied.${currentPlatform}`;
-            const description = t(platformKey, {
-              defaultValue: t("errors.micPermissionDenied.generic"),
-            });
-            toast.error(t("errors.micPermissionDeniedTitle"), { description });
-          } else if (error_type === "no_input_device") {
-            toast.error(t("errors.noInputDeviceTitle"), {
-              description: t("errors.noInputDevice"),
-            });
-          } else {
-            toast.error(
-              t("errors.recordingFailed", {
-                error: detail ?? t("errors.unknownError"),
-              }),
-            );
-          }
-        },
-      );
-      return () => {
-        unlisten.then((fn) => fn());
-      };
-    },
-  );
-
-  createEffect(
-    () => undefined,
-    () => {
-      const unlisten = listen("paste-error", () => {
-        toast.error(t("errors.pasteFailedTitle"), {
-          description: t("errors.pasteFailed"),
-        });
-      });
-      return () => {
-        unlisten.then((fn) => fn());
-      };
-    },
-  );
-
-  createEffect(
-    () => undefined,
-    () => {
-      const unlisten = listen<string>("transcription-error", (event) => {
-        toast.error(t("errors.transcriptionFailedTitle"), {
-          description: event.payload,
-        });
-      });
-      return () => {
-        unlisten.then((fn) => fn());
-      };
-    },
-  );
-
-  createEffect(
-    () => undefined,
-    () => {
-      const unlisten = listen<ModelStateEvent>(
-        "model-state-changed",
-        (event) => {
-          if (event.payload.event_type === "loading_failed") {
-            toast.error(
-              t("errors.modelLoadFailed", {
-                model:
-                  event.payload.model_name ||
-                  t("errors.modelLoadFailedUnknown"),
-              }),
-              {
-                // Rust always sends this key, so an absent detail arrives as
-                // `null`, not `undefined`. The toast renders a description row
-                // for any string it is given, so normalise here or a failure
-                // without detail shows an empty row.
-                description: event.payload.error ?? undefined,
-              },
-            );
-          }
-          if (event.payload.event_type === "multi_stt_model_load_failed") {
-            toast.error(
-              t("errors.modelLoadFailed", {
-                model:
-                  event.payload.model_id || t("errors.modelLoadFailedUnknown"),
-              }),
-              {
-                description: event.payload.error ?? undefined,
-              },
-            );
-          }
-        },
-      );
-      return () => {
-        unlisten.then((fn) => fn());
-      };
-    },
-  );
-
+  // Recording, paste, transcription and model-load failures are notices
+  // (`src-tauri/src/notices.rs`): the footer chip lists them and pops each
+  // one up as a toast (`stores/noticeStore.ts`).
   createEffect(
     () => undefined,
     () => {

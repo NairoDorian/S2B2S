@@ -861,6 +861,14 @@ impl TranscriptionManager {
                     error: Some(error_msg.to_string()),
                 },
             );
+            crate::notices::raise(
+                &self.app_handle,
+                crate::notices::Notice::new(
+                    crate::notices::NoticeCode::ModelLoadFailed,
+                    crate::notices::NoticeSource::Model,
+                )
+                .with_detail(format!("{}: {}", model_info.name, error_msg)),
+            );
         };
 
         if !model_info.is_downloaded {
@@ -983,6 +991,11 @@ impl TranscriptionManager {
                 model_name: Some(model_info.name.clone()),
                 error: None,
             },
+        );
+        crate::notices::clear_matching(
+            &self.app_handle,
+            crate::notices::NoticeSource::Model,
+            Some(crate::notices::NoticeCode::ModelLoadFailed),
         );
 
         let load_duration = load_start.elapsed();
@@ -2344,6 +2357,7 @@ impl TranscriptionManager {
             ),
         }
         mark_cpu_fallback(&model_id);
+        self.report_cpu_fallbacks();
         match self.reload_for_recovery(&model_id) {
             Ok(true) => self.transcribe_internal(audio, statistics),
             Ok(false) => first,
@@ -2351,6 +2365,27 @@ impl TranscriptionManager {
                 "model '{model_id}' could not be reloaded on CPU after a backend error"
             ))),
         }
+    }
+
+    /// The GPU fallback notice: every model now on CPU, by name.
+    fn report_cpu_fallbacks(&self) {
+        let names: Vec<String> = cpu_fallback_model_ids()
+            .into_iter()
+            .map(|id| {
+                self.model_manager
+                    .get_model_info(&id)
+                    .map(|info| info.name)
+                    .unwrap_or(id)
+            })
+            .collect();
+        crate::notices::raise(
+            &self.app_handle,
+            crate::notices::Notice::new(
+                crate::notices::NoticeCode::GpuFallback,
+                crate::notices::NoticeSource::Gpu,
+            )
+            .with_detail(names.join(", ")),
+        );
     }
 
     /// Reloads `model_id` as the primary model for a recovery retry, under the
@@ -3633,6 +3668,19 @@ impl TranscriptionManager {
                         error: Some(e.to_string()),
                     },
                 );
+                let name = self
+                    .model_manager
+                    .get_model_info(model_id)
+                    .map(|info| info.name)
+                    .unwrap_or_else(|| model_id.to_string());
+                crate::notices::raise(
+                    &self.app_handle,
+                    crate::notices::Notice::new(
+                        crate::notices::NoticeCode::ModelLoadFailed,
+                        crate::notices::NoticeSource::Model,
+                    )
+                    .with_detail(format!("{name}: {e}")),
+                );
                 Err(e)
             }
         }
@@ -3891,6 +3939,7 @@ impl TranscriptionManager {
             ),
         }
         mark_cpu_fallback(model_id);
+        self.report_cpu_fallbacks();
         self.load_extra_model(model_id).map_err(|e| {
             e.context(format!(
                 "extra model '{model_id}' could not be reloaded on CPU after a backend error"
@@ -5507,19 +5556,34 @@ fn mark_cpu_fallback(model_id: &str) {
     }
 }
 
+/// The models on CPU after a GPU failure, sorted.
+fn cpu_fallback_model_ids() -> Vec<String> {
+    let mut ids: Vec<String> = CPU_FALLBACK_MODELS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .cloned()
+        .collect();
+    ids.sort();
+    ids
+}
+
 /// Forgets every CPU fallback: an explicit accelerator, GPU device or
-/// per-model backend choice asks for the GPU again.
-pub fn clear_cpu_fallbacks() {
+/// per-model backend choice asks for the GPU again. Returns whether there was
+/// one, so the caller clears the notice.
+pub fn clear_cpu_fallbacks() -> bool {
     let mut models = CPU_FALLBACK_MODELS
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if !models.is_empty() {
-        info!(
-            "Backend setting changed; {} model(s) may use their GPU again",
-            models.len()
-        );
-        models.clear();
+    if models.is_empty() {
+        return false;
     }
+    info!(
+        "Backend setting changed; {} model(s) may use their GPU again",
+        models.len()
+    );
+    models.clear();
+    true
 }
 
 /// Resolve the `(backend, device)` a **specific** model should load with.
