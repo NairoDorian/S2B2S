@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::error::Error as StdError;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 #[derive(Debug, Serialize)]
 struct ChatMessage {
@@ -196,13 +197,52 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
     Ok(headers)
 }
 
-/// Create an HTTP client with provider-specific headers
-fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
-    let headers = build_headers(provider, api_key)?;
-    reqwest::Client::builder()
-        .default_headers(headers)
+/// The shared client with one provider's headers. The headers are set per
+/// request rather than as client defaults, so every provider shares one
+/// connection pool and a changed API key takes effect at once (upstream
+/// `0ed36e1`): consecutive requests reuse an open connection instead of a new
+/// TCP + TLS handshake, about a second per dictation to a remote provider.
+struct ProviderClient {
+    client: &'static reqwest::Client,
+    headers: HeaderMap,
+}
+
+impl ProviderClient {
+    fn post(&self, url: &str) -> reqwest::RequestBuilder {
+        self.client.post(url).headers(self.headers.clone())
+    }
+
+    fn get(&self, url: &str) -> reqwest::RequestBuilder {
+        self.client.get(url).headers(self.headers.clone())
+    }
+}
+
+/// Process-wide client. A short idle timeout and TCP keepalive keep the pool
+/// from handing out connections that died during sleep or a network change;
+/// the connect timeout fails fast when the provider is unreachable. A request
+/// that connects and never answers is bounded by its caller (the
+/// post-processing and merge deadline in `actions.rs`, 15 s for the model
+/// list).
+fn shared_client() -> Result<&'static reqwest::Client, String> {
+    static SHARED: OnceLock<reqwest::Client> = OnceLock::new();
+    if let Some(client) = SHARED.get() {
+        return Ok(client);
+    }
+    let client = reqwest::Client::builder()
+        .pool_idle_timeout(Duration::from_secs(30))
+        .tcp_keepalive(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(10))
         .build()
-        .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))
+        .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))?;
+    Ok(SHARED.get_or_init(|| client))
+}
+
+/// The shared HTTP client with provider-specific headers.
+fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<ProviderClient, String> {
+    Ok(ProviderClient {
+        client: shared_client()?,
+        headers: build_headers(provider, api_key)?,
+    })
 }
 
 /// Format a bounded error source chain.
@@ -542,8 +582,11 @@ pub async fn fetch_models(
 
     let client = create_client(provider, &api_key)?;
 
+    // A small call: an endpoint that accepts it and never answers would
+    // otherwise leave the model picker loading forever (upstream `27322df`).
     let response = client
         .get(&url)
+        .timeout(Duration::from_secs(15))
         .send()
         .await
         .map_err(|e| report_reqwest_error("Failed to fetch models", &e))?;

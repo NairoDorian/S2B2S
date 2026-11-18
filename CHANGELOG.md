@@ -848,6 +848,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An LLM that never answers no longer holds the dictation (2026-11-18).**
+  Post-processing and the Multi-STT merge now give up after 60 seconds and
+  keep the transcription; before, a provider that accepted the request and
+  never replied kept it waiting indefinitely, since the HTTP client had no
+  timeout at all. A local llama.cpp server started on demand gets its own
+  start-up time first, so a cold start does not count against the 60 s. The
+  client is now shared, so consecutive requests to the same provider reuse
+  one connection instead of a new TLS handshake each, and the model list in
+  Post Process gives up after 15 s. Ported from upstream.
+
 - **A blank reply from the LLM no longer erases the dictation (2026-11-18).**
   When post-processing answers with nothing (or only a reasoning block, or
   invisible characters), the transcription is pasted as it was. A blank

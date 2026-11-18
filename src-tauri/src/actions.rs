@@ -99,6 +99,48 @@ fn is_blank_transcription(transcription: &str) -> bool {
     transcription.trim().is_empty()
 }
 
+/// Deadline for one post-processing step or Multi-STT merge, retries
+/// included (decision D5, upstream `0911f2b`). The HTTP client bounds only
+/// connecting, so an endpoint that accepts the request and never answers
+/// would hold the dictation until a proxy gave up (~100 s behind
+/// Cloudflare). A local `llama-server` started on demand is waited for first,
+/// under its own health timeout, so the deadline is the inference only.
+const LLM_STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Bring a local `llama-server` up (start on demand) for `provider` before a
+/// deadline starts, then run `step` under [`LLM_STEP_TIMEOUT`]. `None` when
+/// it timed out, which the callers treat like any other failure.
+async fn with_llm_deadline<F: std::future::Future>(
+    provider: Option<&crate::settings::PostProcessProvider>,
+    what: &str,
+    step: F,
+) -> Option<F::Output> {
+    if let Some(provider) = provider {
+        crate::llama_server::ensure_ready_for_provider(provider).await;
+    }
+    within_llm_deadline(what, step, LLM_STEP_TIMEOUT).await
+}
+
+/// `step` under `deadline`, `None` (logged) when it runs out. Split from
+/// [`with_llm_deadline`] so tests can exercise it without linking the
+/// llama-server start: that path reaches dialog code importing
+/// `TaskDialogIndirect`, a Common Controls v6 function, and a test binary has
+/// no manifest selecting v6, so it would fail to start
+/// (`STATUS_ENTRYPOINT_NOT_FOUND`).
+async fn within_llm_deadline<F: std::future::Future>(
+    what: &str,
+    step: F,
+    deadline: Duration,
+) -> Option<F::Output> {
+    match tokio::time::timeout(deadline, step).await {
+        Ok(output) => Some(output),
+        Err(_) => {
+            warn!("{what} timed out after {deadline:?}; keeping the transcription");
+            None
+        }
+    }
+}
+
 /// A post-processing reply worth pasting, or `None` for a blank one (empty,
 /// whitespace, or nothing left after the think-block and invisible-character
 /// strip), so the dictation is kept instead of being replaced by nothing
@@ -472,9 +514,14 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text)
-            .await
-            .and_then(non_blank_post_processed_text)
+        if let Some(processed_text) = with_llm_deadline(
+            settings.active_post_process_provider(),
+            "Post-processing",
+            post_process_transcription(&settings, &final_text),
+        )
+        .await
+        .flatten()
+        .and_then(non_blank_post_processed_text)
         {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
@@ -1619,12 +1666,14 @@ pub(crate) async fn multi_stt_merge_transcriptions(
         provider.id, model
     );
 
-    // Use legacy chat completion for merging
-    let merge_result = match crate::llm_client::send_chat_completion(
-        &provider, api_key, &model, prompt, false,
+    // Use legacy chat completion for merging. A timeout is a failed merge.
+    let merge_reply = with_llm_deadline(
+        Some(&provider),
+        "Multi-STT merge",
+        crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt, false),
     )
-    .await
-    {
+    .await?;
+    let merge_result = match merge_reply {
         Ok(Some(raw_content)) => {
             // Same sanitising as post-processing: a reasoning model on the
             // same provider must not paste its <think> block, and invisible
@@ -2986,6 +3035,25 @@ mod tests {
         ));
 
         assert_eq!(result, Some("done"));
+    }
+
+    #[test]
+    fn an_llm_step_is_cut_off_at_its_deadline() {
+        use std::time::Duration;
+        // Inside the deadline: the step's own output.
+        let done = tauri::async_runtime::block_on(super::within_llm_deadline(
+            "test step",
+            future::ready(Some("polished")),
+            Duration::from_secs(5),
+        ));
+        assert_eq!(done, Some(Some("polished")));
+        // A step that never answers: cut off, which callers treat as a failure.
+        let hung = tauri::async_runtime::block_on(super::within_llm_deadline(
+            "test step",
+            future::pending::<Option<&str>>(),
+            Duration::from_millis(20),
+        ));
+        assert_eq!(hung, None);
     }
 
     #[test]

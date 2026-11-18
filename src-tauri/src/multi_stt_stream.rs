@@ -176,8 +176,9 @@ const SETTINGS_REFRESH_TICKS: u32 = 40;
 
 /// A merge job that has run this long is abandoned: its result would land after
 /// the session moved on, and a wedged provider must not stop the mode from
-/// closing further chunks. The LLM client has its own request timeout; this is
-/// the backstop for everything else (a stuck engine load, a blocked pool).
+/// closing further chunks. The merge's own LLM call is bounded at 60 s
+/// (`actions::LLM_STEP_TIMEOUT`); this is the backstop for everything else (a
+/// stuck engine load, a blocked pool).
 const MERGE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// How long `MultiSttAction::stop` waits for the coordinator to finish before
