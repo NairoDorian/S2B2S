@@ -305,7 +305,14 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   - `native_streaming_latency.rs` - Maps the latency preset onto the
     transcribe.cpp `StreamExtension` a model family supports
   - `transcription.rs` - Speech-to-text pipeline: primary engine, stream
-    worker, `extra_engines` (Multi-STT), idle unload watcher
+    worker, `extra_engines` (Multi-STT), idle unload watcher. Custom words
+    reach a batch run as `RunOptions::vocabulary` on models with
+    `Feature::Vocabulary` (Whisper, Qwen3-ASR, FunASR-Nano, Granite, MOSS;
+    `vocabulary_for_model`), and the fuzzy post-correction runs exactly when
+    they were not sent; a result that is only the word list read back is
+    dropped (`echoes_vocabulary`). Live streams do not send it (R2T2's
+    streaming ticks decode without the run params while the model advertises
+    the feature), so they keep the fuzzy correction
   - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum.
     Each row records the language its text came out in and how it was chosen
     (`language` + `language_source`: selected / model / detected / fallback,

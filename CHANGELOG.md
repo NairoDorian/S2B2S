@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Custom words reach more models (2026-11-18).** Your custom words now go
+  to the model itself on Qwen3-ASR, FunASR-Nano, Granite and MOSS, as they
+  already did on Whisper (through the engine's vocabulary support instead of
+  Whisper's prompt), and only models that did not get them have the text
+  corrected afterwards. When a model answers a recording without speech by
+  reading the word list back, the result is dropped instead of pasted. Live
+  streaming keeps the after-the-fact correction. Ported from upstream.
+
 - **Your languages are suggested from your system (2026-11-18).** A new
   first-run step after the model asks which languages you dictate in, with
   your system's languages ticked (on Windows, the Time & Language list,

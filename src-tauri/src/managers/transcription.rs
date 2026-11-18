@@ -25,8 +25,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 use transcribe_cpp::{
-    AllowlistLetters, Backend, Device, Feature, Model, ModelOptions, RunExtension, RunOptions,
-    Session, StreamOptions, Task, WhisperRunOptions,
+    AllowlistLetters, Backend, Device, Feature, Model, ModelOptions, RunOptions, Session,
+    StreamOptions, Task,
 };
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -2330,12 +2330,9 @@ impl TranscriptionManager {
             );
         }
 
-        // Whether the loaded model is actually whisper-family (arch string).
-        // Non-whisper archs (e.g. Voxtral Small) can advertise
-        // Feature::InitialPrompt yet reject the whisper-kind run extension
-        // with INVALID_ARG, so the whisper extension must be gated on the
-        // arch, not on the feature (see #1601).
-        let model_is_whisper;
+        // Whether the custom words went to the model as vocabulary; the fuzzy
+        // post-correction is skipped exactly then.
+        let custom_words_prompted;
 
         // Perform transcription with the appropriate engine.
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
@@ -2377,25 +2374,26 @@ impl TranscriptionManager {
 
             // Probe live transcribe-cpp capabilities once (cheap GGUF-metadata
             // reads); the loaded session is the source of truth, not the
-            // ModelManager copy. The whisper run extension is kind-tagged, so
-            // non-whisper archs (parakeet, voxtral, …) reject it with
-            // INVALID_ARG; attach it — and translate — only where supported.
+            // ModelManager copy. Translation and the vocabulary go only where
+            // the model advertises them.
             let mut output_was_translated = false;
             let mut applied_language_hint: Option<String> = None;
             let mut model_detected_language: Option<String> = None;
-            let (model_supports_translate, model_languages, model_supports_allowlist) = {
+            let (model_supports_translate, model_languages, model_supports_allowlist, vocabulary) = {
                 let LoadedEngine::TranscribeCpp(session) = &engine;
                 let model = session.model();
                 let caps = model
                     .capabilities()
                     .map_err(|e| anyhow::anyhow!("model capabilities: {e}"))?;
-                let model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
-                model_is_whisper = model.arch() == "whisper";
+                let vocabulary = vocabulary_for_model(
+                    model.supports(Feature::Vocabulary),
+                    &settings.custom_words,
+                );
                 debug!(
-                    "transcribe-cpp model '{}' on '{}': initial_prompt={}, translate={}, languages={:?}",
+                    "transcribe-cpp model '{}' on '{}': vocabulary={}, translate={}, languages={:?}",
                     active_model,
                     model.backend(),
-                    model_takes_initial_prompt,
+                    model.supports(Feature::Vocabulary),
                     caps.supports_translate,
                     caps.languages
                 );
@@ -2403,26 +2401,14 @@ impl TranscriptionManager {
                     caps.supports_translate,
                     caps.languages,
                     model.supports(Feature::LanguageAllowlist),
+                    vocabulary,
                 )
             };
+            custom_words_prompted = !vocabulary.is_empty();
 
             let transcribe_result = catch_unwind(AssertUnwindSafe(|| -> Result<String> {
                 match &mut engine {
                     LoadedEngine::TranscribeCpp(session) => {
-                        // Custom words become the initial prompt ONLY for models
-                        // that accept one (whisper family). Attaching the
-                        // whisper run extension to a non-whisper arch is rejected
-                        // with INVALID_ARG, so skip it there and let the fuzzy
-                        // post-correction handle custom words instead.
-                        let family = if settings.custom_words.is_empty() || !model_is_whisper {
-                            None
-                        } else {
-                            Some(RunExtension::Whisper(WhisperRunOptions {
-                                initial_prompt: Some(settings.custom_words.join(", ")),
-                                ..Default::default()
-                            }))
-                        };
-
                         let run_plan = transcribe_cpp_run_plan(
                             settings.translate_to_english,
                             &validated_language,
@@ -2443,17 +2429,17 @@ impl TranscriptionManager {
                             target_language: run_plan.target_language,
                             allowed_languages: run_plan.allowed_languages,
                             allowlist_letters: run_plan.allowlist_letters,
-                            family,
+                            vocabulary: vocabulary.clone(),
                             ..Default::default()
                         };
 
                         debug!(
-                            "transcribe-cpp run: task={:?}, language={:?}, allowed_languages={:?} ({:?}), initial_prompt={}",
+                            "transcribe-cpp run: task={:?}, language={:?}, allowed_languages={:?} ({:?}), vocabulary_terms={}",
                             run_options.task,
                             run_options.language,
                             run_options.allowed_languages,
                             run_options.allowlist_letters,
-                            run_options.family.is_some()
+                            run_options.vocabulary.len()
                         );
 
                         session
@@ -2469,7 +2455,7 @@ impl TranscriptionManager {
                                         "encode_ms": t.timings.encode_ms, "decode_ms": t.timings.decode_ms },
                                     "language": run_options.language,
                                 });
-                                t.text
+                                drop_vocabulary_echo(t.text, &run_options.vocabulary)
                             })
                             .map_err(|e| {
                                 anyhow::anyhow!("transcribe-cpp transcription failed: {}", e)
@@ -2561,7 +2547,7 @@ impl TranscriptionManager {
         let filtered_result = post_process_transcription_text(
             result,
             &settings,
-            model_is_whisper,
+            custom_words_prompted,
             &output_language,
             &model_languages,
         );
@@ -2889,6 +2875,64 @@ fn resolve_output_language_evidence(
     }
 
     OutputLanguageEvidence::Unknown
+}
+
+/// The custom words for transcribe-cpp's `vocabulary` slot, in priority
+/// order, for a batch run on a model with `Feature::Vocabulary` (Whisper,
+/// Qwen3-ASR, FunASR-Nano, Granite, MOSS; upstream `4150a4a`); empty
+/// elsewhere, which then relies on the fuzzy post-correction. It replaces the
+/// Whisper-only initial prompt.
+///
+/// Live streams do not send it: `Feature` is per model, not per stream, and
+/// R2T2's streaming ticks run their decode without the run params (so
+/// without the vocabulary) while the model advertises the feature. Sending it
+/// there would switch the fuzzy correction off for words the model never saw.
+fn vocabulary_for_model(supports_vocabulary: bool, custom_words: &[String]) -> Vec<String> {
+    if supports_vocabulary {
+        custom_words.to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
+/// The run's text, or nothing when it is only the custom words read back
+/// (upstream `1e10e71`): a model that takes them as a prompt can answer audio
+/// with no speech by repeating the list, which would then be pasted.
+fn drop_vocabulary_echo(text: String, vocabulary: &[String]) -> String {
+    if echoes_vocabulary(&text, vocabulary) {
+        info!("The model returned the custom words, not speech; dropping them");
+        String::new()
+    } else {
+        text
+    }
+}
+
+/// Whether `text` is the custom words read back instead of a transcript: three
+/// or more of them in list order, covering at least three quarters of what
+/// was said. A sentence that uses a few of them is speech.
+fn echoes_vocabulary(text: &str, vocabulary: &[String]) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let said = words(text);
+    let (mut at, mut found, mut covered) = (0, 0, 0);
+    for term in vocabulary.iter().map(|term| words(term)) {
+        if term.is_empty() || at >= said.len() {
+            continue;
+        }
+        if let Some(offset) = said[at..]
+            .windows(term.len())
+            .position(|window| window == term.as_slice())
+        {
+            at += offset + term.len();
+            found += 1;
+            covered += term.len();
+        }
+    }
+    found >= 3 && covered * 4 >= said.len() * 3
 }
 
 /// How a run without the language plan chose its language: the persisted
@@ -4758,19 +4802,9 @@ fn transcribe_with_engine(
         .map_err(|e| anyhow::anyhow!("model capabilities: {e}"))?;
     let model_supports_translate = caps.supports_translate;
     let supported_languages = caps.languages.clone();
-    let model_is_whisper = model.arch() == "whisper";
-
-    // Custom words become the initial prompt ONLY for models that accept one
-    // (whisper family); other archs get the fuzzy post-correction instead.
-    let family = if settings.custom_words.is_empty() || !model_is_whisper {
-        None
-    } else {
-        Some(RunExtension::Whisper(WhisperRunOptions {
-            initial_prompt: Some(settings.custom_words.join(", ")),
-            ..Default::default()
-        }))
-    };
-    let custom_words_already_prompted = family.is_some();
+    let vocabulary =
+        vocabulary_for_model(model.supports(Feature::Vocabulary), &settings.custom_words);
+    let custom_words_already_prompted = !vocabulary.is_empty();
 
     let run_plan = transcribe_cpp_run_plan(
         settings.translate_to_english,
@@ -4788,7 +4822,7 @@ fn transcribe_with_engine(
         target_language: run_plan.target_language,
         allowed_languages: run_plan.allowed_languages,
         allowlist_letters: run_plan.allowlist_letters,
-        family,
+        vocabulary,
         ..Default::default()
     };
 
@@ -4797,7 +4831,7 @@ fn transcribe_with_engine(
         .run(audio, &run_options)
         .map(|t| {
             model_detected_language = t.language;
-            t.text
+            drop_vocabulary_echo(t.text, &run_options.vocabulary)
         })
         .map_err(|e| anyhow::anyhow!("transcribe-cpp transcription failed: {}", e))?;
 
@@ -5701,6 +5735,88 @@ mod tests {
                 Some("en".to_string())
             ),
             OutputLanguageEvidence::UserSelected("pt".to_string())
+        );
+    }
+
+    #[test]
+    fn custom_words_read_back_are_not_a_transcript() {
+        let words = [
+            "Zerotier",
+            "Qwen",
+            "VRAM",
+            "Claude",
+            "Opus",
+            "Codex",
+            "GPT-6.1 Sol",
+        ]
+        .map(String::from);
+        // The shapes Qwen3-ASR returned for recordings of room noise
+        // (upstream #2498).
+        for echo in [
+            "Zerotier Qwen VRAM Claude Opus Codex GPT-6.1 Sol.",
+            "手 Zerotier Qwen VRAM Claude Opus Codex GPT-6.1 Sol.",
+            // Only the end of the list, as with a long one.
+            "Claude Opus Codex GPT-6.1 Sol",
+            // With a word of its own in front.
+            "Ich bin ein Zerotier Qwen VRAM Claude Opus Codex GPT-6.1 Sol",
+        ] {
+            assert!(echoes_vocabulary(echo, &words), "{echo}");
+            assert_eq!(drop_vocabulary_echo(echo.to_string(), &words), "");
+        }
+        for speech in [
+            "",
+            "Okay.",
+            "I asked Claude to compare Opus and Codex on my Zerotier setup.",
+            // Too few of them to tell from someone saying them.
+            "Claude Opus",
+            "GPT-6.1 Sol",
+            // Not the order of the list.
+            "Codex, Opus, Claude",
+        ] {
+            assert!(!echoes_vocabulary(speech, &words), "{speech}");
+            assert_eq!(drop_vocabulary_echo(speech.to_string(), &words), speech);
+        }
+        assert!(!echoes_vocabulary("Zerotier Qwen VRAM", &[]));
+    }
+
+    #[test]
+    fn vocabulary_goes_only_to_models_that_take_it() {
+        let words = vec!["Kubernetes".to_string()];
+        assert_eq!(vocabulary_for_model(true, &words), words);
+        assert!(vocabulary_for_model(false, &words).is_empty());
+        assert!(vocabulary_for_model(true, &[]).is_empty());
+    }
+
+    #[test]
+    fn fuzzy_correction_is_skipped_exactly_when_vocabulary_was_sent() {
+        let settings = AppSettings {
+            selected_language: "en".to_string(),
+            custom_words: vec!["Kubernetes".to_string()],
+            ..Default::default()
+        };
+        let evidence = OutputLanguageEvidence::UserSelected("en".to_string());
+        let supported = languages(&["en"]);
+        // The model was prompted with the term: its output stands.
+        assert_eq!(
+            post_process_transcription_text(
+                "we run kubernetes at work".to_string(),
+                &settings,
+                true,
+                &evidence,
+                &supported,
+            ),
+            "we run kubernetes at work"
+        );
+        // Not prompted: the fuzzy post-correction restores the casing.
+        assert_eq!(
+            post_process_transcription_text(
+                "we run kubernetes at work".to_string(),
+                &settings,
+                false,
+                &evidence,
+                &supported,
+            ),
+            "we run Kubernetes at work"
         );
     }
 
