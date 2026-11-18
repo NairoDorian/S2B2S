@@ -73,6 +73,18 @@ items live here, self-contained.
 
 ## Bugs left open
 
+- **Linux and macOS are not built or run here.** The November cycle's
+  platform items that compile on Windows landed (Phase 10 of the update plan);
+  the Linux-only modules (WebKitGTK renderer policy, the X11 overlay, the
+  dotool / ydotool / paste-tool chain, PRIMARY-selection paste, the updater
+  switch for packages that cannot update, macOS permission reset) are deferred
+  until a Linux or macOS build can type-check them. CI builds those platforms
+  only on pushes to `main` and on pull requests.
+- **Decisions that leave upstream features out.** D2: no engine worker
+  process, so a native crash (a CUDA abort) ends the app; D3: no
+  `handy-recorder`, so no AirPods mode. Both are recorded in the plan's
+  Phase 12.
+
 - **A CUDA fault still ends the app.** The backend-error recovery of
   2026-11-18 (upstream `2eab8fc`, adapted in-process) catches what the engine
   returns as `TRANSCRIBE_ERR_BACKEND`: every C++ exception at its API (Vulkan's

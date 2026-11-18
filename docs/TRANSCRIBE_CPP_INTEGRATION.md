@@ -105,7 +105,7 @@ any of these changes have landed or that the app consumes them.
    replay may bypass microphone/VAD/RNNoise/UI; use capture/queue metrics and
    paired raw/processed quality checks for preprocessing claims.
 
-The [September plan](2026-09-native-earshot-vad-and-zer0-integration-plan.md) is
+The [September plan](archive/2026-09-native-earshot-vad-and-zer0-integration-plan.md) (archived) is
 historical context. This note corrects its former claim that engine VAD was
 unused and its unverified UI/WPM parity promises. New work follows the revised
 plan in the local engine checkout.
@@ -272,3 +272,21 @@ changed. What it means here:
   directories. Engine side, the fix is to clear `OUT_DIR`'s install tree
   before a cache restore or `cmake --install` (and the cache entry before a
   save), and to prune stale ggml DLLs in `stage_windows_dlls`.
+
+## Update: 2026-11-18 (app side, a contract the app now relies on)
+
+- **`ErrorKind::Backend` from run / feed / finalize is now load-bearing.**
+  ZER0's in-process recovery (upstream `2eab8fc`, adapted; `transcription.rs`
+  `BackendRunError`, `transcribe_recovering`) drops an engine whose `run`
+  returned it, reloads the model once on the same backend, then on CPU for
+  the session; a stream whose `feed` returned it stops feeding and the batch
+  path recovers at stop. The engine maps every C++ exception at its API to
+  `TRANSCRIBE_ERR_BACKEND`, which is what makes a Vulkan device-lost
+  recoverable. Keep that mapping; a backend failure reported as another kind
+  would be retried on the broken engine forever.
+- **A CUDA fault still ends the process.** ggml's CUDA backend reports errors
+  through `GGML_ABORT`, so nothing comes back to recover from. Upstream
+  survives it only by running the engine in a worker process (declined for
+  ZER0, D2). An engine-side option to return CUDA errors as
+  `TRANSCRIBE_ERR_BACKEND` instead of aborting would make CUDA, the first-
+  choice backend, recoverable too; the app needs no change for it.

@@ -56,15 +56,19 @@ This fork adds **Multi-STT** — run several speech-to-text models simultaneousl
 
 ### Other Fork Additions
 
-- **Transcribe Files**: batch-transcribe audio files or whole folders to `.txt` / `.md`, cut into segments at quiet points, with plain, post-processed, Multi-STT and Multi-STT + post-processing modes
+- **Transcribe Files**: batch-transcribe audio files or whole folders (WAV, MP3, M4A/AAC, FLAC, OGG, and Opus voice notes in `.opus` / `.ogg` / `.webm`) to `.txt` / `.md`, cut into segments at quiet points, with plain, post-processed, Multi-STT and Multi-STT + post-processing modes; optionally add each file to History, and drop audio anywhere on the window to queue it
 - **Live Mode**: keep the microphone open indefinitely — session audio is saved as chunked WAV files and the live transcription is mirrored into a text file while you speak
 - **Multi-STT streaming-first** (experimental): the primary model's live text becomes the transcript, and at every pause the extra models re-decode a bounded window (the closed chunk plus a configurable amount of context) and an LLM rewrites that chunk in place, so the text you watch gets more accurate as you speak instead of the session being re-decoded at the end. A nested **Multi Streaming STT** mode merges the extras' own live streams instead of re-decoding
 - **Live FFT**: a real-time spectrum analyser for the microphone (log / mel / ERB / bark scales, EQ, windows, A/C/468 weighting, ballistics, waterfall), plus a miniature analyser built into the recording overlay
 - **Recall**: a plain-folder Markdown note vault with tags, optional Argon2id + XChaCha20-Poly1305 encryption, "Save to Recall" on any history entry, and a dictate-to-caret mode for writing into a note
 - **Local LLM (llama.cpp)**: download and supervise a local llama.cpp server from within the app for post-processing and Multi-STT merging — no API key needed
 - **Help page and shortcut cheat sheet**: every page links its settings to a searchable Help anchor, and a keyboard button in the window corner shows all assigned shortcuts
-- **Noise suppression (RNNoise)**: optional pure-Rust RNNoise on the microphone before voice detection and transcription, with a live VAD test next to the threshold slider to hear-and-see the difference
-- **transcribe.cpp only, pure-Rust VAD**: no ONNX Runtime, no `transcribe-rs`, no VAD model file. Voice activity detection is **Earshot** with threshold hysteresis (upstream's Silero wrapper spoke the v4 tensor interface against a v6 model and silently passed every frame through)
+- **Noise suppression (RNNoise)**: optional RNNoise on the microphone before voice detection and transcription, run by the engine, with a live VAD test next to the threshold slider to hear-and-see the difference
+- **transcribe.cpp only**: no ONNX Runtime, no `transcribe-rs`, no VAD model file. Voice activity detection is the engine's **Earshot** speech gate with threshold hysteresis; the VAD slider moves both of its edges
+- **Languages I speak**: tell the app which languages you speak (suggested from your system), and Auto recognition stays within them; models that cannot detect a language get a spoken-language detector. The tray has a Language menu, and History shows the language each transcription came out in
+- **Notices**: a failure you might not have seen (a dictation while the window was hidden, a file job, a model that would not load or fell back to the CPU, the Local LLM) badges the tray, shows in the overlay and waits in the footer until it clears or you dismiss it
+- **GPU errors recover**: a transcription that fails in the GPU backend reloads its model and retries, then falls back to the CPU for that model instead of failing every dictation until restart
+- **Transcription hook**: an optional script rewrites the text right before it is pasted (see [Transcription Hook](#transcription-hook))
 - **Recordings with no speech are never decoded** (under 200 ms of measured speech) — no more hallucinated text pasted from silence
 - **Speech stats in the overlay**: speaking/paused indicator, a timer that only runs while you talk, and live words-per-minute with streaming models
 - **Direct streaming paste**: type the live transcript character by character into the target app as it is committed, with a speed control. Plain transcription only — with post-processing or Multi-STT the live stream is shown in the Live overlay as a preview and the processed result is pasted once with Ctrl+V
