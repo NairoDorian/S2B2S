@@ -99,6 +99,20 @@ fn is_blank_transcription(transcription: &str) -> bool {
     transcription.trim().is_empty()
 }
 
+/// A post-processing reply worth pasting, or `None` for a blank one (empty,
+/// whitespace, or nothing left after the think-block and invisible-character
+/// strip), so the dictation is kept instead of being replaced by nothing
+/// (upstream `889fca0`). `char::is_whitespace` covers the no-break and em
+/// spaces some models answer with.
+fn non_blank_post_processed_text(text: String) -> Option<String> {
+    if is_blank_transcription(&text) {
+        warn!("Post-processing returned an empty response; keeping the transcription");
+        None
+    } else {
+        Some(text)
+    }
+}
+
 async fn complete_unless_cancelled<F, C>(operation: F, is_cancelled: C) -> Option<F::Output>
 where
     F: Future,
@@ -458,7 +472,10 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        if let Some(processed_text) = post_process_transcription(&settings, &final_text)
+            .await
+            .and_then(non_blank_post_processed_text)
+        {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
@@ -1617,6 +1634,14 @@ pub(crate) async fn multi_stt_merge_transcriptions(
                 .to_string();
             if !context_trimmed.is_empty() {
                 cleaned_text = strip_llm_repeated_context(&cleaned_text, context_trimmed);
+            }
+            // A blank reply is a failed merge for every caller (the batch
+            // action, History's re-run, Transcribe Files and the streaming
+            // coordinator), which then keep the models' own text instead of
+            // pasting nothing (upstream `889fca0`'s Multi-STT half).
+            if is_blank_transcription(&cleaned_text) {
+                warn!("Multi-STT merge returned no text; keeping the models' outputs");
+                return None;
             }
             match merge_response_rejection(&cleaned_text, outputs) {
                 // The reply is not a transcript — the model answered the
@@ -2922,6 +2947,35 @@ mod tests {
     fn non_blank_transcription_is_kept() {
         assert!(!is_blank_transcription("hello"));
         assert!(!is_blank_transcription("  hello  "));
+    }
+
+    #[test]
+    fn blank_post_processed_text_is_rejected() {
+        for text in ["", "   ", "\t\n\r\n", "\u{00A0}\u{2003}"] {
+            assert_eq!(super::non_blank_post_processed_text(text.to_string()), None);
+        }
+    }
+
+    #[test]
+    fn cleaned_empty_post_processed_text_is_rejected() {
+        for text in [
+            "\u{200B}\u{200C}\u{200D}\u{FEFF}",
+            "<think>reasoning only</think>",
+            "<think>reasoning only</think>\n\u{200B} ",
+        ] {
+            let text = super::strip_invisible_chars(super::strip_think_block(text));
+            assert_eq!(super::non_blank_post_processed_text(text), None);
+        }
+    }
+
+    #[test]
+    fn non_blank_post_processed_text_is_preserved() {
+        for text in ["Cleaned text.", "  정리된 문장입니다.\n", "0"] {
+            assert_eq!(
+                super::non_blank_post_processed_text(text.to_string()),
+                Some(text.to_string())
+            );
+        }
     }
 
     #[test]

@@ -848,6 +848,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A blank reply from the LLM no longer erases the dictation (2026-11-18).**
+  When post-processing answers with nothing (or only a reasoning block, or
+  invisible characters), the transcription is pasted as it was. A blank
+  Multi-STT merge is treated like a failed merge everywhere (dictation,
+  History re-runs, Transcribe Files), so the models' own text is kept; the
+  streaming mode already did this. Ported from upstream.
+
 - **Parakeet models are no longer slower on an integrated GPU (2026-11-18).**
   The engine update of the same day ran the Parakeet / Nemotron decoder on
   every Vulkan GPU, and on an Intel iGPU that was 3-15 % slower than before
