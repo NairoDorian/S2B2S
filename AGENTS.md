@@ -476,6 +476,15 @@ download_language_detector`) when a plan wants it or when the list is
   line under its language control (one call for the page: the slot's
   settings view, `apply_extra_model_settings`, through `status_for`). Both
   word it through `src/lib/languageStatus.ts`
+- `system_languages.rs` - The OS's preferred languages (Windows:
+  `GlobalizationPreferences::Languages`, Time & Language's list; elsewhere
+  `sys-locale`), read once, served by the async `get_system_languages`. A
+  port of upstream's module **without its settings backfill**: upstream fills
+  `spoken_languages` from the guess for users who never set it, but here the
+  list is the engine's allowlist, so it is only ever suggested (the
+  onboarding step, and a one-click line under an empty list on the General
+  page) and set by the user. The picker spelling and the "up to three plus
+  English" rule are `src/lib/languageSuggestions.ts`
 - `job_object.rs` - The Windows job object (kill-on-close) that ties
   `llama-server` to the app's lifetime when `llama.stop_on_exit` is on; a
   no-op elsewhere
@@ -589,7 +598,10 @@ download_language_detector`) when a plan wants it or when the list is
     slot's own override rather than the shared per-model entry.
     There is deliberately no benchmark settings page — the benchmark lives
     beside the quant list it compares.
-  - `onboarding/` - First-run experience
+  - `onboarding/` - First-run experience: accessibility, then the model, then
+    the spoken languages (`LanguagesOnboarding.tsx`: the system's languages
+    start ticked, Continue saves them, Skip saves nothing). The Debug page can
+    preview each step
   - `live-canvas/` - The "Live Canvas" the Sidebar's button opens over Live Mode
     (`LiveCanvas.tsx`), replacing the whole settings window: the overlay scope,
     the session controls and the live transcript, read from

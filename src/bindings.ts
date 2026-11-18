@@ -329,6 +329,12 @@ export const commands = {
 	 */
 	getMultiSttLanguageStatuses: (options?: InvokeOptions) => typedError<(LanguageStatus | null)[], string>(__TAURI_INVOKE("get_multi_stt_language_statuses", undefined, options)),
 	/**
+	 *  The OS's preferred languages, most preferred first, as BCP-47 tags
+	 *  (`fr-FR`, `zh-Hant-TW`). Async so the first read (a WinRT call on
+	 *  Windows) never runs on the main thread.
+	 */
+	getSystemLanguages: (options?: InvokeOptions) => typedError<string[], string>(__TAURI_INVOKE("get_system_languages", undefined, options)),
+	/**
 	 *  Download the spoken-language detector now (≈27 MB, once). Progress and
 	 *  completion arrive as the usual model-download events under the
 	 *  detector's id.

@@ -296,6 +296,44 @@ test.describe("settings window", () => {
     expect(crashes).toEqual([]);
   });
 
+  test("an empty list offers the system's languages, and applies them only on a click", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await boot(page);
+    // The harness's OS languages are fr-FR then en-US.
+    await expect(
+      page.getByText("From your system: French, English"),
+    ).toBeVisible();
+    // Shown, not applied: nothing is written until the user asks.
+    expect(
+      (await calls(page)).filter(
+        (c) => c.cmd === "change_spoken_languages_setting",
+      ),
+    ).toEqual([]);
+
+    await page.getByRole("button", { name: "Add them" }).click();
+    await expect
+      .poll(async () =>
+        (await calls(page)).filter(
+          (c) => c.cmd === "change_spoken_languages_setting",
+        ),
+      )
+      .toEqual([
+        {
+          cmd: "change_spoken_languages_setting",
+          args: { languages: ["fr", "en"] },
+        },
+      ]);
+    await expect(
+      page.getByRole("button", { name: "Remove French" }),
+    ).toBeVisible();
+    await expect(page.getByText(/^From your system:/)).toHaveCount(0);
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+
   test("speaking Chinese reveals the script setting", async ({ page }) => {
     const crashes = watchForCrashes(page);
     await boot(page);

@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Your languages are suggested from your system (2026-11-18).** A new
+  first-run step after the model asks which languages you dictate in, with
+  your system's languages ticked (on Windows, the Time & Language list,
+  keyboard-only languages included). On the General page an empty
+  "Languages I speak" list offers the same languages in one click. Nothing
+  is filled in for you: the list limits what the models may transcribe in,
+  so it is only set when you confirm it.
+
 - **Each Multi-STT slot explains its language plan (2026-11-18).** Under a
   slot's language control, the same line the General page shows for the
   primary model: what Auto falls back to with that slot's model and language,

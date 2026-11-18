@@ -35,6 +35,7 @@ mod session_log;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod system_languages;
 mod system_monitor;
 mod transcription_coordinator;
 mod tray;
@@ -965,6 +966,7 @@ pub fn run(cli_args: CliArgs) {
             commands::models::get_arch_plugins,
             commands::models::get_language_status,
             commands::models::get_multi_stt_language_statuses,
+            system_languages::get_system_languages,
             commands::models::download_language_detector,
             commands::models::load_arch_plugin,
             commands::models::register_arch_dir,

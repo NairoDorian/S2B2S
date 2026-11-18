@@ -135,6 +135,13 @@
         "checkFailed": "檢查權限失敗，請重試",
         "requestFailed": "請求權限失敗，請重試"
       }
+    },
+    "languages": {
+      "title": "選擇您要用來聽寫的語言",
+      "description": "Suggested from your system's languages. While the language is Auto, models that support it only transcribe in these, so the text never comes out in a language you don't speak.",
+      "later": "You can change this anytime under General → Languages I speak.",
+      "continue": "Continue",
+      "skip": "Skip"
     }
   },
   "modelSelector": {
@@ -306,7 +313,9 @@
           "oneLanguage": "With this model, Auto transcribes in {{language}}: it is the only one of your languages the model supports.",
           "undetectable": "The detector can't identify {{languages}}, so with this model Auto transcribes in {{language}}.",
           "noMatch": "This model supports none of your languages; Auto transcribes in {{language}}."
-        }
+        },
+        "suggestion": "From your system: {{languages}}",
+        "addSuggested": "Add them"
       }
     },
     "models": {
@@ -844,7 +853,8 @@
         "description": "預覽新手引導畫面，而不變更權限、模型或完成狀態",
         "permissionsButton": "權限",
         "modelsButton": "模型選擇",
-        "exitButton": "結束預覽"
+        "exitButton": "結束預覽",
+        "languagesButton": "Languages"
       },
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",

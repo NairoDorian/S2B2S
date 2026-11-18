@@ -135,6 +135,13 @@
         "checkFailed": "Berechtigungsprüfung fehlgeschlagen. Bitte erneut versuchen.",
         "requestFailed": "Berechtigungsanfrage fehlgeschlagen. Bitte erneut versuchen."
       }
+    },
+    "languages": {
+      "title": "Wähle die Sprachen, in denen du diktierst",
+      "description": "Suggested from your system's languages. While the language is Auto, models that support it only transcribe in these, so the text never comes out in a language you don't speak.",
+      "later": "You can change this anytime under General → Languages I speak.",
+      "continue": "Continue",
+      "skip": "Skip"
     }
   },
   "modelSelector": {
@@ -330,7 +337,9 @@
           "oneLanguage": "With this model, Auto transcribes in {{language}}: it is the only one of your languages the model supports.",
           "undetectable": "The detector can't identify {{languages}}, so with this model Auto transcribes in {{language}}.",
           "noMatch": "This model supports none of your languages; Auto transcribes in {{language}}."
-        }
+        },
+        "suggestion": "From your system: {{languages}}",
+        "addSuggested": "Add them"
       }
     },
     "sound": {
@@ -844,7 +853,8 @@
         "description": "Vorschau der Einrichtungsbildschirme, ohne Berechtigungen, Modelle oder den Abschlussstatus zu ändern",
         "permissionsButton": "Berechtigungen",
         "modelsButton": "Modellauswahl",
-        "exitButton": "Vorschau beenden"
+        "exitButton": "Vorschau beenden",
+        "languagesButton": "Languages"
       },
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",

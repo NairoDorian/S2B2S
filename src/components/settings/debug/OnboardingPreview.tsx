@@ -2,7 +2,7 @@ import { useTranslation } from "@/i18n/useTranslation";
 import { Button } from "../../ui/Button";
 import { SettingContainer } from "../../ui/SettingContainer";
 
-export type OnboardingPreviewStep = "accessibility" | "model";
+export type OnboardingPreviewStep = "accessibility" | "model" | "languages";
 
 interface OnboardingPreviewProps {
   onPreview: (step: OnboardingPreviewStep) => void;
@@ -34,6 +34,13 @@ export const OnboardingPreview = (props: OnboardingPreviewProps) => {
           onClick={() => props.onPreview("model")}
         >
           {t("settings.debug.onboardingPreview.modelsButton")}
+        </Button>
+        <Button
+          variant="secondary"
+          size="md"
+          onClick={() => props.onPreview("languages")}
+        >
+          {t("settings.debug.onboardingPreview.languagesButton")}
         </Button>
       </div>
     </SettingContainer>

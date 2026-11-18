@@ -135,6 +135,13 @@
         "checkFailed": "अनुमतियां जांची नहीं जा सकीं. कृपया फिर से कोशिश करें.",
         "requestFailed": "अनुमति मांगी नहीं जा सकी. कृपया फिर से कोशिश करें."
       }
+    },
+    "languages": {
+      "title": "वे भाषाएं चुनें जिनमें आप बोलेंगे",
+      "description": "Suggested from your system's languages. While the language is Auto, models that support it only transcribe in these, so the text never comes out in a language you don't speak.",
+      "later": "You can change this anytime under General → Languages I speak.",
+      "continue": "Continue",
+      "skip": "Skip"
     }
   },
   "modelSelector": {
@@ -306,7 +313,9 @@
           "oneLanguage": "With this model, Auto transcribes in {{language}}: it is the only one of your languages the model supports.",
           "undetectable": "The detector can't identify {{languages}}, so with this model Auto transcribes in {{language}}.",
           "noMatch": "This model supports none of your languages; Auto transcribes in {{language}}."
-        }
+        },
+        "suggestion": "From your system: {{languages}}",
+        "addSuggested": "Add them"
       }
     },
     "models": {
@@ -750,7 +759,8 @@
         "description": "अनुमतियों, मॉडल या पूर्णता स्थिति को बदले बिना शुरुआती सेटअप स्क्रीन की झलक देखें",
         "permissionsButton": "अनुमतियाँ",
         "modelsButton": "मॉडल चयन",
-        "exitButton": "झलक से बाहर निकलें"
+        "exitButton": "झलक से बाहर निकलें",
+        "languagesButton": "Languages"
       },
       "soundTheme": {
         "label": "साउंड थीम",

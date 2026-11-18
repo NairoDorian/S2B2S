@@ -135,6 +135,13 @@
         "checkFailed": "Gagal memeriksa izin. Silakan coba lagi.",
         "requestFailed": "Gagal meminta izin. Silakan coba lagi."
       }
+    },
+    "languages": {
+      "title": "Pilih bahasa yang akan Anda gunakan untuk mendikte",
+      "description": "Suggested from your system's languages. While the language is Auto, models that support it only transcribe in these, so the text never comes out in a language you don't speak.",
+      "later": "You can change this anytime under General → Languages I speak.",
+      "continue": "Continue",
+      "skip": "Skip"
     }
   },
   "modelSelector": {
@@ -306,7 +313,9 @@
           "oneLanguage": "With this model, Auto transcribes in {{language}}: it is the only one of your languages the model supports.",
           "undetectable": "The detector can't identify {{languages}}, so with this model Auto transcribes in {{language}}.",
           "noMatch": "This model supports none of your languages; Auto transcribes in {{language}}."
-        }
+        },
+        "suggestion": "From your system: {{languages}}",
+        "addSuggested": "Add them"
       }
     },
     "models": {
@@ -750,7 +759,8 @@
         "description": "Pratinjau layar penyiapan awal tanpa mengubah izin, model, atau status penyelesaian",
         "permissionsButton": "Izin",
         "modelsButton": "Pemilihan Model",
-        "exitButton": "Keluar dari Pratinjau"
+        "exitButton": "Keluar dari Pratinjau",
+        "languagesButton": "Languages"
       },
       "soundTheme": {
         "label": "Tema Suara",

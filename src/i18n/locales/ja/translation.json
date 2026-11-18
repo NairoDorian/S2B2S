@@ -135,6 +135,13 @@
         "checkFailed": "権限の確認に失敗しました。もう一度お試しください。",
         "requestFailed": "権限のリクエストに失敗しました。もう一度お試しください。"
       }
+    },
+    "languages": {
+      "title": "音声入力で使う言語を選んでください",
+      "description": "Suggested from your system's languages. While the language is Auto, models that support it only transcribe in these, so the text never comes out in a language you don't speak.",
+      "later": "You can change this anytime under General → Languages I speak.",
+      "continue": "Continue",
+      "skip": "Skip"
     }
   },
   "modelSelector": {
@@ -330,7 +337,9 @@
           "oneLanguage": "With this model, Auto transcribes in {{language}}: it is the only one of your languages the model supports.",
           "undetectable": "The detector can't identify {{languages}}, so with this model Auto transcribes in {{language}}.",
           "noMatch": "This model supports none of your languages; Auto transcribes in {{language}}."
-        }
+        },
+        "suggestion": "From your system: {{languages}}",
+        "addSuggested": "Add them"
       }
     },
     "sound": {
@@ -844,7 +853,8 @@
         "description": "権限、モデル、完了状態を変更せずにオンボーディング画面をプレビューします",
         "permissionsButton": "権限",
         "modelsButton": "モデル選択",
-        "exitButton": "プレビューを終了"
+        "exitButton": "プレビューを終了",
+        "languagesButton": "Languages"
       },
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",

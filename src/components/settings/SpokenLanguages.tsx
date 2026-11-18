@@ -12,6 +12,7 @@ import {
 } from "../../lib/constants/languages";
 import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 import { languageStatusText } from "@/lib/languageStatus";
+import { suggestedSpokenLanguages } from "@/lib/languageSuggestions";
 
 interface SpokenLanguagesProps {
   descriptionMode?: "inline" | "tooltip";
@@ -85,6 +86,25 @@ export const SpokenLanguages = (props: SpokenLanguagesProps): JSX.Element => {
       void refreshStatus();
     }
   };
+
+  // With an empty list, the OS's languages as a one-click suggestion. Never
+  // applied on its own: the list is the engine's allowlist, so the user
+  // confirms it (upstream backfills it from the same guess instead).
+  const [suggestion, setSuggestion] = createSignal<string[]>([]);
+  createEffect(
+    () => undefined,
+    () => {
+      let cancelled = false;
+      void commands.getSystemLanguages().then((result) => {
+        if (cancelled) return;
+        const tags = result.status === "ok" ? result.data : [];
+        setSuggestion(suggestedSpokenLanguages([...tags, navigator.language]));
+      });
+      return () => {
+        cancelled = true;
+      };
+    },
+  );
 
   // The line under the list; nothing when Auto simply works.
   const statusText = (): string | null =>
@@ -261,6 +281,23 @@ export const SpokenLanguages = (props: SpokenLanguagesProps): JSX.Element => {
             </Show>
           </div>
         )}
+      </Show>
+      <Show when={spoken().length === 0 && suggestion().length > 0}>
+        <div class="px-4 pb-2 -mt-1 flex items-center justify-end gap-2 text-xs text-mid-gray">
+          <span class="text-end">
+            {t("settings.general.spokenLanguages.suggestion", {
+              languages: suggestion().map(label).join(", "),
+            })}
+          </span>
+          <button
+            type="button"
+            class="shrink-0 px-2 py-0.5 font-semibold border border-mid-gray/80 bg-mid-gray/10 rounded hover:bg-accent/10 hover:border-accent cursor-pointer disabled:opacity-50"
+            disabled={busy()}
+            onClick={() => void write(suggestion())}
+          >
+            {t("settings.general.spokenLanguages.addSuggested")}
+          </button>
+        </div>
       </Show>
       <Show when={spoken().length > 0}>
         <ToggleSwitch

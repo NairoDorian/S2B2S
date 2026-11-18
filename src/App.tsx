@@ -20,7 +20,10 @@ import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
-import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
+import Onboarding, {
+  AccessibilityOnboarding,
+  LanguagesOnboarding,
+} from "./components/onboarding";
 import {
   DebugSettings,
   type OnboardingPreviewStep,
@@ -42,7 +45,7 @@ import { getLanguageDirection } from "@/lib/utils/rtl";
 import { applyUiScale } from "@/lib/utils/theme";
 import { applyTypography, normalizeTypography } from "@/lib/typography";
 
-type OnboardingStep = "accessibility" | "model" | "done";
+type OnboardingStep = "accessibility" | "model" | "languages" | "done";
 
 const NOOP = () => {};
 
@@ -108,7 +111,8 @@ function App() {
   const isShowingOnboarding = () =>
     onboardingPreview() !== null ||
     onboardingStep() === "accessibility" ||
-    onboardingStep() === "model";
+    onboardingStep() === "model" ||
+    onboardingStep() === "languages";
 
   let settingsScrollRef: HTMLDivElement | undefined;
 
@@ -368,7 +372,13 @@ function App() {
     setOnboardingStep(isReturningUser() ? "done" : "model");
   };
 
+  // A first run asks for the spoken languages after the model; a returning
+  // user (re-shown onboarding for a permission) never reaches the model step.
   const handleModelSelected = () => {
+    setOnboardingStep("languages");
+  };
+
+  const handleLanguagesDone = () => {
     setOnboardingStep("done");
   };
 
@@ -384,12 +394,14 @@ function App() {
       {toaster}
       <Switch>
         <Match when={onboardingStep() !== null && onboardingPreview() !== null}>
-          <Show
-            when={onboardingPreview() === "accessibility"}
-            fallback={<Onboarding onModelSelected={NOOP} preview />}
-          >
-            <AccessibilityOnboarding onComplete={NOOP} preview />
-          </Show>
+          <Switch fallback={<Onboarding onModelSelected={NOOP} preview />}>
+            <Match when={onboardingPreview() === "accessibility"}>
+              <AccessibilityOnboarding onComplete={NOOP} preview />
+            </Match>
+            <Match when={onboardingPreview() === "languages"}>
+              <LanguagesOnboarding onComplete={NOOP} preview />
+            </Match>
+          </Switch>
           <button
             type="button"
             onClick={() => setOnboardingPreview(null)}
@@ -403,6 +415,9 @@ function App() {
         </Match>
         <Match when={onboardingStep() === "model"}>
           <Onboarding onModelSelected={handleModelSelected} />
+        </Match>
+        <Match when={onboardingStep() === "languages"}>
+          <LanguagesOnboarding onComplete={handleLanguagesDone} />
         </Match>
         <Match when={onboardingStep() === "done"}>
           <Show

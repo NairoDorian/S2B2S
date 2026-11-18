@@ -135,6 +135,13 @@
         "checkFailed": "فشل التحقق من الأذونات. يرجير المحاولة مرة أخرى.",
         "requestFailed": "فشل طلب الإذن. يرجى المحاولة مرة أخرى."
       }
+    },
+    "languages": {
+      "title": "اختر اللغات التي ستُملي بها",
+      "description": "Suggested from your system's languages. While the language is Auto, models that support it only transcribe in these, so the text never comes out in a language you don't speak.",
+      "later": "You can change this anytime under General → Languages I speak.",
+      "continue": "Continue",
+      "skip": "Skip"
     }
   },
   "modelSelector": {
@@ -303,7 +310,9 @@
           "oneLanguage": "With this model, Auto transcribes in {{language}}: it is the only one of your languages the model supports.",
           "undetectable": "The detector can't identify {{languages}}, so with this model Auto transcribes in {{language}}.",
           "noMatch": "This model supports none of your languages; Auto transcribes in {{language}}."
-        }
+        },
+        "suggestion": "From your system: {{languages}}",
+        "addSuggested": "Add them"
       }
     },
     "sound": {
@@ -817,7 +826,8 @@
         "description": "عاين شاشات الإعداد الأولي دون تغيير الأذونات أو النماذج أو حالة الإكمال",
         "permissionsButton": "الأذونات",
         "modelsButton": "اختيار النموذج",
-        "exitButton": "إنهاء المعاينة"
+        "exitButton": "إنهاء المعاينة",
+        "languagesButton": "Languages"
       },
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",

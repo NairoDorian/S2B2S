@@ -500,9 +500,10 @@ with one shared detector run and 6.5 the detector (pinned Q8_0, download
 only when needed, `get_language_status` line with a download button)
 (`6efcf51b`); 6.7 the Chinese script setting with schema 11 (`15a39e2e`). The detector was checked on real speech: all seven FLEURS
 clips identified, ~68 ms per 5 s. On 2026-11-18: 6.6's tray Language
-submenu, 6.5's History language/source columns, and 6.6's per-slot plan
-line on the Multi-STT page. Left: the onboarding suggestion (6.6) and a
-real-microphone check of the allowlist (6.8).
+submenu, 6.5's History language/source columns, 6.6's per-slot plan line
+on the Multi-STT page and its onboarding / General-page language
+suggestion. Left: a real-microphone check of the allowlist (6.8), which is
+the user's.
 
 Three mechanisms, one setting:
 
@@ -621,8 +622,14 @@ recording only when a `Detect` plan exists; no thread, no poll.
 - **Tray Language submenu** (`3d94031`, #1319): spoken languages first, the
   model's others under "Other languages", Auto greyed when it cannot work;
   skip the detector lookup while dictating (upstream's perf fix).
-- **Onboarding** (part of `0e5e9ca`): a languages step suggested from the
-  system languages (port `system_languages.rs`), writing `spoken_languages`.
+- ~~**Onboarding** (part of `0e5e9ca`): a languages step suggested from the
+  system languages (port `system_languages.rs`), writing `spoken_languages`.~~
+  Done 2026-11-18, adapted: a third onboarding step after the model (the
+  system's languages ticked, Continue saves, Skip saves nothing) and a
+  one-click suggestion under an empty list on the General page. Upstream's
+  one-time backfill of `spoken_languages` for existing users is **not**
+  ported: in ZER0 the list is the engine's allowlist, so a guess would
+  restrict every model to languages the user never confirmed.
 - Strings in all 26 locales.
 
 ### 6.7 Chinese script (D6)
