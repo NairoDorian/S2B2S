@@ -326,6 +326,19 @@ src-tauri/Cargo.lock` must print nothing.
    by the user, not by the agent.
 5. Update `native_build_identity()` expectations if they print the ABI hash
    (`0c46a78d4d6646a7`).
+6. **Second bump, 2026-11-18: `cfb07a12` → `8b27bc6b`** (the user pushed six
+   engine commits: Parakeet decoder on the GPU, conformer attention kept on
+   CUDA, the Granite / Qwen3 / R2T2 step pipeline, the whole-fork audit). ABI
+   hash and generated bindings unchanged; `grep patch.unused` empty. App
+   adaptations in the same commit: `SpeechGate` no longer passes an explicit
+   exit threshold (an explicit exit is kept across `set_threshold`, so the
+   slider moved one edge only — a Phase 5 bug the engine's `vad-gate` change
+   made visible); `arch_plugins.rs` stops registering the models folder;
+   `build.rs` bundles the engine's license texts. Measured A/B through the
+   app (CPU lane, Vulkan + CPU, 8 runs per arm, alternating): transcripts
+   identical in all 18 cases, Vulkan 1.24-1.51x faster for Nemotron and the
+   Parakeets, CPU level, R2T2 streaming on Vulkan 3.6 % slower (open,
+   [STT_BENCHMARKS.md](STT_BENCHMARKS.md)).
 
 ---
 

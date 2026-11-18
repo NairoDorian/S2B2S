@@ -8,12 +8,15 @@
 //! `scripts/tauri-runner.ts` and `src-tauri/Cargo.toml`.
 //!
 //! **This module adds no loading of its own to the normal path.** Were the
-//! feature on, the library already searches, in order, the model file's
-//! directory and its `arch/` subdirectory, every directory registered here,
-//! `$TRANSCRIBE_ARCH_DIR`, and the directory holding libtranscribe. What is left
-//! here is for the layouts that search cannot cover: letting a user drop a
-//! plugin into an app-owned folder ([`init_arch_plugin_dirs`],
-//! `register_arch_dir`), and reporting what is installed ([`list_arch_plugins`]).
+//! feature on, the library searches, first match wins, every directory
+//! registered here (in registration order), `$TRANSCRIBE_ARCH_DIR`, and the
+//! directory holding libtranscribe (its `arch/` subdirectory first). It never
+//! searches the working directory, and the model file's folder only with
+//! `TRANSCRIBE_ARCH_SEARCH_MODEL_DIR=1`: a plugin is native code, and model
+//! files are downloaded. What is left here is for the layouts that search
+//! cannot cover: letting a user drop a plugin into an app-owned folder
+//! ([`init_arch_plugin_dirs`], `register_arch_dir`), and reporting what is
+//! installed ([`list_arch_plugins`]).
 //!
 //! A model whose family is not in the build's set fails to load with
 //! "unsupported architecture"; the `Model::load_with` wrapper in
@@ -185,12 +188,28 @@ pub fn load_arch_plugin<P: AsRef<Path>>(path: P) -> Result<(), String> {
 /// Registration is enough: the directories below join the loader's search path.
 ///
 /// Returns the directories that were registered, in registration order.
+///
+/// The loader takes the first match in registration order, so the shipped
+/// plugins come first: a module the user dropped in by hand fills a family
+/// the build does not ship, and a leftover from an older build can never
+/// replace the plugin installed with this one. The models folder is not
+/// registered: models are downloaded there, and registering it would undo the
+/// engine's refusal to run code found beside a model file.
 pub fn init_arch_plugin_dirs(app_handle: &AppHandle) -> Vec<PathBuf> {
     let mut candidate_dirs = Vec::new();
 
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        // Where build.rs stages the shipped plugins, and where `cmake --install`
+        // puts them in a packaged build.
+        candidate_dirs.push(exe_dir.join("arch"));
+        candidate_dirs.push(exe_dir.to_path_buf());
+        candidate_dirs.push(exe_dir.join("plugins"));
+    }
+
     if let Ok(app_data) = crate::portable::app_data_dir(app_handle) {
         let plugins_dir = app_data.join("plugins");
-        let models_dir = app_data.join("models");
 
         // Created on demand: this is the folder the Models page opens, so it
         // has to exist for the user to have somewhere to drop a plugin.
@@ -198,18 +217,6 @@ pub fn init_arch_plugin_dirs(app_handle: &AppHandle) -> Vec<PathBuf> {
 
         candidate_dirs.push(plugins_dir);
         candidate_dirs.push(app_data.join("arch"));
-        candidate_dirs.push(models_dir.clone());
-        candidate_dirs.push(models_dir.join("arch"));
-    }
-
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        // Where build.rs stages the shipped plugins, and where `cmake --install`
-        // puts them in a packaged build.
-        candidate_dirs.push(exe_dir.to_path_buf());
-        candidate_dirs.push(exe_dir.join("plugins"));
-        candidate_dirs.push(exe_dir.join("arch"));
     }
 
     let mut registered = Vec::new();

@@ -81,9 +81,10 @@ items live here, self-contained.
   them by hand.
 - **Earshot was never benchmarked in noisy rooms** before becoming the only
   VAD (quiet-room agreement with Silero was 97.7 %). If speech gets clipped in
-  noise, `vad_threshold_earshot` is the knob (speech below Earshot's −45 dBFS
-  energy pre-gate needs microphone gain instead); adding a second detector back is
-  a larger change.
+  noise, `vad_threshold_earshot` is the knob (the engine scores every frame
+  since 2026-11-17, so a quiet microphone answers to a lower threshold too; the
+  old −45 dBFS pre-gate is gone); adding a second detector back is a larger
+  change.
 - `audio_toolkit/bin/cli.rs` is not a build target (there is no `[[bin]]` entry
   in `Cargo.toml`, and it sits outside `src/bin/`, so Cargo does not discover
   it) and therefore not compiled by CI. It compiles as of

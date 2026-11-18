@@ -12,7 +12,7 @@ use app_lib::audio_toolkit::{
     SpeechGate, VoiceActivityDetector,
     audio::read_wav_samples,
     constants::VAD_FRAME_SAMPLES,
-    vad::{VAD_STREAMING_HANGOVER_MS, VadFrame},
+    vad::{VAD_STREAMING_HANGOVER_MS, VadFrame, exit_threshold},
 };
 
 #[test]
@@ -71,5 +71,52 @@ fn real_vad_chain_reports_speech_over_real_audio() {
     assert!(
         raw_voiced < frames,
         "every frame voiced - VAD is not discriminating"
+    );
+}
+
+/// The VAD slider moved mid-recording: both edges of the two-threshold rule
+/// must move with it. Raised to 0.7, the gate leaves speech below 0.55 (not
+/// the 0.35 it started with); lowered to 0.3, it leaves below 0.15 (not at
+/// 0.3, which would collapse the hysteresis into a single edge).
+#[test]
+fn threshold_changes_move_both_edges_over_real_audio() {
+    let Some(wav) = app_env_var("PROBE_WAV") else {
+        eprintln!("skipped: set the PROBE_WAV flag to a 16kHz mono speech recording");
+        return;
+    };
+    let samples = read_wav_samples(&wav).expect("read wav");
+    let (frames, _) = samples.as_chunks::<VAD_FRAME_SAMPLES>();
+    let mut vad = SpeechGate::new(0.5, VAD_STREAMING_HANGOVER_MS).expect("speech gate");
+    let (mut threshold, mut in_speech) = (0.5f32, false);
+    // Frames a stale exit edge (the construction's 0.35, kept below the new
+    // threshold) would have decided differently: the case under test.
+    let mut discriminating = 0usize;
+    let third = frames.len() / 3;
+    for (i, frame) in frames.iter().enumerate() {
+        if i == third || i == 2 * third {
+            threshold = if i == third { 0.7 } else { 0.3 };
+            vad.set_threshold(threshold);
+            in_speech = false;
+        }
+        vad.push_frame(frame).expect("frame");
+        let score = vad.last_frame_score().expect("score");
+        if in_speech {
+            let stale = exit_threshold(0.5).min(threshold);
+            discriminating += usize::from((score >= stale) != (score >= exit_threshold(threshold)));
+        }
+        in_speech = if in_speech {
+            score >= exit_threshold(threshold)
+        } else {
+            score >= threshold
+        };
+        assert_eq!(
+            vad.last_frame_voiced(),
+            in_speech,
+            "frame {i}: score {score}, threshold {threshold}"
+        );
+    }
+    eprintln!(
+        "{} frames, {discriminating} decided by the moved exit edge",
+        frames.len()
     );
 }

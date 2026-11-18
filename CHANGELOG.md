@@ -808,6 +808,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The VAD slider moves both edges of the speech gate (2026-11-18).** Since
+  the engine took over voice detection (2026-11-17) the gate was built with an
+  explicit exit threshold, which the engine keeps fixed when the threshold
+  changes: raising the sensitivity slider to 0.7 left the gate leaving speech
+  at 0.35, and lowering it to 0.3 put both edges at 0.3, so the speaking
+  indicator and the speech clock could flap. The engine now derives the exit
+  edge (0.15 below the threshold) and follows every change, mid-recording
+  included. Found while moving to engine `8b27bc6b`, which also brings
+  Parakeet decoding on the GPU (2.7-5.2x faster decode on CUDA), Canary /
+  Cohere / GigaAM attention kept on the GPU, pipelined Granite / Qwen3 / R2T2
+  token steps that no longer stall the other Multi-STT models, and streams
+  that never show half a UTF-8 character; transcripts are unchanged
+  (measured through the app: Vulkan 1.24-1.51x faster for Nemotron and the
+  Parakeets, CPU level, R2T2 streaming on Vulkan 3.6 % slower). The
+  engine's third-party notices (Earshot, RNNoise, Silero, cJSON, audio.cpp)
+  now ship with the app.
+
 - **llama.cpp installs picked a CUDA build the machine could not run
   (2026-11-15).** Drivers from the 620 series print `CUDA UMD Version: 13.5`,
   which detection did not read, so it fell back to a hardcoded `cuda-13.4`;

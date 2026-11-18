@@ -11,3 +11,6 @@
 # tauri.windows.conf.json on Windows, into /usr/lib/<name> (deb/rpm) via
 # tauri.conf.json on Linux.
 /transcribe-libs/
+# The engine's third-party notices, copied from its install tree by build.rs
+# (stage_engine_licenses) and bundled with resources/.
+/resources/licenses/

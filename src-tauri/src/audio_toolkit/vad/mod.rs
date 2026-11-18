@@ -34,9 +34,11 @@ pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> u
 }
 
 /// The exit threshold of the two-threshold gate: 0.15 below the entry
-/// threshold, floored at 0.01 (silero-vad's reference rule, which the engine's
-/// gate applies when no exit threshold is given).
-pub(crate) fn exit_threshold(threshold: f32) -> f32 {
+/// threshold, floored at 0.01 (silero-vad's reference rule). The engine's gate
+/// derives it itself, and re-derives it on every threshold change, because
+/// `SpeechGate` gives it no exit edge; this copy is for the History
+/// re-analysis (`voiced_ms`) and for checking the gate against the rule.
+pub fn exit_threshold(threshold: f32) -> f32 {
     (threshold - 0.15).max(0.01)
 }
 

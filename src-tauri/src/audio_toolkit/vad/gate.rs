@@ -1,9 +1,7 @@
 use anyhow::Result;
 use transcribe_cpp::{EARSHOT_FRAME_SAMPLES, VadGate, VadGateParams};
 
-use super::{
-    VAD_ONSET_MS, VAD_PREFILL_MS, VadFrame, VadTailReport, VoiceActivityDetector, exit_threshold,
-};
+use super::{VAD_ONSET_MS, VAD_PREFILL_MS, VadFrame, VadTailReport, VoiceActivityDetector};
 use crate::audio_toolkit::constants;
 
 // The capture pipeline frames itself to the detector; the constant the rest
@@ -36,7 +34,13 @@ impl SpeechGate {
     pub fn new(threshold: f32, hangover_ms: u64) -> Result<Self> {
         let params = VadGateParams {
             threshold,
-            exit_threshold: Some(exit_threshold(threshold)),
+            // Derived by the engine (`exit_threshold`'s rule, 0.15 below,
+            // floored at 0.01) and re-derived on every `set_threshold`. An
+            // explicit value is the caller's fixed exit edge, kept across
+            // threshold changes: the slider moved to 0.7 would have left the
+            // gate exiting at 0.35, and at 0.3 the two edges would collapse
+            // into one (0.3 / 0.3) and the verdict would flap.
+            exit_threshold: None,
             onset_ms: VAD_ONSET_MS as u32,
             preroll_ms: VAD_PREFILL_MS as u32,
             hangover_ms: hangover_ms as u32,
@@ -96,9 +100,10 @@ impl VoiceActivityDetector for SpeechGate {
         self.last_score
     }
 
-    /// From the next frame on, mid-recording included. The settings clamp
-    /// the value into the engine's range, so a refusal only means an
-    /// out-of-range caller, and the previous threshold stays.
+    /// From the next frame on, mid-recording included; the exit edge follows
+    /// (see `new`). The settings clamp the value into the engine's range, so
+    /// a refusal only means an out-of-range caller, and the previous
+    /// threshold stays.
     fn set_threshold(&mut self, threshold: f32) {
         if let Err(e) = self.gate.set_threshold(threshold) {
             log::warn!("VAD threshold {threshold} refused: {e}");
@@ -127,7 +132,7 @@ impl VoiceActivityDetector for SpeechGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio_toolkit::vad::VAD_OFFLINE_HANGOVER_MS;
+    use crate::audio_toolkit::vad::{VAD_OFFLINE_HANGOVER_MS, exit_threshold};
 
     const N: usize = EARSHOT_FRAME_SAMPLES;
 
@@ -168,6 +173,46 @@ mod tests {
         vad.set_threshold(0.3);
         vad.set_hangover_ms(1650);
         assert!(!vad.push_frame(&[0.0; N]).unwrap().is_speech());
+    }
+
+    #[test]
+    fn the_exit_edge_follows_every_threshold_change() {
+        // The verdict is the two-threshold rule over the gate's own scores,
+        // with the exit edge derived from whichever threshold is current. A
+        // threshold change re-arms the rule (the gate starts outside speech).
+        // An explicit exit would have stayed where construction put it.
+        let pcm: Vec<f32> = (0..N * 210)
+            .map(|i| {
+                let t = i as f32 / 16_000.0;
+                let level = [0.0, 0.05, 0.6, 0.2, 0.01, 0.4][(i / (N * 7)) % 6];
+                level
+                    * ((2.0 * std::f32::consts::PI * 210.0 * t).sin()
+                        + 0.4 * (2.0 * std::f32::consts::PI * 1300.0 * t).sin())
+                    / 1.4
+            })
+            .collect();
+        let mut vad = gate();
+        let mut threshold = 0.5f32;
+        let mut in_speech = false;
+        for (i, frame) in pcm.as_chunks::<N>().0.iter().enumerate() {
+            if i == 70 || i == 140 {
+                threshold = if i == 70 { 0.7 } else { 0.3 };
+                vad.set_threshold(threshold);
+                in_speech = false;
+            }
+            vad.push_frame(frame).unwrap();
+            let score = vad.last_frame_score().unwrap();
+            in_speech = if in_speech {
+                score >= exit_threshold(threshold)
+            } else {
+                score >= threshold
+            };
+            assert_eq!(
+                vad.last_frame_voiced(),
+                in_speech,
+                "frame {i}: score {score}, threshold {threshold}"
+            );
+        }
     }
 
     #[test]

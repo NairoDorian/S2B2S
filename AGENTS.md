@@ -32,6 +32,10 @@ the engine's relevant worktree, and read its `AGENTS.md`,
 `docs/zer0-engine-integration.md` and current VAD plan. Check the C++ behavior
 against this app's real Rust call sites, including defaulted StreamOptions.
 
+The engine's `docs/fork/README.md` says what the fork changes against upstream
+(defaults that differ and their off switches, the API it adds, a document
+map); its `docs/environment-variables.md` lists every runtime switch.
+
 Use `git worktree list` and inspect both branch/dirty states; the feature may be
 on `codex/vad-integration` while the canonical engine folder remains on main.
 Verify Cargo/native build provenance instead of assuming a local engine edit
@@ -271,6 +275,12 @@ CUDA off at configure time on top of that (`-DTRANSCRIBE_CUDA=OFF` — the `cuda
 cargo feature cannot be dropped, it lives in the target table; Vulkan stays in
 the build). Every lane packs the full family set: `TRANSCRIBE_MODEL_SET=full` is
 set by the runner, not by a config file.
+
+**Third-party notices:** the engine compiles Earshot (MIT), RNNoise through
+nnnoiseless (BSD-3-Clause), Silero VAD, cJSON and audio.cpp ports into
+libtranscribe and installs their texts under `share/licenses/transcribe/`;
+`build.rs` (`stage_engine_licenses`) copies them into the gitignored
+`src-tauri/resources/licenses/transcribe/`, so every bundle ships them.
 
 For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
@@ -715,7 +725,11 @@ gate stays off as well.
 - **Thresholding uses hysteresis**: speech is entered at the threshold
   (`vad_threshold_earshot`, default 0.5, the engine's range 0.05–0.95) but
   only left once the score falls below `max(threshold - 0.15, 0.01)`
-  (`vad::exit_threshold`, passed explicitly). A single value for both edges
+  (`vad::exit_threshold`'s rule). `SpeechGate` deliberately gives the gate no
+  exit edge: the engine derives it, and re-derives it on every
+  `set_threshold`, whereas an explicit exit is kept as the caller's fixed edge
+  across threshold changes, so the slider would move only one edge. A single
+  value for both edges
   makes a signal hovering near it flap frame to frame, which shows up directly
   as a stuttering speech/silence indicator and a speech clock that stalls
   mid-word.

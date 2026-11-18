@@ -16,6 +16,10 @@ consumer contract from an upstream README or an old plan alone.
 - Read both `AGENTS.md` files, engine `CONTRIBUTING.md`, app
   [performance rules](PERFORMANCE.md), and the engine's
   `docs/zer0-engine-integration.md`. That note is the reciprocal source map.
+- The engine's `docs/fork/README.md` is the entry point to what the fork
+  changes against upstream: defaults that differ (each with its off switch),
+  the API it adds, and its document map. `docs/environment-variables.md`
+  lists every runtime switch it reads.
 - Read the engine's
   `docs/plans/2026-10-three-tier-super-vad-and-firered-architecture-plan.md` for
   current VAD/RNNoise work, instead of treating September prose as current code.
@@ -162,9 +166,10 @@ audit about Rust Earshot, `SmoothedVad` and the double gate are history.
 
 - Capture: one `transcribe_cpp::VadGate` per recorder (`SpeechGate`, fed one
   256-sample frame per call), its threshold moved in place by the slider and
-  its hangover set per recording (450 / 1650 ms). Exit threshold, onset and
-  pre-roll are passed explicitly. ZER0's `SpeechClock` still counts the gate's
-  raw `voiced` verdict; the gate's own clock is not read.
+  its hangover set per recording (450 / 1650 ms). Onset and pre-roll are
+  passed explicitly; the exit edge is the engine's derived one (corrected
+  2026-11-18, below). ZER0's `SpeechClock` still counts the gate's raw
+  `voiced` verdict; the gate's own clock is not read.
 - Noise suppression: `transcribe_cpp::Denoiser` inside `DenoiseChain`; params
   cross the FFI only when a slider moved; `flush` replaces the silent frame.
 - Streams: `StreamOptions { enable_vad: false, .. }` at the live builder,
@@ -180,3 +185,64 @@ audit about Rust Earshot, `SmoothedVad` and the double gate are history.
   `cfb07a12` the engine stream gate no longer empties that clip's stream
   (a headless Nemotron replay transcribes it with the gate on and off); the
   empty transcript was measured on the earlier engine.
+
+## Update: 2026-11-18 (engine `8b27bc6b`)
+
+The pin moved from `cfb07a12` to `8b27bc6b` (six engine commits: the app's
+own integration note, the Parakeet GPU decoder and conformer attention on
+CUDA, the Granite / Qwen3 step pipeline, review fixes, the whole-fork audit,
+and the docs reorganization under `docs/fork/`). No Rust API the app uses
+changed. What it means here:
+
+- **Fix in the app, found by the engine's `vad-gate` change.** `SpeechGate`
+  passed `exit_threshold` explicitly. The engine treats an explicit exit as
+  the caller's fixed edge, and keeps it across `set_threshold`, so the VAD
+  slider moved mid-session left the gate exiting at the old edge: raised to
+  0.7 it still left speech at 0.35, lowered to 0.3 both edges sat at 0.3 and
+  the hysteresis was gone (at `cfb07a12` the same call clamped the old exit
+  under the new threshold, wrong the same way). The gate now gets no exit
+  edge, so the engine derives `max(t - 0.15, 0.01)` at construction and on
+  every change. `gate.rs`'s `the_exit_edge_follows_every_threshold_change`
+  checks every frame's verdict against the rule over the gate's own scores,
+  and `vad_speech_clock_probe` does the same on a real recording.
+- **GPU speed, no app change.** On CUDA / ROCm / Vulkan Parakeet's TDT and
+  RNN-T predictor + joint run on the model's GPU (decode 2.7x for v3 to 5.2x
+  for Nemotron on CUDA, byte-identical transcripts; F32 copies of the
+  decoder weights add a little VRAM per loaded Parakeet model). Canary,
+  Cohere, Sortformer and GigaAM no longer send attention to the CPU on CUDA
+  (encoder 1.8-2.45x). Granite, Qwen3-ASR and R2T2 launch each greedy step
+  while the previous one runs, and keep that pipeline's buffers per session,
+  so a decode no longer `cudaFree`s mid-run and stalls the other models of a
+  Multi-STT setup. Those figures are the engine's (CUDA, RTX 4070 Laptop).
+  Measured through the app on the CPU lane's Vulkan and CPU devices, old pin
+  against new, same app code: transcripts identical in all 18 cases, Vulkan
+  1.24-1.51x faster for Nemotron and the three Parakeets, R2T2 batch 1.10x,
+  Granite and Qwen3 level, CPU level everywhere; one small regression, R2T2
+  streaming on Vulkan +3.6 % (about 2 ms per 320 ms tick), not caused by the
+  step pipeline. Details in [STT_BENCHMARKS.md](STT_BENCHMARKS.md). Switches
+  to turn each engine change off are in the engine's `docs/fork/README.md`.
+- **Streaming fixes the app inherits.** Stream text never commits or shows
+  half a UTF-8 character. The silence fast-path fixes (timeline mapping, the
+  16 ms loudest-window onset check, NaN thresholds) do not apply: every app
+  stream runs with `enable_vad = false`.
+- **Third-party notices.** The engine compiles Earshot (MIT), RNNoise through
+  nnnoiseless (BSD-3-Clause), Silero VAD, cJSON and audio.cpp ports into the
+  library, and now installs their texts under `share/licenses/transcribe/`.
+  `build.rs` (`stage_engine_licenses`) copies them into
+  `resources/licenses/transcribe/`, which every bundle ships, macOS's static
+  build included.
+- **Build cache.** `TRANSCRIBE_MODELS` is now part of the native cache key and
+  each cache root keeps its newest `TRANSCRIBE_CACHE_KEEP` (6) entries. The
+  runner's per-lane roots (`cpu-only`, `local-<hash>`, `matrix-<hash>`) are
+  never eviction candidates: only `<os>_<arch>_<env>_<16 hex>` names are.
+  `TRANSCRIBE_PREBUILT_DIR` still aliases `TRANSCRIBE_DIR`.
+- **Plugin search order** (`arch-dl` builds only, which no app posture
+  enables): registered directories, `TRANSCRIBE_ARCH_DIR`, the library's
+  folder; the model's folder only with `TRANSCRIBE_ARCH_SEARCH_MODEL_DIR=1`,
+  never the working directory. `arch_plugins.rs` registered the models folder
+  and its `arch/`, which would have undone that refusal (registered
+  directories are searched first); it no longer does, and it registers the
+  shipped locations (beside the executable) before the user's plugins folder,
+  so a stale hand-dropped module cannot replace a shipped one.
+- The log callback no longer unwinds a panic into C (`fern` with both
+  standard streams closed), which would have aborted the app.

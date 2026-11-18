@@ -43,6 +43,8 @@ fn main() {
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
 
+    stage_engine_licenses();
+
     // The Tauri CLI may still export STATIC_VCRUNTIME=true for `tauri build`.
     // tauri-build deprecated that variable in favour of
     // `build.windows.staticVCRuntime` (default true) and prints a warning on
@@ -363,6 +365,61 @@ fn stage_transcribe_runtime_libs() {
         "cargo:warning=Staged {} transcribe-cpp runtime library file(s)",
         desired.len()
     );
+}
+
+/// Ship the engine's third-party notices with every bundle.
+///
+/// transcribe-cpp compiles Earshot (MIT), RNNoise through nnnoiseless
+/// (BSD-3-Clause, whose notice must accompany binary distributions), Silero
+/// VAD (MIT), cJSON (MIT) and ports from audio.cpp (Apache-2.0) into the
+/// library this app links, and its install tree carries their texts under
+/// `share/licenses/transcribe/`. They are copied into
+/// `resources/licenses/transcribe/` (gitignored), which every bundle already
+/// installs through the `resources` entry of the Tauri config. Unlike the
+/// runtime libraries this covers the static macOS build too: `include_dir` is
+/// forwarded in every posture, and the install prefix is its parent.
+fn stage_engine_licenses() {
+    use std::path::PathBuf;
+
+    println!("cargo:rerun-if-env-changed=DEP_TRANSCRIBE_CPP_INCLUDE_DIR");
+    let Some(include_dir) = std::env::var_os("DEP_TRANSCRIBE_CPP_INCLUDE_DIR") else {
+        return;
+    };
+    let Some(prefix) = PathBuf::from(include_dir).parent().map(PathBuf::from) else {
+        return;
+    };
+    let src = prefix.join("share").join("licenses").join("transcribe");
+    println!("cargo:rerun-if-changed={}", src.display());
+    let wanted: std::collections::BTreeMap<std::ffi::OsString, PathBuf> =
+        match std::fs::read_dir(&src) {
+            Ok(entries) => entries
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+                .map(|e| (e.file_name(), e.path()))
+                .collect(),
+            Err(_) => Default::default(),
+        };
+    if wanted.is_empty() {
+        println!(
+            "cargo:warning=no third-party notices under {}; the bundle ships without them",
+            src.display()
+        );
+        return;
+    }
+    let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("resources")
+        .join("licenses")
+        .join("transcribe");
+    std::fs::create_dir_all(&dest).expect("create the engine licenses dir");
+    // The folder belongs to this function: a notice the engine dropped goes too.
+    for entry in std::fs::read_dir(&dest).into_iter().flatten().flatten() {
+        if !wanted.contains_key(&entry.file_name()) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    for (name, path) in &wanted {
+        copy_if_changed(path, &dest.join(name));
+    }
 }
 
 /// True when `dest` already holds exactly the desired transcribe-cpp files

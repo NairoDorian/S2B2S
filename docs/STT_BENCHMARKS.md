@@ -86,3 +86,42 @@ Do not infer the loaded DLL from Cargo.lock alone. Set `TRANSCRIBE_DIR` only in
 the development shell; do not commit machine paths. The native suite at
 `transcribe-fork/scripts/bench/suite.py` accepts an exact `--library` and keeps
 an independent engine baseline without the app.
+
+## Engine bump A/B: `cfb07a12` → `8b27bc6b` (2026-11-18)
+
+Same app code built twice on the CPU lane (`bun scripts/cargo-cpu.ts build`),
+once per engine pin; both exes and their `transcribe.dll` (different hashes)
+copied aside and run alternately through `bench-stt.ts` on `fleurs-en.wav`
+(10.5 s): 4 rounds, the arm order flipped each round, 3 runs per case with
+the warm-up dropped, so 8 timed runs per arm. Devices: the RTX 4070 Laptop
+through Vulkan and the i9-13900H CPU. CUDA was not measured (the CPU lane
+does not build it).
+
+Every case produced the same transcript on both pins.
+
+| Case                                            | Old ms | New ms | New vs old                                              |
+| ----------------------------------------------- | -----: | -----: | ------------------------------------------------------- |
+| Nemotron 3.5 Q8_0, Vulkan, batch                |    193 |    129 | 1.50x faster                                            |
+| Nemotron 3.5 Q8_0, Vulkan, stream (16 ms feeds) |    479 |    367 | 1.31x faster                                            |
+| Parakeet TDT 0.6B v3 Q4_K_M, Vulkan             |    118 |     91 | 1.30x faster                                            |
+| Parakeet Ultra Q8_0, Vulkan                     |    135 |    104 | 1.30x faster                                            |
+| Parakeet Redux TQ1, Vulkan                      |    124 |     99 | 1.26x faster                                            |
+| R2T2 Q4_K_M, Vulkan, batch                      |    391 |    354 | 1.10x faster (a later 4-round rerun: 370 vs 400, noise) |
+| R2T2 Q4_K_M, Vulkan, stream (320 ms)            |   2181 |   2253 | **3.3 % slower** (rerun: 2209 vs 2289, 3.6 %)           |
+| Granite 4.1 2B Q4_K_M, Vulkan                   |    297 |    293 | level                                                   |
+| Qwen3-ASR 1.7B Q5_K_M, Vulkan                   |    389 |    392 | level                                                   |
+| CPU, every model above, batch and stream        |        |        | level (within ±6 %, ranges overlap)                     |
+
+- The Vulkan gains are the Parakeet / Nemotron decoder running on the GPU
+  (`decode_ms` 43 → 21 for Parakeet v3, 147 → 57 for the Nemotron stream).
+- R2T2 streaming on Vulkan is the one consistent slowdown: the new arm was
+  never below 2204 ms, the old one rarely above 2200. A rerun with
+  `TRANSCRIBE_STEP_PIPELINE=0` (2302 ms) shows the new step pipeline is not
+  the cause, as expected: R2T2's streaming ticks verify a draft, a path the
+  pipeline does not take. Not bisected; about 2 ms per 320 ms tick.
+- Granite's `decode_ms` is not comparable across the bump: the engine now
+  counts the token loop in it (Vulkan 26 → 177 ms) where it used to report
+  the prefill only. Its total is unchanged.
+- One CPU outlier (the first new-arm round of the Nemotron stream, up to
+  2105 ms) did not repeat in the three later rounds (1334-1480 vs
+  1325-1482).

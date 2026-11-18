@@ -102,8 +102,8 @@ ZER0 is built as a Tauri application combining:
 - **Core Libraries**:
   - `transcribe-cpp`: Local speech recognition for every model (GGML/GGUF: Whisper family, Parakeet, Moonshine, Canary, …)
   - `cpal`: Cross-platform audio I/O
-  - `earshot`: pure-Rust voice activity detection
-  - `nnnoiseless`: pure-Rust RNNoise noise suppression (optional)
+  - Voice activity detection (Earshot) and noise suppression (RNNoise), run by
+    transcribe.cpp: SIMD C++ with the weights compiled in, no model file
   - `handy-keys` / `tauri-plugin-global-shortcut`: Global keyboard shortcuts
   - `rubato`: Audio resampling
 
@@ -578,7 +578,8 @@ open-source: its mention here is attribution, not affiliation.
 - **Handy** by CJ Pais — the MIT-licensed speech-to-text application this project was forked from
 - **Whisper** by OpenAI for the speech recognition model
 - **ggml and transcribe.cpp** for amazing cross-platform speech-to-text inference/acceleration
-- **Earshot** for a fast, pure-Rust VAD
-- **RNNoise** (Xiph) and **nnnoiseless** for noise suppression
+- **Earshot** (pykeio) for a fast voice activity detector, ported into transcribe.cpp
+- **RNNoise** (Xiph) and **nnnoiseless** for noise suppression, ported into transcribe.cpp
+  (their license texts ship with the app under `resources/licenses/transcribe/`)
 - **Tauri** team for the excellent Rust-based app framework
 - **Community contributors** helping make ZER0 better
