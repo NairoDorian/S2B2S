@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Opus voice notes in Transcribe Files (2026-11-18).** `.opus`, Opus in
+  `.ogg` and `.webm` files (the format of most voice messages and browser
+  recordings) now transcribe; before, only Vorbis `.ogg` did. Ported from
+  upstream.
+
 - **Transcribe Files can save to History, and takes drops anywhere
   (2026-11-18).** A new option adds each transcribed file to History with
   its audio, titled with the file name; History cleanup never removes

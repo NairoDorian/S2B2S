@@ -16,6 +16,8 @@ export const SUPPORTED_AUDIO_EXTENSIONS = [
   "flac",
   "ogg",
   "oga",
+  "opus",
+  "webm",
 ] as const;
 
 export const isSupportedAudioPath = (path: string): boolean => {

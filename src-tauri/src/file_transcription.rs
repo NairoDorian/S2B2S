@@ -39,8 +39,21 @@ const SAMPLE_RATE: usize = WHISPER_SAMPLE_RATE as usize;
 
 /// Extensions the decoder accepts. Everything here is covered by the
 /// `symphonia` features enabled in `Cargo.toml`; Opus and WebM are not.
-pub const SUPPORTED_EXTENSIONS: &[&str] =
-    &["wav", "mp3", "m4a", "mp4", "aac", "flac", "ogg", "oga"];
+pub const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "wav", "mp3", "m4a", "mp4", "aac", "flac", "ogg", "oga", "opus", "webm",
+];
+
+/// Symphonia's decoders plus libopus for Opus, built once.
+fn codecs() -> &'static symphonia::core::codecs::registry::CodecRegistry {
+    static CODECS: std::sync::LazyLock<symphonia::core::codecs::registry::CodecRegistry> =
+        std::sync::LazyLock::new(|| {
+            let mut registry = symphonia::core::codecs::registry::CodecRegistry::new();
+            symphonia::default::register_enabled_codecs(&mut registry);
+            registry.register_audio_decoder::<symphonia_adapter_libopus::OpusDecoder>();
+            registry
+        });
+    &CODECS
+}
 
 /// When looking for a quiet point to cut a long file, search this far back
 /// from the hard boundary.
@@ -140,7 +153,7 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32)> {
         return Err(anyhow!("Unsupported sample rate: {sample_rate} Hz"));
     }
 
-    let mut decoder = symphonia::default::get_codecs()
+    let mut decoder = codecs()
         .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
         .map_err(|e| anyhow!("No decoder for this codec: {e}"))?;
 
@@ -1187,6 +1200,41 @@ pub fn list_audio_files(folder: &Path, include_subfolders: bool) -> Result<Vec<P
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opus_voice_notes_decode_to_16k_mono() {
+        // Upstream 1fe3ae2: a 1 s 440 Hz tone, Ogg Opus with 20 ms packets and
+        // stereo WebM with 120 ms packets, the largest Opus allows.
+        for name in ["tone_440hz_mono.opus", "tone_440hz_stereo_120ms.webm"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures")
+                .join(name);
+
+            let samples = decode_audio_file(&path).unwrap();
+
+            // The last packet's padding is not trimmed: up to 120 ms more.
+            assert!(
+                (16_000..=17_920).contains(&samples.len()),
+                "{}: {} samples",
+                name,
+                samples.len()
+            );
+            let tone = &samples[1_600..14_400];
+            let peak = tone.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+            assert!(peak > 0.25, "{}: peak {}", name, peak);
+            let crossings = tone
+                .windows(2)
+                .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+                .count();
+            // 0.8 s of 440 Hz crosses zero about 704 times.
+            assert!(
+                (690..=720).contains(&crossings),
+                "{}: {} zero crossings",
+                name,
+                crossings
+            );
+        }
+    }
 
     #[test]
     fn an_imported_file_never_takes_a_taken_name() {

@@ -99,7 +99,12 @@ rubato = "^5.1.0"
 hound = "3.5.1"
 # Decodes MP3 / M4A / FLAC / OGG / multi-channel WAV for the "Transcribe Files"
 # page. Same crate + features rodio already pulls in, so no new transitive deps.
-symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
+symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "mkv", "wav", "pcm", "adpcm"] }
+# Opus (most .ogg / .opus / .webm voice notes), which symphonia cannot decode
+# (upstream 1fe3ae2). Builds libopus from source with cmake; the 0.3 line is
+# the one for symphonia 0.6, and keeps the 120 ms stereo packets 0.2.3 and
+# older dropped.
+symphonia-adapter-libopus = "^0.3.0"
 log = "^0.4.35"
 # process: the transcription hook (transcription_hook.rs); io-util and time
 # are what it uses beside it, named so it does not lean on another crate's.
@@ -209,6 +214,11 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
 transcribe-cpp = { version = "*", default-features = false }
+# libopus's ARM runtime CPU probe (celt/arm/armcpu.c) sees clang-cl's _MSC_VER
+# and calls MSVC's __emit, which clang lacks; presuming NEON instead trips a
+# libopus CMake bug (celt_inner_prod_neon left undeclared). Plain C, as
+# upstream builds it (2696c49, 1472087): decoding Opus files is cheap.
+opusic-sys = { version = "^0.7", features = ["no-simd"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }

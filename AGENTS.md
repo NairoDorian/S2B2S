@@ -281,6 +281,8 @@ nnnoiseless (BSD-3-Clause), Silero VAD, cJSON and audio.cpp ports into
 libtranscribe and installs their texts under `share/licenses/transcribe/`;
 `build.rs` (`stage_engine_licenses`) copies them into the gitignored
 `src-tauri/resources/licenses/transcribe/`, so every bundle ships them.
+libopus (BSD-3-Clause), statically linked for Opus files, has its notice
+tracked at `src-tauri/resources/licenses/libopus/COPYING`.
 
 For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
@@ -1144,11 +1146,14 @@ Backend: `file_transcription.rs` + `commands/file_transcription.rs`; frontend:
 - **Input**: any number of files, or whole folders (optionally recursive),
   added through the dialog plugin or OS drag & drop onto the window
   (`getCurrentWebviewWindow().onDragDropEvent`). Supported extensions are the
-  `SUPPORTED_EXTENSIONS` list (WAV, MP3, M4A/MP4/AAC, FLAC, OGG-Vorbis),
-  mirrored in `SUPPORTED_AUDIO_EXTENSIONS` on the frontend. Decoding is done
-  with `symphonia` (the same crate + features `rodio` already pulls in, so no
-  new transitive dependency), downmixed to mono and resampled to 16 kHz with
-  `FrameResampler`; `.wav` falls back to `hound` if the probe fails.
+  `SUPPORTED_EXTENSIONS` list (WAV, MP3, M4A/MP4/AAC, FLAC, OGG Vorbis and
+  Opus, `.opus`, `.webm`), mirrored in `SUPPORTED_AUDIO_EXTENSIONS` on the
+  frontend. Decoding is done with `symphonia` (plus its `mkv` demuxer for
+  WebM) through `codecs()`, its registry with libopus added by
+  `symphonia-adapter-libopus` 0.3 (the line for symphonia 0.6; libopus is
+  built from source with cmake, plain C on Windows ARM64), downmixed to mono
+  and resampled to 16 kHz with `FrameResampler`; `.wav` falls back to
+  `hound` if the probe fails.
 - **Segmentation**: `segment_boundaries` cuts audio longer than
   `max_segment_minutes` at the quietest 100 ms window in the 20 s before each
   hard boundary, so a one-hour file becomes ~6 decode calls instead of one and
