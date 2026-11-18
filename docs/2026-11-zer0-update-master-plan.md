@@ -347,6 +347,11 @@ src-tauri/Cargo.lock` must print nothing.
    for an integrated GPU). Verified through the app: Intel iGPU back to
    `cfb07a12`'s numbers, RTX Vulkan unchanged. Found on the way and fixed in
    `build.rs`: a CPU-lane build kept the CUDA lane's `ggml-cuda.dll`.
+8. **Fourth bump, 2026-11-18: `e5d0af8d` → `b34474e6`**, the engine side of
+   that fix: its build script clears the installed tree before a cache
+   restore or an install, empties a cache entry before saving it, and prunes
+   ggml DLLs the current install does not contain. Build script only, no
+   library or API change.
 
 ---
 

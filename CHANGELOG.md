@@ -959,7 +959,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (and one run hit a driver reset); engine `e5d0af8d` keeps it on the CPU for
   integrated GPUs, which brings the old numbers back, while CUDA and discrete
   Vulkan cards keep their gain. Also: a CPU-only development build no longer
-  picks up the CUDA module a previous CUDA build left in the target folder.
+  picks up the CUDA module a previous CUDA build left in the target folder,
+  nor (engine `b34474e6`) restores it from the engine's build cache.
 
 - **The VAD slider moves both edges of the speech gate (2026-11-18).** Since
   the engine took over voice detection (2026-11-17) the gate was built with an

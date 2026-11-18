@@ -272,6 +272,10 @@ changed. What it means here:
   directories. Engine side, the fix is to clear `OUT_DIR`'s install tree
   before a cache restore or `cmake --install` (and the cache entry before a
   save), and to prune stale ggml DLLs in `stage_windows_dlls`.
+- Pin moved to `b34474e6`, that engine-side fix (only
+  `bindings/rust/sys/build.rs` and its README; no library, API or ABI
+  change). The CMake build tree is kept, so incremental builds stay
+  incremental; the app's own pruning in `build.rs` stays as well.
 
 ## Update: 2026-11-18 (app side, a contract the app now relies on)
 
