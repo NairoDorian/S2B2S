@@ -60,12 +60,23 @@ fn finish_paste_ui(ah: &AppHandle, session: u64) {
 /// The focused window runs elevated (Windows "Run as administrator"), so the
 /// keystrokes of the paste or of direct streaming never arrived (upstream
 /// `e529447`). The text is still in History.
-fn report_paste_blocked(app: &AppHandle) {
+fn report_paste_blocked(app: &AppHandle, session: u64) {
     warn!("The focused window is elevated; the text was not pasted into it");
-    notices::raise(
+    raise_for_session(
         app,
+        session,
         Notice::new(NoticeCode::PasteBlockedElevated, NoticeSource::Dictation),
     );
+}
+
+/// A notice about recording session `session`: in the overlay only while
+/// that session still owns it, so a late paste never covers a newer one.
+fn raise_for_session(app: &AppHandle, session: u64, notice: Notice) {
+    if current_recording_session() == session {
+        notices::raise(app, notice);
+    } else {
+        notices::raise_without_overlay(app, notice);
+    }
 }
 
 /// A take with no speech whose microphone sent nothing but exact zeros for
@@ -1225,7 +1236,7 @@ impl ShortcutAction for TranscribeAction {
                             // that is still in front; one that is elevated got
                             // none of them.
                             if was_direct_stream_written && utils::foreground_window_is_elevated() {
-                                report_paste_blocked(&ah);
+                                report_paste_blocked(&ah, current_recording_session());
                             }
                             utils::hide_recording_overlay(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
@@ -1261,12 +1272,13 @@ impl ShortcutAction for TranscribeAction {
                                             paste_time.elapsed()
                                         ),
                                         Ok(utils::PasteOutcome::Blocked) => {
-                                            report_paste_blocked(&ah_clone)
+                                            report_paste_blocked(&ah_clone, session)
                                         }
                                         Err(e) => {
                                             error!("Failed to paste transcription: {}", e);
-                                            notices::raise(
+                                            raise_for_session(
                                                 &ah_clone,
+                                                session,
                                                 Notice::new(
                                                     NoticeCode::PasteFailed,
                                                     NoticeSource::Dictation,
@@ -3002,7 +3014,7 @@ impl ShortcutAction for MultiSttAction {
             if typed_by_session {
                 debug!("Multi-STT streaming: the session typed the text; no paste");
                 if utils::foreground_window_is_elevated() {
-                    report_paste_blocked(&ah);
+                    report_paste_blocked(&ah, current_recording_session());
                 }
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
@@ -3058,11 +3070,14 @@ impl ShortcutAction for MultiSttAction {
                             Ok(utils::PasteOutcome::Pasted) => {
                                 debug!("Multi-STT: Text pasted successfully")
                             }
-                            Ok(utils::PasteOutcome::Blocked) => report_paste_blocked(&ah_clone),
+                            Ok(utils::PasteOutcome::Blocked) => {
+                                report_paste_blocked(&ah_clone, session)
+                            }
                             Err(e) => {
                                 error!("Multi-STT: Failed to paste transcription: {}", e);
-                                notices::raise(
+                                raise_for_session(
                                     &ah_clone,
+                                    session,
                                     Notice::new(NoticeCode::PasteFailed, NoticeSource::Dictation)
                                         .with_detail(e),
                                 );

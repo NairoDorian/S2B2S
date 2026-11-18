@@ -186,7 +186,18 @@ fn publish(app: &AppHandle, active: &[Notice], raised: Option<Notice>) {
 
 /// Replaces the source's previous notice. A no-op where no store is managed
 /// (the headless `--transcribe-file` path), so failure sites need no guard.
+/// A dictation notice is also shown in the overlay, in place of the session
+/// that failed; a failure that is no longer the overlay's session (a late
+/// paste) uses [`raise_without_overlay`].
 pub fn raise(app: &AppHandle, notice: Notice) {
+    if notice.source == NoticeSource::Dictation && app.try_state::<NoticeStore>().is_some() {
+        crate::overlay::show_overlay_notice(app, &notice);
+    }
+    raise_without_overlay(app, notice);
+}
+
+/// [`raise`] without the overlay.
+pub fn raise_without_overlay(app: &AppHandle, notice: Notice) {
     let Some(store) = app.try_state::<NoticeStore>() else {
         return;
     };

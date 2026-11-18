@@ -33,6 +33,8 @@ import type {
 import { applyPreferredLanguage } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { OverlayScope } from "./OverlayScope";
+import type { Notice } from "@/bindings";
+import { noticeDisplay } from "@/lib/notices";
 import type { ModelStateEvent } from "@/lib/types/events";
 import {
   OVERLAY_SCOPE_DEFAULTS,
@@ -156,6 +158,9 @@ const RecordingOverlay = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = createSignal(false);
   const [state, setState] = createSignal<OverlayState>("recording");
+  // A dictation notice in place of the session's card (`overlay-notice`):
+  // the backend shows the overlay in its session's form, then fades it.
+  const [notice, setNotice] = createSignal<Notice | null>(null);
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
@@ -418,6 +423,9 @@ const RecordingOverlay = () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
         const overlayState = event.payload as OverlayState;
         const generation = ++showGeneration;
+        // Any show ends a notice: a new session, or the notice's own show,
+        // whose `overlay-notice` follows this event.
+        setNotice(null);
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
         // them would overwrite that event and leave the overlay stuck arming.
@@ -476,6 +484,10 @@ const RecordingOverlay = () => {
         }
         setIsVisible(true);
       });
+
+      const unlistenNotice = await listen<Notice>("overlay-notice", (event) =>
+        setNotice(event.payload),
+      );
 
       const unlistenHide = await listen("hide-overlay", () => {
         showGeneration++;
@@ -678,6 +690,7 @@ const RecordingOverlay = () => {
         window.removeEventListener("pointercancel", handleDragGripPointerUp);
         stopTypewriter();
         unlistenShow();
+        unlistenNotice();
         unlistenHide();
         unlistenReady();
         unlistenStream();
@@ -1228,6 +1241,42 @@ const RecordingOverlay = () => {
     </div>
   );
 
+  // A dictation notice: its title in the compact pill, in either window form
+  // (the window keeps its session's size; the pill sits in it as usual). What
+  // to do about it is in the toast and the footer panel.
+  const NoticeCard = (props: { notice: Notice }) => {
+    const title = () => t(noticeDisplay(props.notice.code).title);
+    return (
+      <div
+        dir={direction()}
+        class={["ov-stage", position(), "ov-fade", { show: isVisible() }]}
+      >
+        <div
+          role="alert"
+          class={[
+            "scard",
+            "compact",
+            "cworking",
+            "ov-notice",
+            props.notice.level,
+          ]}
+        >
+          <div class="sbase">
+            <div class="sbase-l">
+              <span class="ov-notice-mark" aria-hidden="true">
+                {"!"}
+              </span>
+            </div>
+            <span class="swork-label ov-notice-title" title={title()}>
+              {title()}
+            </span>
+          </div>
+        </div>
+        <DragGrip />
+      </div>
+    );
+  };
+
   // Drag grip — a tiny grab handle at the bottom of the overlay that lets the
   // user reposition it. Clicking and dragging calls Tauri's startDragging()
   // (native window move); releasing saves the physical position so it sticks.
@@ -1268,8 +1317,15 @@ const RecordingOverlay = () => {
           background
         />
       </Show>
-      <Show when={state() === "streaming"} fallback={<MinimalCard />}>
-        <LiveCard />
+      <Show
+        when={notice()}
+        fallback={
+          <Show when={state() === "streaming"} fallback={<MinimalCard />}>
+            <LiveCard />
+          </Show>
+        }
+      >
+        {(current) => <NoticeCard notice={current()} />}
       </Show>
     </Show>
   );

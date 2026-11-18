@@ -756,3 +756,37 @@
     transition-duration: 0ms !important;
   }
 }
+
+/* A dictation notice in place of the session's card (notices.rs). The mark
+   carries the level; the card keeps the session's size. */
+.ov-notice .ov-notice-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--s-warn);
+  border: 1px solid currentColor;
+}
+.ov-notice.error .ov-notice-mark {
+  color: #e5484d;
+}
+.ov-notice .ov-notice-title {
+  color: var(--color-text);
+}
+/* As wide as its title needs, within the window: the working pill's fixed
+   width would cut the longer titles. */
+.ov-notice .sbase {
+  /* The mark and the title only: no cancel slot to balance. */
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.ov-notice .ov-notice-title {
+  justify-self: start;
+}
+.scard.compact.cworking.ov-notice {
+  width: fit-content;
+  max-width: calc(100vw - 12px);
+}

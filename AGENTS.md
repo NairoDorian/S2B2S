@@ -436,7 +436,12 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   the consumer thread only until the take's first non-zero sample — and a
   paste or direct-streaming session whose focused window is elevated,
   `clipboard::foreground_window_is_elevated`, which only changes what is
-  reported), model loads, the GPU CPU fallback, file jobs and the llama server. Toasts
+  reported), model loads, the GPU CPU fallback, file jobs and the llama server.
+  A dictation notice also takes over the overlay (`overlay::show_overlay_notice`):
+  the window is shown again in its session's form, the notice's title replaces
+  the card for 4 s (`NOTICE_HOLD`), a hide meanwhile is ignored and a new
+  session's show ends it; a paste thread whose session is no longer the
+  overlay's raises through `raise_without_overlay` Toasts
   stay `sessionToast` for everything transient
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`

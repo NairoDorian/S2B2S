@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The overlay says when a dictation fails (2026-11-18).** Instead of
+  vanishing, the recording overlay shows what went wrong (Transcription
+  Failed, Microphone Is Silent, Can't Paste into Admin Apps, ...) for four
+  seconds; starting the next dictation replaces it at once. With the overlay
+  off, the tray and the footer still carry it.
+
 - **Notices for failures you might not see (2026-11-18).** A dictation that
   fails while the window is hidden, a file job that fails while you work
   elsewhere, a model that could not load or fell back to the CPU, a Local LLM

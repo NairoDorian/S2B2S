@@ -131,6 +131,67 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 
 static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 
+/// How long a dictation notice holds the overlay before it fades.
+const NOTICE_HOLD: std::time::Duration = std::time::Duration::from_secs(4);
+
+/// The show generation of the latest overlay notice; the notice is on screen
+/// while this matches `OVERLAY_SHOW_GENERATION`, and a hide is then ignored
+/// (the notice's own timer ends it, a new session's show replaces it).
+static OVERLAY_NOTICE_GENERATION: AtomicU64 = AtomicU64::new(u64::MAX);
+
+/// Whether the last session drew the Live card, so a notice takes the same
+/// form. Not reset by a hide: a failure is usually reported after it.
+static LAST_SESSION_LIVE: AtomicBool = AtomicBool::new(false);
+
+fn overlay_notice_holding() -> bool {
+    OVERLAY_NOTICE_GENERATION.load(Ordering::SeqCst)
+        == OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst)
+}
+
+/// The form a notice takes: the Live card after a live session, the compact
+/// working pill otherwise (or with no session at all).
+fn notice_form(last_session_live: bool) -> &'static str {
+    if last_session_live {
+        "streaming"
+    } else {
+        "transcribing"
+    }
+}
+
+/// Shows a dictation notice in the overlay (upstream `b99b9af`, adapted): the
+/// overlay is shown again in the form its session had, the notice replaces
+/// its content, and it fades after [`NOTICE_HOLD`] unless a newer session
+/// has shown the overlay by then. Nothing happens with the overlay off; the
+/// notice still reaches the tray and the footer.
+pub fn show_overlay_notice(app_handle: &AppHandle, notice: &crate::notices::Notice) {
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) && !crate::overlay_preview::is_active() {
+        return;
+    }
+    // A notice has no live audio to draw.
+    if let Some(fft) = app_handle.try_state::<Arc<crate::live_fft::LiveFftManager>>() {
+        fft.stop_overlay_scope();
+    }
+    let handle = app_handle.clone();
+    let notice = notice.clone();
+    // On the main thread, like every overlay show (see `show_overlay_state`).
+    let _ = app_handle.run_on_main_thread(move || {
+        show_overlay_state_on_main(
+            &handle,
+            notice_form(LAST_SESSION_LIVE.load(Ordering::SeqCst)),
+        );
+        let generation = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
+        OVERLAY_NOTICE_GENERATION.store(generation, Ordering::SeqCst);
+        let _ = handle.emit_to("recording_overlay", "overlay-notice", &notice);
+        std::thread::spawn(move || {
+            std::thread::sleep(NOTICE_HOLD);
+            if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) == generation {
+                OVERLAY_NOTICE_GENERATION.store(u64::MAX, Ordering::SeqCst);
+                hide_recording_overlay(&handle);
+            }
+        });
+    });
+}
+
 #[cfg(target_os = "macos")]
 const OVERLAY_TOP_OFFSET: f64 = 46.0;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -862,6 +923,9 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
             OVERLAY_STREAM_TEXT_H.store(0, Ordering::Relaxed);
         }
         OVERLAY_STREAMING.store(state == "streaming", Ordering::Relaxed);
+        if state == "streaming" || state == "recording" {
+            LAST_SESSION_LIVE.store(state == "streaming", Ordering::SeqCst);
+        }
 
         #[cfg(target_os = "linux")]
         let shown_with_layer_shell = if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
@@ -1292,6 +1356,12 @@ pub fn reset_recording_overlay_manual_position(app_handle: AppHandle) -> Result<
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    // A dictation notice holds the overlay until its own timer ends it: the
+    // failure path that raised it usually hides the overlay right after.
+    if overlay_notice_holding() {
+        log::debug!("Overlay hide skipped: a notice is holding the overlay");
+        return;
+    }
     if let Some(fft) = app_handle.try_state::<Arc<crate::live_fft::LiveFftManager>>() {
         fft.stop_overlay_scope();
     }
@@ -1553,6 +1623,17 @@ pub fn emit_speech_activity(app_handle: &AppHandle, activity: SpeechActivity) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_notice_takes_the_form_of_its_session() {
+        assert_eq!(notice_form(true), "streaming");
+        assert_eq!(notice_form(false), "transcribing");
+        // Same window size as the session it replaces.
+        assert_eq!(
+            overlay_dimensions(notice_form(false)),
+            overlay_dimensions("recording")
+        );
+    }
 
     #[test]
     fn compact_dimensions_match_the_default_constants_and_grow_with_the_views() {

@@ -902,6 +902,43 @@ test.describe("recording overlay window", () => {
     expect(crashes).toEqual([]);
   });
 
+  test("a dictation notice replaces the card until the next session", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await page.goto("/src/overlay/index.html");
+    await waitForListener(page, "show-overlay");
+    await waitForListener(page, "overlay-notice");
+    const emit = (event: string, payload: unknown) =>
+      page.evaluate(
+        ([event, payload]) =>
+          (window as any).__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+            event,
+            payload,
+          }),
+        [event, payload] as const,
+      );
+
+    // What the backend sends: the overlay shown in its session form, then the
+    // notice.
+    await emit("show-overlay", "transcribing");
+    await emit("overlay-notice", {
+      code: "MicrophoneSilent",
+      level: "warning",
+      source: "dictation",
+      detail: null,
+    });
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("Microphone Is Silent");
+    await expect(page.getByRole("button", { name: "cancel" })).toHaveCount(0);
+
+    // A new session takes the overlay back at once.
+    await emit("show-overlay", "recording");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "cancel" })).toBeVisible();
+    expect(crashes).toEqual([]);
+  });
+
   test("a slow model load opens the Live panel with a notice", async ({
     page,
   }) => {

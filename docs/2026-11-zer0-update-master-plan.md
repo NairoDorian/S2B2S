@@ -707,8 +707,12 @@ an empty selection), microphone silence (`70f490e`: a recorder flag, set after
 a second of nothing but exact zeros so start-up buffers and short taps do not
 count) and paste blocked by an elevated window (`e529447`: the integrity-level
 check before every keystroke paste and after a direct-streaming session; the
-paste runs as configured). Left: the overlay notice line, and the onboarding
-microphone check of `0e5e9ca` that reuses the silence flag.
+paste runs as configured). The overlay notice line closed step 1: a dictation
+notice re-shows the overlay in its session's form and replaces the card with
+its title for 4 s (the explanation stays in the toast and the panel: the Live
+card lays out bottom-up and had no room for it). Phase 8 is done; the
+onboarding microphone check of `0e5e9ca` that reuses the silence flag is left
+for its own commit.
 
 ---
 
@@ -847,7 +851,7 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 48  | `8fd85aa` | #2246 | Escape dismisses dropdowns                               | Adapt, P4                                                                        | `b0b9c2fb`                                              |
 | 49  | `e4869fc` |       | cargo fmt                                                | Skip                                                                             |                                                         |
 | 50  | `4c811d7` |       | Playwright 1.64.1                                        | Covered (update routine)                                                         | `0759c8a4`                                              |
-| 51  | `b99b9af` | #2372 | error notices framework                                  | Adapt, P8                                                                        |                                                         |
+| 51  | `b99b9af` | #2372 | error notices framework                                  | Adapt, P8                                                                        | `3a832251`                                              |
 | 52  | `090b370` | #2248 | ignore IME confirmation Enter                            | Adapt, P4                                                                        | `b0b9c2fb`                                              |
 | 53  | `0685192` | #2255 | report failed History deletions                          | Adapt, P4                                                                        | already reported (verified, `2e9e849c` msg)             |
 | 54  | `77ad955` | #2254 | name the playback position control                       | Adapt, P4                                                                        | `2e9e849c`                                              |
@@ -878,14 +882,14 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 79  | `dce2976` | #2057 | macOS: clear stale permission grants                     | Port, P10                                                                        |                                                         |
 | 80  | `1fe3ae2` | #2482 | decode Opus files                                        | Adapt, P9                                                                        |                                                         |
 | 81  | `ca4a611` | #2434 | punctuation-only transcript is empty                     | Port, P3                                                                         | `b1a98752`                                              |
-| 82  | `d654302` | #2418 | No Model Selected notice                                 | Adapt, P8                                                                        |                                                         |
+| 82  | `d654302` | #2418 | No Model Selected notice                                 | Adapt, P8                                                                        | `ab85a966`                                              |
 | 83  | `7102b63` | #2484 | OpenBLAS in Linux build docs                             | Verify, P10                                                                      |                                                         |
 | 84  | `d628da4` |       | bump handy-recorder                                      | Skip (D3)                                                                        |                                                         |
 | 85  | `c67ec6a` |       | Chinese script from the text                             | Phase 6.7                                                                        | `15a39e2e`                                              |
 | 86  | `b5920f2` |       | leave Japanese and Korean alone                          | Phase 6.7                                                                        | `15a39e2e`                                              |
 | 87  | `56c7e21` | #2097 | tap vs hold by key event time                            | Adapt, P3                                                                        | `06e647f7`                                              |
 | 88  | `2eab8fc` | #2485 | replace the worker after a backend error                 | Adapt in-process, P7                                                             | `bb2d8ed6`                                              |
-| 89  | `70f490e` | #2486 | say so when the mic sends only silence                   | Adapt, P8                                                                        |                                                         |
+| 89  | `70f490e` | #2486 | say so when the mic sends only silence                   | Adapt, P8                                                                        | `ab85a966`                                              |
 | 90  | `f248301` | #2318 | hf-hub survives Range-stripping proxies                  | n/a: hf-hub 1.x never ranges a file, ZER0's downloader already restarts on a 200 | —                                                       |
 | 91  | `0ff1ce1` | #2489 | bump transcribe.cpp                                      | Covered, P2                                                                      | `eeb2e9a5`                                              |
 | 92  | `2696c49` |       | libopus on Windows ARM                                   | Adapt, P9                                                                        |                                                         |
@@ -893,7 +897,7 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 94  | `310749b` | #2454 | skip the Gamescope WSI Vulkan layer                      | Adapt, P10                                                                       |                                                         |
 | 95  | `3c7a538` | #2427 | find the ydotoold socket                                 | Port, P10                                                                        |                                                         |
 | 96  | `bd4b027` | #2495 | next paste tool when one fails                           | Adapt, P10                                                                       |                                                         |
-| 97  | `e529447` | #2502 | warn about elevated windows                              | Adapt, P8                                                                        |                                                         |
+| 97  | `e529447` | #2502 | warn about elevated windows                              | Adapt, P8                                                                        | `ab85a966`                                              |
 | 98  | `d2ee871` | #2488 | X11 overlay does not steal focus                         | Port, P10                                                                        |                                                         |
 | 99  | `f01b807` | #2505 | handy-keys 0.3.5                                         | Covered, P3                                                                      | `0759c8a4`                                              |
 | 100 | `1e10e71` | #2506 | drop custom words read back                              | Port, P7                                                                         | `a7b98d8b`                                              |
