@@ -511,7 +511,15 @@ download_language_detector`) when a plan wants it or when the list is
   GPU / VRAM / temperature (NVML when present) as `SystemStatsEvent`; while
   the main window is hidden it only wakes every 3 s to keep the CPU baseline
   fresh — no NVML query and no event
-- `llm_client.rs` - OpenAI-compatible API client for post-processing and Multi-STT merge
+- `llm_client.rs` - API client for post-processing and the Multi-STT merge:
+  OpenAI Chat Completions, or Anthropic Messages for a provider whose
+  `api_format` is `anthropic` (the built-in Anthropic; the custom provider's
+  format is the user's, `change_post_process_api_format_setting`). One shared
+  `reqwest::Client` (headers per request; idle 30 s, keepalive 15 s, connect
+  10 s, the model list 15 s); a reply cut off at the output limit
+  (`finish_reason: length` / `stop_reason: max_tokens`) is an error so the
+  fallbacks run. Each post-processing step and merge is bounded by
+  `actions::LLM_STEP_TIMEOUT` (60 s, decision D5)
   - Includes `erase_llama_server_conversations()` for llama.cpp conversation cleanup (only called for the `custom` provider)
 - `clipboard.rs`, `paste_tx/` - Paste strategies (clipboard, direct typing,
   receipt-sequenced "reliable" paste on Windows/macOS), key-combo simulation

@@ -966,6 +966,7 @@ pub fn run(cli_args: CliArgs) {
             commands::models::get_arch_plugins,
             commands::models::get_language_status,
             commands::models::get_multi_stt_language_statuses,
+            shortcut::change_post_process_api_format_setting,
             system_languages::get_system_languages,
             commands::models::download_language_detector,
             commands::models::load_arch_plugin,

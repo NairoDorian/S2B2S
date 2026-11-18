@@ -599,10 +599,10 @@
         "title": "Phím tắt"
       },
       "api": {
-        "title": "API (Tương thích OpenAI)",
+        "title": "API",
         "provider": {
           "title": "Nhà cung cấp",
-          "description": "Chọn một nhà cung cấp tương thích OpenAI."
+          "description": "Chọn một nhà cung cấp tương thích OpenAI hoặc Anthropic."
         },
         "appleIntelligence": {
           "unavailable": "Apple Intelligence không khả dụng trên thiết bị này. Yêu cầu Mac Apple Silicon chạy macOS Tahoe (26.0) trở lên với Apple Intelligence được bật trong Cài đặt Hệ thống."
@@ -611,7 +611,8 @@
           "title": "URL cơ sở",
           "description": "URL cơ sở API cho nhà cung cấp đã chọn. Chỉ có thể chỉnh sửa nhà cung cấp tùy chỉnh.",
           "managedByProvider": "Base URL is managed by the selected provider.",
-          "placeholder": "https://api.openai.com/v1"
+          "placeholder": "https://api.openai.com/v1",
+          "placeholderAnthropic": "https://api.anthropic.com/v1"
         },
         "apiKey": {
           "title": "Khóa API",
@@ -626,6 +627,14 @@
           "placeholderNoOptions": "Nhập tên mô hình",
           "useCustom": "Use \"{{value}}\"",
           "refreshModels": "Làm mới mô hình"
+        },
+        "apiFormat": {
+          "title": "Định dạng API",
+          "description": "Định dạng yêu cầu mà điểm cuối tùy chỉnh của bạn cần.",
+          "options": {
+            "openai": "Tương thích OpenAI (Chat Completions)",
+            "anthropic": "Anthropic Messages"
+          }
         }
       },
       "prompts": {

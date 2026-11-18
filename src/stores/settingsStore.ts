@@ -18,7 +18,7 @@ import type {
   ShortcutActivation,
   TypographySettings,
 } from "@/bindings";
-import { commands } from "@/bindings";
+import { commands, type PostProcessApiFormat } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 
 interface SettingsStore {
@@ -105,6 +105,10 @@ interface SettingsStore {
   updatePostProcessBaseUrl: (
     providerId: string,
     baseUrl: string,
+  ) => Promise<void>;
+  updatePostProcessApiFormat: (
+    providerId: string,
+    apiFormat: PostProcessApiFormat,
   ) => Promise<void>;
   updatePostProcessApiKey: (
     providerId: string,
@@ -947,6 +951,35 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
         `Failed to update post-process ${settingType.replace("_", " ")}:`,
         error,
       );
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
+
+  updatePostProcessApiFormat: async (providerId, apiFormat) => {
+    const { setUpdating, refreshSettings } = get();
+    const updateKey = `post_process_api_format:${providerId}`;
+    // The format decides the auth headers and the endpoint, so the models
+    // listed under the old one may not apply: clear them (refresh to list).
+    set((state) => ({
+      postProcessModelOptions: {
+        ...state.postProcessModelOptions,
+        [providerId]: [],
+      },
+    }));
+    setUpdating(updateKey, true);
+    try {
+      const result = await commands.changePostProcessApiFormatSetting(
+        providerId,
+        apiFormat,
+      );
+      if (result.status === "error") {
+        console.error("Failed to update API format:", result.error);
+        return;
+      }
+      await refreshSettings();
+    } catch (error) {
+      console.error("Failed to update post-process API format:", error);
     } finally {
       setUpdating(updateKey, false);
     }

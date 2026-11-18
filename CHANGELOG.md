@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Anthropic Messages endpoints for post-processing (2026-11-18).** The
+  Custom provider has an "API Format" choice, OpenAI-compatible (as before)
+  or Anthropic Messages, for endpoints such as Claude on Microsoft Foundry
+  that only speak Anthropic's format; the built-in Anthropic provider now uses
+  that native API too. It applies to post-processing and to the Multi-STT
+  merge. A reply the provider cut off at its output limit is no longer pasted
+  half-finished: the transcription is kept instead. Ported from upstream.
+
 - **Custom words reach more models (2026-11-18).** Your custom words now go
   to the model itself on Qwen3-ASR, FunASR-Nano, Granite and MOSS, as they
   already did on Whisper (through the engine's vocabulary support instead of

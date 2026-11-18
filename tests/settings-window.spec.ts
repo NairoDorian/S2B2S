@@ -718,6 +718,65 @@ test.describe("Multi-STT slot language", () => {
   });
 });
 
+/**
+ * The custom post-processing provider can speak the Anthropic Messages API
+ * (upstream 14ae9c6): the format is offered for it alone, and a pick reaches
+ * the backend command.
+ */
+test.describe("post-processing API format", () => {
+  const provider = (id: string, label: string) => ({
+    id,
+    label,
+    base_url:
+      id === "custom"
+        ? "http://localhost:11434/v1"
+        : "https://api.openai.com/v1",
+    allow_base_url_edit: id === "custom",
+    models_endpoint: "/models",
+    supports_structured_output: id !== "custom",
+    api_format: "openai",
+  });
+  test.use({
+    settingsOverrides: {
+      post_process_enabled: true,
+      post_process_provider_id: "custom",
+      post_process_providers: [
+        provider("openai", "OpenAI"),
+        provider("custom", "Custom"),
+      ],
+    },
+  });
+
+  test("the custom provider can switch to Anthropic Messages", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await boot(page);
+    await sidebarButton(page, "Post Process").click();
+
+    await expect(page.getByText("API Format", { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: "OpenAI Compatible (Chat Completions)" })
+      .click();
+    await page.getByRole("button", { name: "Anthropic Messages" }).click();
+    await expect
+      .poll(async () =>
+        (await calls(page)).filter(
+          (c) => c.cmd === "change_post_process_api_format_setting",
+        ),
+      )
+      .toEqual([
+        {
+          cmd: "change_post_process_api_format_setting",
+          args: { providerId: "custom", apiFormat: "anthropic" },
+        },
+      ]);
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+});
+
 test.describe("language switch", () => {
   test("re-renders the window in the chosen language", async ({ page }) => {
     const crashes = watchForCrashes(page);

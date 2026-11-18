@@ -341,7 +341,11 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     // field the endpoint understands and retries without it if rejected.
     let disable_reasoning = matches!(provider.id.as_str(), "custom" | "openrouter");
 
-    if provider.supports_structured_output {
+    // Structured output is an OpenAI Chat Completions feature; an
+    // Anthropic-format endpoint takes the plain request below.
+    if provider.supports_structured_output
+        && provider.api_format == crate::settings::PostProcessApiFormat::OpenAi
+    {
         debug!("Using structured outputs for provider '{}'", provider.id);
 
         let system_prompt = build_system_prompt(&prompt);

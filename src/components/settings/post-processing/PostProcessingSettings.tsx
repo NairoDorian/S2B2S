@@ -11,7 +11,7 @@ import { Button } from "../../ui/Button";
 import { ResetButton } from "../../ui/ResetButton";
 import { Input } from "../../ui/Input";
 import { RefreshCcw } from "@/components/icons/lucide";
-import { commands } from "@/bindings";
+import { commands, type PostProcessApiFormat } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
@@ -54,6 +54,40 @@ const PostProcessingSettingsApiComponent = (): JSX.Element => {
         <>
           {state.isCustomProvider() && (
             <SettingContainer
+              title={t("settings.postProcessing.api.apiFormat.title")}
+              description={t(
+                "settings.postProcessing.api.apiFormat.description",
+              )}
+              descriptionMode="tooltip"
+              layout="horizontal"
+              grouped={true}
+            >
+              <Dropdown
+                options={[
+                  {
+                    value: "openai",
+                    label: t(
+                      "settings.postProcessing.api.apiFormat.options.openai",
+                    ),
+                  },
+                  {
+                    value: "anthropic",
+                    label: t(
+                      "settings.postProcessing.api.apiFormat.options.anthropic",
+                    ),
+                  },
+                ]}
+                selectedValue={state.apiFormat()}
+                onSelect={(value) =>
+                  state.handleApiFormatChange(value as PostProcessApiFormat)
+                }
+                disabled={state.isApiFormatUpdating()}
+              />
+            </SettingContainer>
+          )}
+
+          {state.isCustomProvider() && (
+            <SettingContainer
               title={t("settings.postProcessing.api.baseUrl.title")}
               description={t("settings.postProcessing.api.baseUrl.description")}
               descriptionMode="tooltip"
@@ -64,9 +98,13 @@ const PostProcessingSettingsApiComponent = (): JSX.Element => {
                 <BaseUrlField
                   value={state.baseUrl()}
                   onBlur={state.handleBaseUrlChange}
-                  placeholder={t(
-                    "settings.postProcessing.api.baseUrl.placeholder",
-                  )}
+                  placeholder={
+                    state.apiFormat() === "anthropic"
+                      ? t(
+                          "settings.postProcessing.api.baseUrl.placeholderAnthropic",
+                        )
+                      : t("settings.postProcessing.api.baseUrl.placeholder")
+                  }
                   disabled={state.isBaseUrlUpdating()}
                   className="min-w-[380px]"
                 />

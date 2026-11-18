@@ -162,6 +162,23 @@ pub struct PostProcessProvider {
     pub models_endpoint: Option<String>,
     #[serde(default)]
     pub supports_structured_output: bool,
+    /// The request format the endpoint speaks (upstream `14ae9c6`). Fixed for
+    /// the built-in providers (`ensure_post_process_defaults` keeps it in
+    /// sync); the custom provider's is the user's choice.
+    #[serde(default)]
+    pub api_format: PostProcessApiFormat,
+}
+
+/// Request format a post-processing endpoint speaks.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum PostProcessApiFormat {
+    /// OpenAI-compatible Chat Completions (`/chat/completions`).
+    #[default]
+    OpenAi,
+    /// Anthropic Messages (`/messages`): Anthropic itself, and endpoints such
+    /// as Claude on Microsoft Foundry that speak only this format.
+    Anthropic,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -2235,6 +2252,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
+            api_format: PostProcessApiFormat::OpenAi,
         },
         PostProcessProvider {
             id: "zai".to_string(),
@@ -2243,6 +2261,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
+            api_format: PostProcessApiFormat::OpenAi,
         },
         PostProcessProvider {
             id: "openrouter".to_string(),
@@ -2251,6 +2270,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
+            api_format: PostProcessApiFormat::OpenAi,
         },
         PostProcessProvider {
             id: "anthropic".to_string(),
@@ -2259,6 +2279,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: false,
+            api_format: PostProcessApiFormat::Anthropic,
         },
         PostProcessProvider {
             id: "groq".to_string(),
@@ -2267,6 +2288,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: false,
+            api_format: PostProcessApiFormat::OpenAi,
         },
         PostProcessProvider {
             id: "cerebras".to_string(),
@@ -2275,6 +2297,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
+            api_format: PostProcessApiFormat::OpenAi,
         },
     ];
 
@@ -2291,6 +2314,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: None,
             supports_structured_output: true,
+            api_format: PostProcessApiFormat::OpenAi,
         });
     }
 
@@ -2302,6 +2326,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         allow_base_url_edit: false,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: true,
+        api_format: PostProcessApiFormat::OpenAi,
     });
 
     // Custom provider always comes last
@@ -2312,6 +2337,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         allow_base_url_edit: true,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: false,
+        api_format: PostProcessApiFormat::OpenAi,
     });
 
     providers
@@ -2403,6 +2429,17 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                         provider.supports_structured_output
                     );
                     existing.supports_structured_output = provider.supports_structured_output;
+                    changed = true;
+                }
+                // Built-in providers have a fixed API format (the built-in
+                // Anthropic moved to the Messages API); the custom provider's
+                // format is the user's choice and is left alone.
+                if provider.id != "custom" && existing.api_format != provider.api_format {
+                    debug!(
+                        "Updating api_format for provider '{}' from {:?} to {:?}",
+                        provider.id, existing.api_format, provider.api_format
+                    );
+                    existing.api_format = provider.api_format;
                     changed = true;
                 }
             }
@@ -4317,5 +4354,30 @@ mod tests {
                 ..TypographySettings::default()
             }
         );
+    }
+
+    #[test]
+    fn post_process_defaults_sync_builtin_api_format_but_keep_custom() {
+        let mut settings = get_default_settings();
+        for provider in settings.post_process_providers.iter_mut() {
+            match provider.id.as_str() {
+                // Saved before the built-in provider moved to Messages.
+                "anthropic" => provider.api_format = PostProcessApiFormat::OpenAi,
+                "custom" => provider.api_format = PostProcessApiFormat::Anthropic,
+                _ => {}
+            }
+        }
+        assert!(ensure_post_process_defaults(&mut settings));
+        let format_of = |id: &str| {
+            settings
+                .post_process_providers
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap()
+                .api_format
+        };
+        assert_eq!(format_of("anthropic"), PostProcessApiFormat::Anthropic);
+        assert_eq!(format_of("custom"), PostProcessApiFormat::Anthropic);
+        assert_eq!(format_of("openai"), PostProcessApiFormat::OpenAi);
     }
 }

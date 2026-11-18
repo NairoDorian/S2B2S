@@ -6,6 +6,7 @@ import type {
   AudioDevice,
   ModelBackendSetting,
   MultiSttExtraModel_Serialize as MultiSttExtraModel,
+  PostProcessApiFormat,
 } from "@/bindings";
 
 /**
@@ -59,6 +60,10 @@ export interface UseSettingsResult {
     providerId: string,
     baseUrl: string,
   ) => Promise<void>;
+  updatePostProcessApiFormat: (
+    providerId: string,
+    apiFormat: PostProcessApiFormat,
+  ) => Promise<void>;
   updatePostProcessApiKey: (
     providerId: string,
     apiKey: string,
@@ -104,6 +109,7 @@ export const useSettings = (): UseSettingsResult => {
     setPostProcessProvider: store.setPostProcessProvider,
     setModelBackend: store.setModelBackend,
     updatePostProcessBaseUrl: store.updatePostProcessBaseUrl,
+    updatePostProcessApiFormat: store.updatePostProcessApiFormat,
     updatePostProcessApiKey: store.updatePostProcessApiKey,
     updatePostProcessModel: store.updatePostProcessModel,
     fetchPostProcessModels: store.fetchPostProcessModels,
@@ -132,6 +138,7 @@ export const useSettings = (): UseSettingsResult => {
     setPostProcessProvider: actions.setPostProcessProvider,
     setModelBackend: actions.setModelBackend,
     updatePostProcessBaseUrl: actions.updatePostProcessBaseUrl,
+    updatePostProcessApiFormat: actions.updatePostProcessApiFormat,
     updatePostProcessApiKey: actions.updatePostProcessApiKey,
     updatePostProcessModel: actions.updatePostProcessModel,
     fetchPostProcessModels: actions.fetchPostProcessModels,

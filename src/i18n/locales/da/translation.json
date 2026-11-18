@@ -599,10 +599,10 @@
         "title": "Genvejstast"
       },
       "api": {
-        "title": "API (OpenAI-kompatibel)",
+        "title": "API",
         "provider": {
           "title": "Udbyder",
-          "description": "Vælg en OpenAI-kompatibel udbyder."
+          "description": "Vælg en OpenAI- eller Anthropic-kompatibel udbyder."
         },
         "appleIntelligence": {
           "unavailable": "Apple Intelligence er ikke tilgængelig på denne enhed. Kræver en Apple Silicon Mac med macOS Tahoe (26.0) eller nyere med Apple Intelligence aktiveret i Systemindstillinger."
@@ -611,7 +611,8 @@
           "title": "Basis-URL",
           "description": "API-basis-URL for den valgte udbyder. Kun den brugerdefinerede udbyder kan redigeres.",
           "managedByProvider": "Base URL is managed by the selected provider.",
-          "placeholder": "https://api.openai.com/v1"
+          "placeholder": "https://api.openai.com/v1",
+          "placeholderAnthropic": "https://api.anthropic.com/v1"
         },
         "apiKey": {
           "title": "API-nøgle",
@@ -626,6 +627,14 @@
           "placeholderNoOptions": "Skriv et modelnavn",
           "useCustom": "Use \"{{value}}\"",
           "refreshModels": "Opdater modeller"
+        },
+        "apiFormat": {
+          "title": "API-format",
+          "description": "Det anmodningsformat, som det brugerdefinerede endpoint forventer.",
+          "options": {
+            "openai": "OpenAI-kompatibel (Chat Completions)",
+            "anthropic": "Anthropic Messages"
+          }
         }
       },
       "prompts": {

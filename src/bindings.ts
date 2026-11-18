@@ -329,6 +329,12 @@ export const commands = {
 	 */
 	getMultiSttLanguageStatuses: (options?: InvokeOptions) => typedError<(LanguageStatus | null)[], string>(__TAURI_INVOKE("get_multi_stt_language_statuses", undefined, options)),
 	/**
+	 *  The request format of the custom post-processing provider (OpenAI Chat
+	 *  Completions or Anthropic Messages). The built-in providers' formats are
+	 *  fixed, so only `custom` accepts a change.
+	 */
+	changePostProcessApiFormatSetting: (providerId: string, apiFormat: PostProcessApiFormat, options?: InvokeOptions) => typedError<null, string>(__TAURI_INVOKE("change_post_process_api_format_setting", { providerId, apiFormat }, options)),
+	/**
 	 *  The OS's preferred languages, most preferred first, as BCP-47 tags
 	 *  (`fr-FR`, `zh-Hant-TW`). Async so the first read (a WinRT call on
 	 *  Windows) never runs on the main thread.
@@ -3409,6 +3415,16 @@ export type PasteMethod = "ctrl_v" | "direct" | "direct_streaming" | "none" | "s
 
 export type PermissionAccess = "allowed" | "denied" | "unknown";
 
+/**  Request format a post-processing endpoint speaks. */
+export type PostProcessApiFormat = 
+/**  OpenAI-compatible Chat Completions (`/chat/completions`). */
+"openai" | 
+/**
+ *  Anthropic Messages (`/messages`): Anthropic itself, and endpoints such
+ *  as Claude on Microsoft Foundry that speak only this format.
+ */
+"anthropic";
+
 export type PostProcessProvider = PostProcessProvider_Serialize | PostProcessProvider_Deserialize;
 
 export type PostProcessProvider_Deserialize = {
@@ -3418,6 +3434,12 @@ export type PostProcessProvider_Deserialize = {
 	allow_base_url_edit?: boolean,
 	models_endpoint?: string | null,
 	supports_structured_output?: boolean,
+	/**
+	 *  The request format the endpoint speaks (upstream `14ae9c6`). Fixed for
+	 *  the built-in providers (`ensure_post_process_defaults` keeps it in
+	 *  sync); the custom provider's is the user's choice.
+	 */
+	api_format?: PostProcessApiFormat,
 };
 
 export type PostProcessProvider_Serialize = {
@@ -3427,6 +3449,12 @@ export type PostProcessProvider_Serialize = {
 	allow_base_url_edit: boolean,
 	models_endpoint: string | null,
 	supports_structured_output: boolean,
+	/**
+	 *  The request format the endpoint speaks (upstream `14ae9c6`). Fixed for
+	 *  the built-in providers (`ensure_post_process_defaults` keeps it in
+	 *  sync); the custom provider's is the user's choice.
+	 */
+	api_format: PostProcessApiFormat,
 };
 
 /**

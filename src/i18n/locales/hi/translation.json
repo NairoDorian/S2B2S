@@ -599,10 +599,10 @@
         "title": "हॉटकी"
       },
       "api": {
-        "title": "API (OpenAI संगत)",
+        "title": "API",
         "provider": {
           "title": "प्रोवाइडर",
-          "description": "कोई OpenAI-संगत प्रोवाइडर चुनें."
+          "description": "कोई OpenAI-संगत या Anthropic-संगत प्रोवाइडर चुनें."
         },
         "appleIntelligence": {
           "unavailable": "Apple Intelligence इस डिवाइस पर उपलब्ध नहीं है. इसके लिए macOS Tahoe (26.0) या उसके बाद का वर्शन चलाने वाला Apple Silicon Mac चाहिए, जिसमें System Settings में Apple Intelligence चालू हो."
@@ -611,7 +611,8 @@
           "title": "बेस URL",
           "description": "चुने गए प्रोवाइडर के लिए API बेस URL. केवल कस्टम प्रोवाइडर में बदलाव किया जा सकता है.",
           "managedByProvider": "Base URL is managed by the selected provider.",
-          "placeholder": "https://api.openai.com/v1"
+          "placeholder": "https://api.openai.com/v1",
+          "placeholderAnthropic": "https://api.anthropic.com/v1"
         },
         "apiKey": {
           "title": "API कुंजी",
@@ -626,6 +627,14 @@
           "placeholderNoOptions": "मॉडल का नाम लिखें",
           "useCustom": "Use \"{{value}}\"",
           "refreshModels": "मॉडल रीफ़्रेश करें"
+        },
+        "apiFormat": {
+          "title": "API फ़ॉर्मेट",
+          "description": "वह अनुरोध फ़ॉर्मेट जो आपके कस्टम एंडपॉइंट को चाहिए.",
+          "options": {
+            "openai": "OpenAI संगत (Chat Completions)",
+            "anthropic": "Anthropic Messages"
+          }
         }
       },
       "prompts": {

@@ -842,6 +842,33 @@ pub fn change_selected_language_setting(app: AppHandle, language: String) -> Res
     Ok(())
 }
 
+/// The request format of the custom post-processing provider (OpenAI Chat
+/// Completions or Anthropic Messages). The built-in providers' formats are
+/// fixed, so only `custom` accepts a change.
+#[tauri::command]
+#[specta::specta]
+pub fn change_post_process_api_format_setting(
+    app: AppHandle,
+    provider_id: String,
+    api_format: settings::PostProcessApiFormat,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let provider = settings
+        .post_process_providers
+        .iter_mut()
+        .find(|provider| provider.id == provider_id)
+        .ok_or_else(|| format!("Provider '{provider_id}' not found"))?;
+    if provider.id != "custom" {
+        return Err(format!(
+            "Provider '{}' does not allow changing the API format",
+            provider.label
+        ));
+    }
+    provider.api_format = api_format;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// The languages the user speaks (see `AppSettings::spoken_languages`).
 /// Applies from the next run; a live stream keeps the list it started with.
 #[tauri::command]

@@ -1,5 +1,5 @@
 use crate::app_identity;
-use crate::settings::PostProcessProvider;
+use crate::settings::{PostProcessApiFormat, PostProcessProvider};
 use crate::utils::log_multiline;
 use log::{debug, error, info};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, REFERER, USER_AGENT};
@@ -136,6 +136,49 @@ struct ChatCompletionResponse {
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatMessageResponse,
+    finish_reason: Option<String>,
+}
+
+/// Output budget for Anthropic Messages requests, where `max_tokens` is
+/// required. Ample for a cleaned-up dictation or a merge.
+const ANTHROPIC_MAX_TOKENS: u32 = 4096;
+
+#[derive(Debug, Serialize)]
+struct AnthropicMessagesRequest {
+    model: String,
+    max_tokens: u32,
+    messages: Vec<ChatMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicMessagesResponse {
+    content: Vec<AnthropicContentBlock>,
+    stop_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum AnthropicContentBlock {
+    Text {
+        text: String,
+    },
+    /// Thinking and any other non-text block.
+    #[serde(other)]
+    Other,
+}
+
+impl AnthropicMessagesResponse {
+    fn into_text(self) -> Option<String> {
+        let text: String = self
+            .content
+            .into_iter()
+            .filter_map(|block| match block {
+                AnthropicContentBlock::Text { text } => Some(text),
+                AnthropicContentBlock::Other => None,
+            })
+            .collect();
+        (!text.is_empty()).then_some(text)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -178,7 +221,7 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
 
     // Provider-specific auth headers
     if !api_key.is_empty() {
-        if provider.id == "anthropic" {
+        if provider.api_format == PostProcessApiFormat::Anthropic {
             headers.insert(
                 "x-api-key",
                 HeaderValue::from_str(api_key)
@@ -368,6 +411,9 @@ pub async fn send_chat_completion(
     prompt: String,
     disable_reasoning: bool,
 ) -> Result<Option<String>, String> {
+    if provider.api_format == PostProcessApiFormat::Anthropic {
+        return send_anthropic_message(provider, api_key, model, prompt).await;
+    }
     send_chat_completion_with_schema(
         provider,
         api_key,
@@ -547,10 +593,8 @@ pub async fn send_chat_completion_with_schema(
         .await
         .map_err(|e| report_reqwest_error("Failed to parse API response", &e))?;
 
-    let content = completion
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.clone());
+    let choices = completion.choices.len();
+    let content = completion_content(completion)?;
     match &content {
         Some(text) => log_multiline(
             &format!(
@@ -562,9 +606,95 @@ pub async fn send_chat_completion_with_schema(
         ),
         None => debug!(
             "Chat completion response carried no content ({} choice(s), {} ms total)",
-            completion.choices.len(),
+            choices,
             started.elapsed().as_millis()
         ),
+    }
+    Ok(content)
+}
+
+/// The text of a Chat Completions reply. A reply cut off at the provider's
+/// output limit (`finish_reason: length`) is incomplete: pasting it would
+/// silently drop the end of the dictation (or, for structured output, paste
+/// unparseable JSON), so it is an error, which lets the fallbacks run
+/// (structured -> legacy -> the transcription itself).
+fn completion_content(completion: ChatCompletionResponse) -> Result<Option<String>, String> {
+    let Some(choice) = completion.choices.into_iter().next() else {
+        return Ok(None);
+    };
+    if choice.finish_reason.as_deref() == Some("length") {
+        return Err("Response was truncated at the provider's output token limit".to_string());
+    }
+    Ok(choice.message.content)
+}
+
+/// Send a single-prompt request to an Anthropic Messages API (`/messages`),
+/// for every provider with the Anthropic format (the built-in Anthropic, and
+/// a custom provider set to it). None of them use structured output, and
+/// thinking is off unless requested, so no reasoning fields are needed.
+async fn send_anthropic_message(
+    provider: &PostProcessProvider,
+    api_key: String,
+    model: &str,
+    prompt: String,
+) -> Result<Option<String>, String> {
+    let url = format!("{}/messages", provider.base_url.trim_end_matches('/'));
+    debug!(
+        "Sending Anthropic Messages request to: {}",
+        sanitized_url_for_log(&url)
+    );
+    let started = std::time::Instant::now();
+    let request_body = AnthropicMessagesRequest {
+        model: model.to_string(),
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: prompt,
+        }],
+    };
+    let response = create_client(provider, &api_key)?
+        .post(&url)
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| report_reqwest_error("HTTP request failed", &e))?;
+    let status = response.status();
+    debug!(
+        "Anthropic Messages response received with status {} over {:?} from {}",
+        status,
+        response.version(),
+        sanitized_url(response.url())
+    );
+    if !status.is_success() {
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| report_reqwest_error("Failed to read API error response", &e));
+        return Err(format!(
+            "API request failed with status {}: {}",
+            status, error_text
+        ));
+    }
+    let message: AnthropicMessagesResponse = response
+        .json()
+        .await
+        .map_err(|e| report_reqwest_error("Failed to parse API response", &e))?;
+    // Cut off at the token budget: incomplete, so an error, as above.
+    if message.stop_reason.as_deref() == Some("max_tokens") {
+        return Err(format!(
+            "Response was truncated at the {ANTHROPIC_MAX_TOKENS} token limit"
+        ));
+    }
+    let content = message.into_text();
+    if let Some(text) = &content {
+        log_multiline(
+            &format!(
+                "Anthropic Messages response ({} ms total, model '{}')",
+                started.elapsed().as_millis(),
+                model
+            ),
+            text,
+        );
     }
     Ok(content)
 }
@@ -728,6 +858,14 @@ mod tests {
             allow_base_url_edit: true,
             models_endpoint: None,
             supports_structured_output: false,
+            api_format: PostProcessApiFormat::OpenAi,
+        }
+    }
+
+    fn anthropic_format_provider(base_url: &str) -> PostProcessProvider {
+        PostProcessProvider {
+            api_format: PostProcessApiFormat::Anthropic,
+            ..provider("custom", base_url)
         }
     }
 
@@ -921,5 +1059,104 @@ mod tests {
     async fn erase_conversations_handles_connection_failure() {
         // Point at a port nothing is listening on — should not panic
         erase_llama_server_conversations("http://127.0.0.1:1").await;
+    }
+
+    #[test]
+    fn anthropic_format_uses_api_key_headers() {
+        let headers = build_headers(
+            &anthropic_format_provider("https://example.com/anthropic/v1"),
+            "key",
+        )
+        .unwrap();
+        assert_eq!(headers["x-api-key"], "key");
+        assert_eq!(headers["anthropic-version"], "2023-06-01");
+        assert!(headers.get(AUTHORIZATION).is_none());
+
+        let headers =
+            build_headers(&provider("custom", "http://localhost:11434/v1"), "key").unwrap();
+        assert_eq!(headers[AUTHORIZATION], "Bearer key");
+        assert!(headers.get("x-api-key").is_none());
+    }
+
+    #[test]
+    fn anthropic_request_carries_required_max_tokens() {
+        let request = AnthropicMessagesRequest {
+            model: "claude-haiku".to_string(),
+            max_tokens: ANTHROPIC_MAX_TOKENS,
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+        };
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["max_tokens"], ANTHROPIC_MAX_TOKENS);
+        assert_eq!(json["messages"][0]["role"], "user");
+        assert!(json.get("stream").is_none());
+        assert!(json.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn anthropic_response_keeps_only_text_blocks() {
+        let response: AnthropicMessagesResponse = serde_json::from_str(
+            r#"{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Hello"},{"type":"text","text":" world"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(response.into_text().as_deref(), Some("Hello world"));
+        let empty: AnthropicMessagesResponse = serde_json::from_str(r#"{"content":[]}"#).unwrap();
+        assert_eq!(empty.into_text(), None);
+    }
+
+    #[tokio::test]
+    async fn anthropic_format_parses_messages_response() {
+        let base_url = serve_one_response(
+            "200 OK",
+            r#"{"type":"message","role":"assistant","content":[{"type":"text","text":"Cleaned text"}]}"#,
+        )
+        .await;
+        // Directly, not through send_chat_completion: its OpenAI branch links
+        // the llama-server start, whose dialog import a test binary cannot
+        // load (see actions::within_llm_deadline).
+        let result = send_anthropic_message(
+            &anthropic_format_provider(&base_url),
+            "key".to_string(),
+            "claude-haiku",
+            "raw text".to_string(),
+        )
+        .await;
+        assert_eq!(result, Ok(Some("Cleaned text".to_string())));
+    }
+
+    #[test]
+    fn chat_completion_rejects_truncated_response() {
+        let parse = |json: &str| {
+            completion_content(serde_json::from_str::<ChatCompletionResponse>(json).unwrap())
+        };
+        assert!(
+            parse(r#"{"choices":[{"message":{"content":"Cut off"},"finish_reason":"length"}]}"#)
+                .unwrap_err()
+                .contains("truncated")
+        );
+        assert_eq!(
+            parse(r#"{"choices":[{"message":{"content":"Whole"},"finish_reason":"stop"}]}"#),
+            Ok(Some("Whole".to_string()))
+        );
+        assert_eq!(parse(r#"{"choices":[]}"#), Ok(None));
+    }
+
+    #[tokio::test]
+    async fn anthropic_format_rejects_truncated_response() {
+        let base_url = serve_one_response(
+            "200 OK",
+            r#"{"type":"message","stop_reason":"max_tokens","content":[{"type":"text","text":"Cut off"}]}"#,
+        )
+        .await;
+        let result = send_anthropic_message(
+            &anthropic_format_provider(&base_url),
+            "key".to_string(),
+            "claude-haiku",
+            "raw text".to_string(),
+        )
+        .await;
+        assert!(result.unwrap_err().contains("truncated"));
     }
 }

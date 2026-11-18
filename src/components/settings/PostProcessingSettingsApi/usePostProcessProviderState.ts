@@ -1,6 +1,10 @@
 import { createSignal, createMemo, type Accessor } from "solid-js";
 import { useSettings } from "../../../hooks/useSettings";
-import { commands, type PostProcessProvider } from "@/bindings";
+import {
+  commands,
+  type PostProcessApiFormat,
+  type PostProcessProvider,
+} from "@/bindings";
 import type { ModelOption } from "./types";
 import type { DropdownOption } from "../../ui/Dropdown";
 
@@ -14,6 +18,9 @@ type PostProcessProviderState = {
   baseUrl: Accessor<string>;
   handleBaseUrlChange: (value: string) => void;
   isBaseUrlUpdating: Accessor<boolean>;
+  apiFormat: Accessor<PostProcessApiFormat>;
+  handleApiFormatChange: (value: PostProcessApiFormat) => void;
+  isApiFormatUpdating: Accessor<boolean>;
   apiKey: Accessor<string>;
   handleApiKeyChange: (value: string) => void;
   isApiKeyUpdating: Accessor<boolean>;
@@ -35,6 +42,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     isUpdating,
     setPostProcessProvider,
     updatePostProcessBaseUrl,
+    updatePostProcessApiFormat,
     updatePostProcessApiKey,
     updatePostProcessModel,
     fetchPostProcessModels,
@@ -164,6 +172,18 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
 
   const isCustomProvider = () => selectedProvider()?.id === "custom";
 
+  // OpenAI Chat Completions or Anthropic Messages; only the custom provider's
+  // is the user's (the built-in ones are fixed by the backend).
+  const apiFormat = (): PostProcessApiFormat =>
+    selectedProvider()?.api_format ?? "openai";
+  const handleApiFormatChange = (value: PostProcessApiFormat) => {
+    if (value !== apiFormat()) {
+      void updatePostProcessApiFormat(selectedProviderId(), value);
+    }
+  };
+  const isApiFormatUpdating = () =>
+    isUpdating(`post_process_api_format:${selectedProviderId()}`);
+
   return {
     providerOptions,
     selectedProviderId,
@@ -174,6 +194,9 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     baseUrl,
     handleBaseUrlChange,
     isBaseUrlUpdating,
+    apiFormat,
+    handleApiFormatChange,
+    isApiFormatUpdating,
     apiKey,
     handleApiKeyChange,
     isApiKeyUpdating,

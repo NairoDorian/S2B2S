@@ -572,10 +572,10 @@
         "title": "مفتاح الاختصار"
       },
       "api": {
-        "title": "API (متوافق مع OpenAI)",
+        "title": "API",
         "provider": {
           "title": "المزود",
-          "description": "اختر مزوداً متوافقاً مع OpenAI."
+          "description": "اختر مزوداً متوافقاً مع OpenAI أو Anthropic."
         },
         "appleIntelligence": {
           "unavailable": "Apple Intelligence غير متاح على هذا الجهاز. يتطلب جهاز Mac بمعالج Apple Silicon يعمل بنظام macOS Tahoe (26.0) أو أحدث مع تمكين Apple Intelligence في إعدادات النظام."
@@ -584,7 +584,8 @@
           "title": "URL الأساسي",
           "description": "URL الأساسي لـ API للمزود المختار. يمكن تعديل المزود المخصص فقط.",
           "managedByProvider": "Base URL is managed by the selected provider.",
-          "placeholder": "https://api.openai.com/v1"
+          "placeholder": "https://api.openai.com/v1",
+          "placeholderAnthropic": "https://api.anthropic.com/v1"
         },
         "apiKey": {
           "title": "مفتاح API",
@@ -599,6 +600,14 @@
           "placeholderNoOptions": "اكتب اسم النموذج",
           "useCustom": "Use \"{{value}}\"",
           "refreshModels": "تحديث النماذج"
+        },
+        "apiFormat": {
+          "title": "تنسيق API",
+          "description": "تنسيق الطلب الذي تتوقعه نقطة النهاية المخصصة الخاصة بك.",
+          "options": {
+            "openai": "متوافق مع OpenAI (Chat Completions)",
+            "anthropic": "Anthropic Messages"
+          }
         }
       },
       "prompts": {
