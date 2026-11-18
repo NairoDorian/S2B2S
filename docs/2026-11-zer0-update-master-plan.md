@@ -788,6 +788,14 @@ applies to ZER0's template.
 4. `bun run precommit:routine` (dependencies to newest prerelease + full gate),
    `meta:bump minor`.
 
+**Status 2026-11-18: done.** Docs pass `b92035c6`; intake recorded in
+`a659ec6b` (`-s ours`, 102 rows: 72 integrated in 33 commits, 18 skipped,
+12 deferred to Phase 12); dependencies `c486b075` (`bun run update`, then
+CPU-lane clippy and tests, Playwright and the gate; the CUDA-posture
+`precommit:full` was not run, verification builds stay on the CPU lane);
+version 0.10.0 and its What's New note `a825cdae`. The CHANGELOG is cut
+under a version heading when a release is made.
+
 ---
 
 ## Phase 12 — Deferred, recorded so it is not lost
