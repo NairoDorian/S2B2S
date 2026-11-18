@@ -1,3 +1,4 @@
+use crate::language_detection::{LanguageDecision, LanguageSource};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use log::{debug, error, info, warn};
@@ -89,6 +90,16 @@ fn migrations() -> Migrations<'static> {
     Migrations::new(MIGRATIONS.to_vec())
 }
 
+/// Nullable `transcription_history` columns added outside [`MIGRATIONS`].
+///
+/// A numbered migration raises `user_version`, and an older build then
+/// refuses the database (`rusqlite_migration` will not open one that is
+/// ahead of the migrations it knows), so going back one release would lose
+/// History. A column added here leaves the version alone; older builds name
+/// their columns in every query, so they never see it. Upstream adds its
+/// language columns the same way.
+const ADDED_COLUMNS: &[&str] = &["language_source"];
+
 pub(super) fn apply_migrations(conn: &mut Connection) -> Result<()> {
     migrate_from_tauri_plugin_sql(conn)?;
 
@@ -96,7 +107,27 @@ pub(super) fn apply_migrations(conn: &mut Connection) -> Result<()> {
     #[cfg(debug_assertions)]
     migrations.validate().expect("Invalid migrations");
     migrations.to_latest(conn)?;
+    for column in ADDED_COLUMNS {
+        if !has_column(conn, "transcription_history", column)? {
+            conn.execute(
+                &format!("ALTER TABLE transcription_history ADD COLUMN {column} TEXT"),
+                [],
+            )?;
+            info!("Added the {column} column to transcription history");
+        }
+    }
     Ok(())
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = statement.query_map([], |row| row.get::<_, String>("name"))?;
+    for name in names {
+        if name? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn migrate_from_tauri_plugin_sql(conn: &Connection) -> Result<()> {
@@ -151,7 +182,7 @@ fn migrate_from_tauri_plugin_sql(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-const HISTORY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, model_id, engine, audio_duration_ms, speech_duration_ms, sample_rate_hz, word_count, transcription_latency_ms, post_processing_latency_ms, language, mode, extra_models";
+const HISTORY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, model_id, engine, audio_duration_ms, speech_duration_ms, sample_rate_hz, word_count, transcription_latency_ms, post_processing_latency_ms, language, language_source, mode, extra_models";
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
@@ -193,7 +224,13 @@ pub struct HistoryEntry {
     pub word_count: Option<i32>,
     pub transcription_latency_ms: Option<f64>,
     pub post_processing_latency_ms: Option<f64>,
+    /// The language the transcription came out in, when known. Rows saved
+    /// before `language_source` existed hold the language *setting* here
+    /// instead (`auto` or the picked code): read it only with a source.
     pub language: Option<String>,
+    /// How that language was chosen; `None` on rows saved before it was
+    /// recorded.
+    pub language_source: Option<LanguageSource>,
     pub mode: Option<String>,
     pub extra_models: Option<Vec<String>>,
 }
@@ -214,8 +251,18 @@ pub struct NewHistoryEntry {
     pub transcription_latency_ms: Option<f64>,
     pub post_processing_latency_ms: Option<f64>,
     pub language: Option<String>,
+    pub language_source: Option<LanguageSource>,
     pub mode: Option<String>,
     pub extra_models: Option<Vec<String>>,
+}
+
+impl NewHistoryEntry {
+    /// The row's two language columns from a run's language.
+    pub fn with_language(mut self, language: &LanguageDecision) -> Self {
+        self.language = language.language.clone();
+        self.language_source = Some(language.source);
+        self
+    }
 }
 
 pub struct HistoryManager {
@@ -457,6 +504,11 @@ impl HistoryManager {
             transcription_latency_ms: row.get("transcription_latency_ms").unwrap_or(None),
             post_processing_latency_ms: row.get("post_processing_latency_ms").unwrap_or(None),
             language: row.get("language").unwrap_or(None),
+            language_source: row
+                .get::<_, Option<String>>("language_source")
+                .unwrap_or(None)
+                .as_deref()
+                .and_then(LanguageSource::parse),
             mode,
             extra_models,
         })
@@ -526,9 +578,10 @@ impl HistoryManager {
                 transcription_latency_ms,
                 post_processing_latency_ms,
                 language,
+                language_source,
                 mode,
                 extra_models
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             params![
                 &new_entry.file_name,
                 timestamp as i64,
@@ -547,6 +600,7 @@ impl HistoryManager {
                 new_entry.transcription_latency_ms,
                 new_entry.post_processing_latency_ms,
                 &new_entry.language,
+                new_entry.language_source.map(LanguageSource::as_str),
                 &new_entry.mode,
                 &extra_models_json,
             ],
@@ -571,6 +625,7 @@ impl HistoryManager {
             transcription_latency_ms: new_entry.transcription_latency_ms,
             post_processing_latency_ms: new_entry.post_processing_latency_ms,
             language: new_entry.language,
+            language_source: new_entry.language_source,
             mode: new_entry.mode,
             extra_models: new_entry.extra_models,
         };
@@ -610,6 +665,7 @@ impl HistoryManager {
         post_processing_latency_ms: Option<f64>,
         mode: Option<String>,
         extra_models: Option<Vec<String>>,
+        language: Option<&LanguageDecision>,
     ) -> Result<HistoryEntry> {
         let extra_models_json = extra_models
             .as_ref()
@@ -647,7 +703,9 @@ impl HistoryManager {
                  transcription_latency_ms = COALESCE(?8, transcription_latency_ms),
                  post_processing_latency_ms = COALESCE(?9, post_processing_latency_ms),
                  mode = COALESCE(?10, mode),
-                 extra_models = COALESCE(?11, extra_models)
+                 extra_models = COALESCE(?11, extra_models),
+                 language = CASE WHEN ?13 IS NULL THEN language ELSE ?14 END,
+                 language_source = COALESCE(?13, language_source)
              WHERE id = ?12",
             params![
                 transcription_text,
@@ -661,7 +719,9 @@ impl HistoryManager {
                 post_processing_latency_ms,
                 mode,
                 extra_models_json,
-                id
+                id,
+                language.map(|l| l.source.as_str()),
+                language.and_then(|l| l.language.as_deref()),
             ],
         )?;
 
@@ -1126,6 +1186,70 @@ mod tests {
             ],
         )
         .expect("insert history entry");
+    }
+
+    #[test]
+    fn language_source_is_added_once_without_moving_the_schema_version() {
+        let mut conn = setup_conn();
+        assert!(has_column(&conn, "transcription_history", "language_source").unwrap());
+        let version: i64 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        // An older build checks the version against its own migrations: the
+        // added column must not move it.
+        assert_eq!(version, MIGRATIONS.len() as i64);
+        // Reopening applies nothing twice.
+        apply_migrations(&mut conn).expect("second run");
+        let columns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('transcription_history') \
+                 WHERE name = 'language_source'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 1);
+    }
+
+    #[test]
+    fn language_and_source_round_trip_and_old_rows_have_no_source() {
+        let conn = setup_conn();
+        // A row from before the column: the language setting, no source.
+        insert_entry(&conn, 100.0, "old", None);
+        conn.execute(
+            "UPDATE transcription_history SET language = 'auto' WHERE timestamp = 100",
+            [],
+        )
+        .unwrap();
+        let old = HistoryManager::get_latest_entry_with_conn(&conn)
+            .unwrap()
+            .unwrap();
+        assert_eq!(old.language.as_deref(), Some("auto"));
+        assert_eq!(old.language_source, None);
+
+        insert_entry(&conn, 200.0, "new", None);
+        conn.execute(
+            "UPDATE transcription_history SET language = 'fr', language_source = ?1 \
+             WHERE timestamp = 200",
+            params![LanguageSource::Detected.as_str()],
+        )
+        .unwrap();
+        let new = HistoryManager::get_latest_entry_with_conn(&conn)
+            .unwrap()
+            .unwrap();
+        assert_eq!(new.language.as_deref(), Some("fr"));
+        assert_eq!(new.language_source, Some(LanguageSource::Detected));
+
+        // A spelling from a later build reads as "not recorded", not an error.
+        conn.execute(
+            "UPDATE transcription_history SET language_source = 'future' WHERE timestamp = 200",
+            [],
+        )
+        .unwrap();
+        let future = HistoryManager::get_latest_entry_with_conn(&conn)
+            .unwrap()
+            .unwrap();
+        assert_eq!(future.language_source, None);
     }
 
     #[test]

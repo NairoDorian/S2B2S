@@ -499,8 +499,8 @@ Cost: removes two crates; no new thread or poll.
 with one shared detector run and 6.5 the detector (pinned Q8_0, download
 only when needed, `get_language_status` line with a download button)
 (`6efcf51b`); 6.7 the Chinese script setting with schema 11 (`15a39e2e`). The detector was checked on real speech: all seven FLEURS
-clips identified, ~68 ms per 5 s. 6.6's tray Language submenu landed on
-2026-11-18. Left: History language/source columns (6.5), the onboarding
+clips identified, ~68 ms per 5 s. On 2026-11-18: 6.6's tray Language
+submenu and 6.5's History language/source columns. Left: the onboarding
 suggestion (6.6), the Multi-STT page showing each slot's plan (6.6), and a
 real-microphone check of the allowlist (6.8).
 
@@ -594,9 +594,15 @@ AIVORelay's behaviour).
 - Port `language_detection/{detector,speech,mod}.rs`: CPU-only `LangIdSession`
   loaded on first use, unloaded with the primary model, run on the blocking
   pool over the gate's retained speech (min 0.5 s; `InputTooShort` → fallback).
-- History: record each transcription's language and its source
+- ~~History: record each transcription's language and its source
   (selected / model / detected / fallback) — additive columns, readable by
-  older builds (upstream `126bed7` + `73c0958`'s compatibility rule).
+  older builds (upstream `126bed7` + `73c0958`'s compatibility rule).~~
+  Done 2026-11-18: `language_source` added outside the numbered migrations
+  (`ADDED_COLUMNS`, `user_version` unchanged); `language` now holds the
+  language the text came out in. Derived from ZER0's existing per-run
+  output-language evidence plus the plan's source (`language_used`), for
+  batch runs, live streams, Multi-STT (the primary's) and History re-runs.
+  A language chip on the History row, amber for a fallback.
 
 Cost: one ~27 MB file on disk when needed; one CPU inference (tens of ms) per
 recording only when a `Detect` plan exists; no thread, no poll.

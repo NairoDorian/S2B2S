@@ -927,6 +927,7 @@ impl ShortcutAction for TranscribeAction {
                     Ok(tracked) => {
                         let transcription = tracked.text;
                         let attempt = tracked.attempt;
+                        let language = tracked.language;
                         debug!(
                             "Transcription completed in {:?}: '{}'",
                             transcription_time.elapsed(),
@@ -1017,8 +1018,8 @@ impl ShortcutAction for TranscribeAction {
                             }
                             .to_string();
 
-                            if let Err(err) =
-                                hm.save_entry_full(crate::managers::history::NewHistoryEntry {
+                            if let Err(err) = hm.save_entry_full(
+                                crate::managers::history::NewHistoryEntry {
                                     file_name,
                                     transcription_text: transcription,
                                     post_process_requested: post_process,
@@ -1032,11 +1033,12 @@ impl ShortcutAction for TranscribeAction {
                                     word_count,
                                     transcription_latency_ms: Some(stt_latency_ms),
                                     post_processing_latency_ms,
-                                    language: Some(settings.selected_language.clone()),
                                     mode: Some(mode),
                                     extra_models: None,
-                                })
-                            {
+                                    ..Default::default()
+                                }
+                                .with_language(&language),
+                            ) {
                                 error!("Failed to save history entry: {}", err);
                             }
                         }
@@ -2406,6 +2408,9 @@ impl ShortcutAction for MultiSttAction {
                 .collect();
 
             let mut tracked1 = task1.await.unwrap_or(None);
+            // The row's language is the primary's (Model 1, whose text the
+            // merge starts from); the extras may have run in their own.
+            let primary_language = tracked1.as_ref().map(|t| t.language.clone());
             let mut tracked_extras: Vec<Option<TrackedTranscription>> =
                 Vec::with_capacity(extra_tasks.len());
             for (index, task) in extra_tasks.into_iter().enumerate() {
@@ -2704,7 +2709,6 @@ impl ShortcutAction for MultiSttAction {
             let audio_duration_ms = (wav_sample_count as f64 * 1000.0) / (raw_rate as f64);
             let speech_duration_ms = speech_ms as f64;
             let selected_model = settings.selected_model.clone();
-            let selected_language = settings.selected_language.clone();
 
             if wav_saved {
                 tauri::async_runtime::spawn_blocking(move || {
@@ -2723,7 +2727,8 @@ impl ShortcutAction for MultiSttAction {
                             word_count,
                             transcription_latency_ms: Some(multi_transcription_latency_ms),
                             post_processing_latency_ms: merge_latency_ms,
-                            language: Some(selected_language),
+                            language: primary_language.as_ref().and_then(|l| l.language.clone()),
+                            language_source: primary_language.as_ref().map(|l| l.source),
                             mode: Some("multi_stt".to_string()),
                             extra_models: Some(extra_models_list),
                         })

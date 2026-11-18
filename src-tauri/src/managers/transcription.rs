@@ -281,6 +281,9 @@ struct FinalizedStreamText {
 pub struct TrackedTranscription {
     pub text: String,
     pub attempt: PendingStatisticsAttempt,
+    /// What the text came out in and how that language was chosen
+    /// ([`language_used`]); the History row records it.
+    pub language: crate::language_detection::LanguageDecision,
 }
 
 pub enum StreamFinalization {
@@ -1933,6 +1936,13 @@ impl TranscriptionManager {
         StreamFinalization::Completed(TrackedTranscription {
             text: filtered,
             attempt,
+            // A live stream never runs the detector: the language is the
+            // pinned one or the model's own.
+            language: language_used(
+                &finalized.output_language,
+                None,
+                finalized.supported_languages.len() == 1,
+            ),
         })
     }
 
@@ -2157,11 +2167,18 @@ impl TranscriptionManager {
     /// model that cannot detect — the detector's pick from the first seconds
     /// of speech. A missing detector starts its download (decision D8) and
     /// this run uses the first preferred language.
-    fn run_language(&self, settings: &AppSettings, model_id: &str, audio: &[f32]) -> String {
+    fn run_language(
+        &self,
+        settings: &AppSettings,
+        model_id: &str,
+        audio: &[f32],
+    ) -> crate::language_detection::LanguageDecision {
         use crate::language_detection::{self as detection, IdentifyError};
 
         if settings.spoken_languages.is_empty() || settings.selected_language != "auto" {
-            return effective_language_for_model(settings, self.model_manager.as_ref(), model_id);
+            let language =
+                effective_language_for_model(settings, self.model_manager.as_ref(), model_id);
+            return resolved_intent_decision(&settings.selected_language, language);
         }
         let model = self.model_manager.get_model_info(model_id);
         let plan = detection::plan_for(settings, model.as_ref(), false);
@@ -2194,7 +2211,7 @@ impl TranscriptionManager {
             decision.intent(),
             decision.source
         );
-        decision.intent().to_string()
+        decision
     }
 
     /// Start the detector's one-time download in the background (a no-op
@@ -2209,7 +2226,8 @@ impl TranscriptionManager {
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
-        self.transcribe_internal(audio, None).map(|(text, _)| text)
+        self.transcribe_internal(audio, None)
+            .map(|(text, _, _)| text)
     }
 
     pub fn transcribe_tracked(
@@ -2218,7 +2236,11 @@ impl TranscriptionManager {
         run: StatisticsRunContext,
     ) -> Result<TrackedTranscription> {
         match self.transcribe_internal(audio, Some(&run)) {
-            Ok((text, Some(attempt))) => Ok(TrackedTranscription { text, attempt }),
+            Ok((text, Some(attempt), language)) => Ok(TrackedTranscription {
+                text,
+                attempt,
+                language,
+            }),
             Ok(_) => {
                 run.finish(StatisticsRunStatus::Failed);
                 Err(anyhow::anyhow!(
@@ -2236,7 +2258,11 @@ impl TranscriptionManager {
         &self,
         audio: Vec<f32>,
         statistics: Option<&StatisticsRunContext>,
-    ) -> Result<(String, Option<PendingStatisticsAttempt>)> {
+    ) -> Result<(
+        String,
+        Option<PendingStatisticsAttempt>,
+        crate::language_detection::LanguageDecision,
+    )> {
         // Development-only fault injection: set (to any value) to make every
         // transcription fail, for exercising the failure paths.
         #[cfg(debug_assertions)]
@@ -2258,7 +2284,11 @@ impl TranscriptionManager {
         if audio.is_empty() {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
-            return Ok((String::new(), None));
+            return Ok((
+                String::new(),
+                None,
+                crate::language_detection::LanguageDecision::unknown(),
+            ));
         }
 
         // Wait for any in-progress load, then require a loaded engine.
@@ -2291,7 +2321,8 @@ impl TranscriptionManager {
         // will actually use. The coercion is capability-aware (a must-pick model
         // never receives "auto") and computed fresh here — it is never written
         // back to settings, so the intent survives switching models and back.
-        let validated_language = self.run_language(&settings, &active_model, &audio);
+        let language_plan = self.run_language(&settings, &active_model, &audio);
+        let validated_language = language_plan.intent().to_string();
         if validated_language != settings.selected_language {
             debug!(
                 "Language intent '{}' resolved to '{}' for model '{}'",
@@ -2517,6 +2548,12 @@ impl TranscriptionManager {
             (text, output_language, model_languages, statistics_attempt)
         };
 
+        let language = language_used(
+            &output_language,
+            Some(language_plan.source),
+            model_languages.len() == 1,
+        );
+
         // Apply fuzzy word correction if custom words are configured — UNLESS the
         // words were already handed to the model as an initial prompt (whisper
         // family). We don't pass a prompt to non-whisper models (it requires the
@@ -2567,7 +2604,7 @@ impl TranscriptionManager {
 
         self.maybe_unload_immediately("transcription");
 
-        Ok((final_result, statistics_attempt))
+        Ok((final_result, statistics_attempt, language))
     }
 }
 
@@ -2852,6 +2889,74 @@ fn resolve_output_language_evidence(
     }
 
     OutputLanguageEvidence::Unknown
+}
+
+/// How a run without the language plan chose its language: the persisted
+/// intent against what [`effective_language_for_model`] made of it for this
+/// model. A kept pick is `Selected`; Auto left to the model is `Model`; any
+/// coercion (a pick the model lacks, Auto on a model that must be told) is
+/// `Fallback`.
+fn resolved_intent_decision(
+    intent: &str,
+    resolved: String,
+) -> crate::language_detection::LanguageDecision {
+    use crate::language_detection::{LanguageDecision, LanguageSource};
+    use crate::managers::model::canonical_language_code;
+    let source = match (intent == "auto", resolved == "auto") {
+        (true, true) => LanguageSource::Model,
+        (false, false) if canonical_language_code(intent) == canonical_language_code(&resolved) => {
+            LanguageSource::Selected
+        }
+        _ => LanguageSource::Fallback,
+    };
+    LanguageDecision {
+        language: (resolved != "auto").then_some(resolved),
+        source,
+    }
+}
+
+/// The language a finished run came out in, and how it was chosen: what its
+/// History row records. `evidence` is the run's output-language evidence,
+/// `plan` the source of the language the batch run was given (`None` for a
+/// live stream, which never runs the detector), `single_language` whether
+/// the model knows one language only.
+///
+/// A language the model was constrained to takes the plan's reason (picked,
+/// detected, fallback); without one it is the model's only language or a
+/// fallback. A translated run records no language: its text is English, and
+/// what was spoken is not known. Upstream's two columns, `language` and
+/// `language_source`, with the same meanings.
+fn language_used(
+    evidence: &OutputLanguageEvidence,
+    plan: Option<crate::language_detection::LanguageSource>,
+    single_language: bool,
+) -> crate::language_detection::LanguageDecision {
+    use crate::language_detection::{LanguageDecision, LanguageSource};
+    let (language, source) = match evidence {
+        OutputLanguageEvidence::UserSelected(language) => {
+            (Some(language.clone()), LanguageSource::Selected)
+        }
+        OutputLanguageEvidence::ModelDetected(language)
+        | OutputLanguageEvidence::TextDetected(language) => {
+            (Some(language.clone()), LanguageSource::Model)
+        }
+        OutputLanguageEvidence::ModelConstrained(language) => (
+            Some(language.clone()),
+            match plan {
+                Some(
+                    source @ (LanguageSource::Selected
+                    | LanguageSource::Detected
+                    | LanguageSource::Fallback),
+                ) => source,
+                _ if single_language => LanguageSource::Model,
+                _ => LanguageSource::Fallback,
+            },
+        ),
+        OutputLanguageEvidence::TranslatedToEnglish | OutputLanguageEvidence::Unknown => {
+            (None, plan.unwrap_or(LanguageSource::Model))
+        }
+    };
+    LanguageDecision { language, source }
 }
 
 /// Upgrade [`OutputLanguageEvidence::Unknown`] with the language the model
@@ -3509,7 +3614,7 @@ impl TranscriptionManager {
     /// The engine is temporarily removed from the map, used, and returned.
     pub fn transcribe_with_extra(&self, model_id: &str, audio: Vec<f32>) -> Result<String> {
         self.transcribe_with_extra_internal(model_id, audio, None)
-            .map(|(text, _)| text)
+            .map(|(text, _, _)| text)
     }
 
     pub fn transcribe_with_extra_tracked(
@@ -3519,7 +3624,11 @@ impl TranscriptionManager {
         run: StatisticsRunContext,
     ) -> Result<TrackedTranscription> {
         match self.transcribe_with_extra_internal(model_id, audio, Some(&run)) {
-            Ok((text, Some(attempt))) => Ok(TrackedTranscription { text, attempt }),
+            Ok((text, Some(attempt), language)) => Ok(TrackedTranscription {
+                text,
+                attempt,
+                language,
+            }),
             Ok(_) => {
                 run.finish(StatisticsRunStatus::Failed);
                 Err(anyhow::anyhow!(
@@ -3538,12 +3647,20 @@ impl TranscriptionManager {
         model_id: &str,
         audio: Vec<f32>,
         statistics: Option<&StatisticsRunContext>,
-    ) -> Result<(String, Option<PendingStatisticsAttempt>)> {
+    ) -> Result<(
+        String,
+        Option<PendingStatisticsAttempt>,
+        crate::language_detection::LanguageDecision,
+    )> {
         self.touch_activity();
 
         if audio.is_empty() {
             debug!("Empty audio vector for extra model '{}'", model_id);
-            return Ok((String::new(), None));
+            return Ok((
+                String::new(),
+                None,
+                crate::language_detection::LanguageDecision::unknown(),
+            ));
         }
 
         let mut engine = {
@@ -3577,7 +3694,7 @@ impl TranscriptionManager {
         // The slot's own plan against its own model: a pinned slot keeps its
         // language; a slot whose model cannot detect gets the detector's pick,
         // shared with the other slots of this recording (one run, cached).
-        let language = self.run_language(&settings, model_id, &audio);
+        let language_plan = self.run_language(&settings, model_id, &audio);
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(
@@ -3586,12 +3703,18 @@ impl TranscriptionManager {
                 &audio,
                 model_id,
                 &self.model_manager,
-                Some(language.as_str()),
+                Some(language_plan.intent()),
             )
         }));
 
+        let mut language = crate::language_detection::LanguageDecision::unknown();
         let (transcription, engine_to_return) = match result {
             Ok(Ok(output)) => {
+                language = language_used(
+                    &output.output_language,
+                    Some(language_plan.source),
+                    output.supported_languages.len() == 1,
+                );
                 let filtered = post_process_transcription_text(
                     output.text,
                     &settings,
@@ -3651,7 +3774,7 @@ impl TranscriptionManager {
                         attempt.finish(StatisticsRunStatus::Empty);
                     }
                 }
-                Ok((text.clone(), statistics_attempt))
+                Ok((text.clone(), statistics_attempt, language))
             }
             Err(e) => {
                 if let Some(ref attempt) = statistics_attempt {
@@ -5579,6 +5702,97 @@ mod tests {
             ),
             OutputLanguageEvidence::UserSelected("pt".to_string())
         );
+    }
+
+    #[test]
+    fn language_used_records_what_came_out_and_why() {
+        use crate::language_detection::LanguageSource::*;
+        let used = |evidence, plan, single| {
+            let d = language_used(&evidence, plan, single);
+            (d.language, d.source)
+        };
+        let s = |code: &str| Some(code.to_string());
+        // The user's pick, kept.
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::UserSelected("fr".into()),
+                Some(Selected),
+                false
+            ),
+            (s("fr"), Selected)
+        );
+        // Auto: the model's own detection, reported or not.
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::ModelDetected("de".into()),
+                Some(Model),
+                false
+            ),
+            (s("de"), Model)
+        );
+        assert_eq!(
+            used(OutputLanguageEvidence::Unknown, Some(Model), false),
+            (None, Model)
+        );
+        // The language plan's pick keeps its reason.
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::ModelConstrained("es".into()),
+                Some(Detected),
+                false
+            ),
+            (s("es"), Detected)
+        );
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::ModelConstrained("en".into()),
+                Some(Fallback),
+                false
+            ),
+            (s("en"), Fallback)
+        );
+        // Constrained with no reason: the model's only language, else a fallback.
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::ModelConstrained("en".into()),
+                None,
+                true
+            ),
+            (s("en"), Model)
+        );
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::ModelConstrained("en".into()),
+                Some(Model),
+                false
+            ),
+            (s("en"), Fallback)
+        );
+        // Translated: English text, spoken language unknown.
+        assert_eq!(
+            used(
+                OutputLanguageEvidence::TranslatedToEnglish,
+                Some(Selected),
+                false
+            ),
+            (None, Selected)
+        );
+    }
+
+    #[test]
+    fn a_resolved_intent_says_whether_it_was_kept() {
+        use crate::language_detection::LanguageSource::*;
+        let decide = |intent: &str, resolved: &str| {
+            let d = resolved_intent_decision(intent, resolved.to_string());
+            (d.language, d.source)
+        };
+        assert_eq!(decide("fr", "fr"), (Some("fr".into()), Selected));
+        // Bokmål on a model that lists Norwegian is still the pick.
+        assert_eq!(decide("no", "nb"), (Some("nb".into()), Selected));
+        assert_eq!(decide("auto", "auto"), (None, Model));
+        // Auto on a model that must be told, and a pick the model lacks.
+        assert_eq!(decide("auto", "en"), (Some("en".into()), Fallback));
+        assert_eq!(decide("ja", "en"), (Some("en".into()), Fallback));
     }
 
     #[test]

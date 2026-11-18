@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **History shows each transcription's language (2026-11-18).** A row now
+  records the language its text came out in and how it was chosen: the one
+  you picked, the model's own detection, the language detector's pick from
+  the languages you speak, or a fallback (shown in amber, with the reason on
+  hover). Rows saved before this keep no language chip, since they stored the
+  language setting rather than the result. The new column is added without
+  a schema-version bump, so going back to an older build still opens History.
+
 - **Language submenu in the tray (2026-11-18).** Switching the transcription
   language no longer needs the settings window: the tray lists Auto, the
   languages you speak (plus the active one) and the model's other languages

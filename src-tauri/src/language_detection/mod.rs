@@ -161,7 +161,33 @@ pub enum LanguageSource {
     Fallback,
 }
 
-/// The language one transcription runs in.
+impl LanguageSource {
+    /// The spelling History's `language_source` column stores (the serde one).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LanguageSource::Selected => "selected",
+            LanguageSource::Model => "model",
+            LanguageSource::Detected => "detected",
+            LanguageSource::Fallback => "fallback",
+        }
+    }
+
+    /// Reads a stored spelling back; anything else (a value written by a
+    /// later build) is `None` rather than an error.
+    pub fn parse(stored: &str) -> Option<Self> {
+        match stored {
+            "selected" => Some(LanguageSource::Selected),
+            "model" => Some(LanguageSource::Model),
+            "detected" => Some(LanguageSource::Detected),
+            "fallback" => Some(LanguageSource::Fallback),
+            _ => None,
+        }
+    }
+}
+
+/// The language one transcription runs in. After a run it also says what the
+/// transcription came out in (`TrackedTranscription::language`), which is
+/// what its History row records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LanguageDecision {
     /// The model's code, or `None` for the model's own detection.
@@ -170,6 +196,15 @@ pub struct LanguageDecision {
 }
 
 impl LanguageDecision {
+    /// Nothing known: the model's own decision, the language unreported (a
+    /// run that produced nothing).
+    pub fn unknown() -> Self {
+        Self {
+            language: None,
+            source: LanguageSource::Model,
+        }
+    }
+
     /// As a language intent: the code, or `"auto"`.
     pub fn intent(&self) -> &str {
         self.language.as_deref().unwrap_or("auto")

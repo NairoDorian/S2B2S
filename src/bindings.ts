@@ -1863,7 +1863,17 @@ export type HistoryEntry_Deserialize = {
 	word_count?: number | null,
 	transcription_latency_ms?: number | null,
 	post_processing_latency_ms?: number | null,
+	/**
+	 *  The language the transcription came out in, when known. Rows saved
+	 *  before `language_source` existed hold the language *setting* here
+	 *  instead (`auto` or the picked code): read it only with a source.
+	 */
 	language?: string | null,
+	/**
+	 *  How that language was chosen; `None` on rows saved before it was
+	 *  recorded.
+	 */
+	language_source?: LanguageSource | null,
 	mode?: string | null,
 	extra_models?: string[] | null,
 };
@@ -1886,7 +1896,17 @@ export type HistoryEntry_Serialize = {
 	word_count: number | null,
 	transcription_latency_ms: number | null,
 	post_processing_latency_ms: number | null,
+	/**
+	 *  The language the transcription came out in, when known. Rows saved
+	 *  before `language_source` existed hold the language *setting* here
+	 *  instead (`auto` or the picked code): read it only with a source.
+	 */
 	language: string | null,
+	/**
+	 *  How that language was chosen; `None` on rows saved before it was
+	 *  recorded.
+	 */
+	language_source: LanguageSource | null,
 	mode: string | null,
 	extra_models: string[] | null,
 };
@@ -1967,6 +1987,23 @@ export type LanguageDetectionMode =
  *  the person speaks.
  */
 "always";
+
+/**  How a transcription's language was chosen. */
+export type LanguageSource = 
+/**
+ *  The person picked it, or it is the only language of theirs the model
+ *  supports.
+ */
+"selected" | 
+/**  The model decides: its own detection, or its only language. */
+"model" | 
+/**  The detector picked it. */
+"detected" | 
+/**
+ *  Picked without detecting (too little speech, detection failed or
+ *  unavailable, or Auto can't work for these languages).
+ */
+"fallback";
 
 /**
  *  What the language picker shows: the language a transcription will run in,

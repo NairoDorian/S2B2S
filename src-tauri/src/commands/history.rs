@@ -152,6 +152,7 @@ pub async fn retry_history_entry_transcription(
     };
 
     let transcription = tracked.text;
+    let language = tracked.language;
     if transcription.is_empty() {
         tracked
             .attempt
@@ -189,6 +190,7 @@ pub async fn retry_history_entry_transcription(
             post_processing_latency_ms,
             Some("single".to_string()),
             None,
+            Some(&language),
         )
         .map(|_| ())
     })
@@ -240,6 +242,7 @@ pub async fn post_process_history_entry(
             None,
             None,
             post_processing_latency_ms,
+            None,
             None,
             None,
         )
@@ -367,6 +370,7 @@ pub async fn multi_stt_history_entry(
         .collect();
 
     let primary_tracked = primary_task.await.unwrap_or(None);
+    let primary_language = primary_tracked.as_ref().map(|t| t.language.clone());
     let mut extra_tracked = Vec::with_capacity(extra_tasks.len());
     for task in extra_tasks {
         extra_tracked.push(match task {
@@ -460,6 +464,7 @@ pub async fn multi_stt_history_entry(
             merge_latency_ms,
             Some("multi_stt".to_string()),
             Some(extra_models_list),
+            primary_language.as_ref(),
         )
         .map(|_| ())
     })

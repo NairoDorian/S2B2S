@@ -706,7 +706,13 @@
       "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
       "multiSttCopyBrainOutput": "Copy cleaned Brain output",
-      "copyError": "Přepis se nepodařilo zkopírovat do schránky."
+      "copyError": "Přepis se nepodařilo zkopírovat do schránky.",
+      "languageSource": {
+        "selected": "Transcribed in {{language}}, the language you chose",
+        "model": "Transcribed in {{language}}, as the model detected it",
+        "detected": "Transcribed in {{language}}, picked by the language detector from the languages you speak",
+        "fallback": "Transcribed in {{language}} as a fallback: your choice did not fit this model, or the language could not be detected"
+      }
     },
     "debug": {
       "title": "Ladění",

@@ -306,7 +306,17 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
     transcribe.cpp `StreamExtension` a model family supports
   - `transcription.rs` - Speech-to-text pipeline: primary engine, stream
     worker, `extra_engines` (Multi-STT), idle unload watcher
-  - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum
+  - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum.
+    Each row records the language its text came out in and how it was chosen
+    (`language` + `language_source`: selected / model / detected / fallback,
+    from `TrackedTranscription::language`, which `transcription.rs`'s
+    `language_used` derives from the run's output-language evidence and the
+    language plan). `language_source` is one of `ADDED_COLUMNS`: nullable
+    columns added by `has_column` + `ALTER TABLE` _outside_ the numbered
+    `MIGRATIONS`, because a migration raises `user_version` and an older
+    build then refuses the database. Rows from before it keep the language
+    _setting_ in `language` and have no source; the History page shows a
+    language chip only on rows with one
   - `statistics.rs` - Metrics tracking (independent SQLite table, streak calculation, stop-relative transcription and LLM post-processing latency distributions)
   - `arch_plugins.rs` - transcribe.cpp per-family architecture-plugin
     directories and listing (`list_arch_plugins`, `load_arch_plugin`,

@@ -367,6 +367,53 @@ test.describe("settings window", () => {
     expect(crashes).toEqual([]);
   });
 
+  test("a History row shows the language it came out in", async ({ page }) => {
+    const crashes = watchForCrashes(page);
+    const row = (id: number, language: string, source: string | null) => ({
+      id,
+      file_name: `recording-${id}.wav`,
+      timestamp: 1_700_000_000 + id,
+      saved: false,
+      title: `Recording ${id}`,
+      transcription_text: `transcript ${id}`,
+      post_processed_text: null,
+      post_process_prompt: null,
+      post_process_requested: false,
+      model_id: "parakeet",
+      engine: null,
+      audio_duration_ms: 2000,
+      speech_duration_ms: 1500,
+      sample_rate_hz: 48000,
+      word_count: 2,
+      transcription_latency_ms: 120,
+      post_processing_latency_ms: null,
+      language,
+      language_source: source,
+      mode: "single",
+      extra_models: null,
+    });
+    // One row the detector chose French for, and one saved before the source
+    // was recorded, whose column still holds the language *setting*.
+    await page.addInitScript(
+      (entries) => {
+        (window as any).__TAURI_MOCK_REPLIES__ = {
+          get_history_entries: { entries, has_more: false },
+        };
+      },
+      [row(2, "fr", "detected"), row(1, "auto", null)],
+    );
+    await boot(page);
+    await sidebarButton(page, "History").click();
+
+    const chips = page.locator('[title^="Transcribed in"]');
+    await expect(chips).toHaveCount(1);
+    await expect(chips).toHaveText("French");
+    await expect(chips).toHaveAttribute("title", /language detector/);
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+
   test("a backend event surfaces as a toast", async ({ page }) => {
     const crashes = watchForCrashes(page);
 

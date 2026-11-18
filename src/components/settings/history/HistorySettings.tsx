@@ -20,6 +20,7 @@ import {
   FilePlus,
   FileText,
   FolderOpen,
+  Languages,
   Layers,
   RotateCcw,
   Search,
@@ -40,6 +41,7 @@ import {
   type HistoryUpdatePayload,
 } from "@/bindings";
 import { useOsType } from "@/hooks/useOsType";
+import { getLanguageLabel } from "@/lib/constants/languages";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
@@ -627,6 +629,14 @@ const HistoryEntryComponent = ({
   const hasTranscription = entry.transcription_text.trim().length > 0;
   const isMultiStt =
     entry.mode === "multi_stt" || isMultiRecordingFileName(entry.file_name);
+  // The language the text came out in. Only rows that recorded how it was
+  // chosen have one: older rows keep the language *setting* in that column
+  // ("auto" or the pick), which says nothing about this transcription.
+  const languageSource = entry.language_source ?? null;
+  const languageLabel =
+    languageSource && entry.language
+      ? (getLanguageLabel(entry.language) ?? entry.language)
+      : null;
 
   const multiSttMeta = createMemo(() =>
     isMultiStt ? parseMultiSttMeta(entry.transcription_text) : null,
@@ -895,6 +905,23 @@ const HistoryEntryComponent = ({
                     })
                   : displayModelId(entry.model_id)}
               </span>
+            </span>
+          )}
+
+          {/* Language Badge: amber when it was a fallback */}
+          {languageSource && languageLabel && (
+            <span
+              class={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
+                languageSource === "fallback"
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                  : "bg-mid-gray/15 text-text/80 border-mid-gray/20"
+              }`}
+              title={t(`settings.history.languageSource.${languageSource}`, {
+                language: languageLabel,
+              })}
+            >
+              <Languages class="w-3 h-3 text-accent" />
+              <span>{languageLabel}</span>
             </span>
           )}
 

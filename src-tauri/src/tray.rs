@@ -1013,6 +1013,7 @@ mod tests {
             transcription_latency_ms: None,
             post_processing_latency_ms: None,
             language: None,
+            language_source: None,
             mode: None,
             extra_models: None,
         }

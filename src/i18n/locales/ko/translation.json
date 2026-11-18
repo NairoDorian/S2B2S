@@ -706,7 +706,13 @@
       "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
       "multiSttCopyBrainOutput": "Copy cleaned Brain output",
-      "copyError": "전사 내용을 클립보드에 복사하지 못했습니다."
+      "copyError": "전사 내용을 클립보드에 복사하지 못했습니다.",
+      "languageSource": {
+        "selected": "Transcribed in {{language}}, the language you chose",
+        "model": "Transcribed in {{language}}, as the model detected it",
+        "detected": "Transcribed in {{language}}, picked by the language detector from the languages you speak",
+        "fallback": "Transcribed in {{language}} as a fallback: your choice did not fit this model, or the language could not be detected"
+      }
     },
     "debug": {
       "title": "디버그",
