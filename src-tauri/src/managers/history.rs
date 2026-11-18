@@ -238,6 +238,8 @@ pub struct HistoryEntry {
 #[derive(Clone, Debug, Default)]
 pub struct NewHistoryEntry {
     pub file_name: String,
+    /// The row's title; `None` titles it with its date and time.
+    pub title: Option<String>,
     pub transcription_text: String,
     pub post_process_requested: bool,
     pub post_processed_text: Option<String>,
@@ -545,7 +547,10 @@ impl HistoryManager {
     /// Save a complete history entry with all recording, audio, latency, and model metadata.
     pub fn save_entry_full(&self, new_entry: NewHistoryEntry) -> Result<HistoryEntry> {
         let timestamp = Utc::now().timestamp() as f64;
-        let title = self.format_timestamp_title(timestamp);
+        let title = new_entry
+            .title
+            .clone()
+            .unwrap_or_else(|| self.format_timestamp_title(timestamp));
         let extra_models_json = new_entry
             .extra_models
             .as_ref()
@@ -745,6 +750,9 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// Removes old rows by the retention setting. A file imported through
+    /// Transcribe Files (`mode` = `file`) is never removed this way: its audio
+    /// is a copy the user asked to keep, not a passing dictation.
     pub fn cleanup_old_entries(&self) -> Result<()> {
         let retention_period = crate::settings::get_recording_retention_period(&self.app_handle);
 
@@ -809,7 +817,7 @@ impl HistoryManager {
 
         // Get all entries that are not saved, ordered by timestamp desc
         let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE saved = 0 ORDER BY timestamp DESC"
+            "SELECT id, file_name FROM transcription_history WHERE saved = 0 AND (mode IS NULL OR mode != 'file') ORDER BY timestamp DESC"
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -852,7 +860,7 @@ impl HistoryManager {
 
         // Get all entries older than cutoff that are not saved
         let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE timestamp < ?1 AND saved = 0",
+            "SELECT id, file_name FROM transcription_history WHERE timestamp < ?1 AND saved = 0 AND (mode IS NULL OR mode != 'file')",
         )?;
 
         let rows = stmt.query_map(params![cutoff_timestamp as i64], |row| {

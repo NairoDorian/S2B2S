@@ -1811,6 +1811,12 @@ export type FileTranscriptionSettings_Deserialize = {
 	 *  the engine (or memory) for an hour at a time. 1–60.
 	 */
 	max_segment_minutes?: number,
+	/**
+	 *  Also add each transcribed file to History (upstream `73c0958`): its
+	 *  audio is written to the recordings folder first, the row is titled with
+	 *  the file name, and retention cleanup never removes it.
+	 */
+	save_to_history?: boolean,
 };
 
 /**
@@ -1835,6 +1841,12 @@ export type FileTranscriptionSettings_Serialize = {
 	 *  the engine (or memory) for an hour at a time. 1–60.
 	 */
 	max_segment_minutes: number,
+	/**
+	 *  Also add each transcribed file to History (upstream `73c0958`): its
+	 *  audio is written to the recordings folder first, the row is titled with
+	 *  the file name, and retention cleanup never removes it.
+	 */
+	save_to_history: boolean,
 };
 
 export type FileTranscriptionStatus = FileTranscriptionStatus_Serialize | FileTranscriptionStatus_Deserialize;

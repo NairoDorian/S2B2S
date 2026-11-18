@@ -129,6 +129,7 @@ export const settingsFixture = {
     overwrite_existing: false,
     include_subfolders: false,
     max_segment_minutes: 0,
+    save_to_history: false,
   },
   live_mode: {
     output_dir: "",

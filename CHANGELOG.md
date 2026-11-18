@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Transcribe Files can save to History, and takes drops anywhere
+  (2026-11-18).** A new option adds each transcribed file to History with
+  its audio, titled with the file name; History cleanup never removes
+  these. Dropping audio files anywhere on the main window now opens
+  Transcribe Files with them queued. A file job that crashes no longer
+  leaves the page stuck as running. Adapted from upstream.
+
 - **The overlay says when a dictation fails (2026-11-18).** Instead of
   vanishing, the recording overlay shows what went wrong (Transcription
   Failed, Microphone Is Silent, Can't Paste into Admin Apps, ...) for four

@@ -1067,3 +1067,48 @@ test.describe("notices", () => {
     expect(crashes).toEqual([]);
   });
 });
+
+test.describe("transcribe files", () => {
+  test("audio dropped on another page opens Transcribe Files with it queued", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await boot(page);
+    await waitForListener(page, "tauri://drag-drop");
+
+    await page.evaluate(() =>
+      (window as any).__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+        event: "tauri://drag-drop",
+        payload: {
+          paths: ["C:\audio\meeting.wav", "C:\audio\notes.txt"],
+          position: { x: 10, y: 10 },
+        },
+      }),
+    );
+
+    await expect(sidebarButton(page, "Transcribe Files")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByText("meeting.wav")).toBeVisible();
+    await expect(page.getByText("notes.txt")).toHaveCount(0);
+    expect(crashes).toEqual([]);
+  });
+
+  test("the History option is saved with the page's settings", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await boot(page);
+    await sidebarButton(page, "Transcribe Files").click();
+    await clickToggle(page, "Also save to History");
+    await expect
+      .poll(async () =>
+        (await calls(page))
+          .filter((c) => c.cmd === "change_file_transcription_settings")
+          .map((c) => c.args.settings.save_to_history),
+      )
+      .toContain(true);
+    expect(crashes).toEqual([]);
+  });
+});

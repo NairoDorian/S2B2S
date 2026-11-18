@@ -425,12 +425,59 @@ impl FileTranscriptionManager {
             current_path: None,
         };
 
+        let total = paths.len() as u32;
         let manager = Arc::clone(self);
+        let job_app = app.clone();
+        let job = tauri::async_runtime::spawn(async move {
+            manager.run_job(job_app, job_id, paths, settings).await;
+        });
+        // A panic in the job (upstream `73c0958` hardened the same) would leave
+        // `running` set and the page waiting forever: the job is awaited here,
+        // and an abnormal end is turned into a finished, failed batch.
+        let supervisor = Arc::clone(self);
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            manager.run_job(app, job_id, paths, settings).await;
+            if let Err(e) = job.await {
+                error!("File transcription job {job_id} ended abnormally: {e}");
+                supervisor.recover_after_abnormal_end(&app, job_id, total, e.to_string());
+            }
         });
         Ok(job_id)
+    }
+
+    /// Releases a job that ended without finishing (a panic): the page gets
+    /// its final event, the next job can start, and a notice says so.
+    fn recover_after_abnormal_end(&self, app: &AppHandle, job_id: u32, total: u32, error: String) {
+        {
+            let mut status = self.status.lock().unwrap_or_else(|e| e.into_inner());
+            status.running = false;
+            status.current_path = None;
+        }
+        self.running.store(false, Ordering::Release);
+        let _ = FileTranscriptionEvent {
+            job_id,
+            index: total,
+            total,
+            path: String::new(),
+            status: FileJobStatus::Failed,
+            segment: None,
+            segments: None,
+            text: None,
+            output_path: None,
+            error: Some(error.clone()),
+            audio_seconds: None,
+            elapsed_ms: None,
+            batch_finished: true,
+        }
+        .emit(app);
+        crate::notices::raise(
+            app,
+            crate::notices::Notice::new(
+                crate::notices::NoticeCode::FileTranscriptionFailed,
+                crate::notices::NoticeSource::File,
+            )
+            .with_detail(format!("The job stopped unexpectedly: {error}")),
+        );
     }
 
     async fn run_job(
@@ -824,7 +871,7 @@ impl FileTranscriptionManager {
         }
         let processed =
             crate::actions::process_transcription_output(app, &text, post_process).await;
-        text = processed.final_text;
+        let raw_text = std::mem::replace(&mut text, processed.final_text.clone());
 
         if self.cancelled() {
             return Err(JobError::Cancelled);
@@ -832,6 +879,23 @@ impl FileTranscriptionManager {
         progress(FileJobStatus::Saving, None, None);
         let output_path = write_transcript(path, &text, options, settings)
             .map_err(|e| JobError::Failed(format!("Failed to save transcript: {e}")))?;
+        // History is an extra copy: the transcript file is the job's result,
+        // so a History failure is logged, not a failed file.
+        if options.save_to_history
+            && let Err(e) = save_file_to_history(
+                app,
+                path,
+                Arc::clone(&samples),
+                raw_text,
+                &processed,
+                post_process,
+                primary_model,
+                audio_seconds,
+            )
+            .await
+        {
+            warn!("Could not add {} to History: {e}", path.display());
+        }
         info!(
             "Transcribed {} ({:.1}s audio, {} segment(s)) → {}",
             path.display(),
@@ -846,6 +910,75 @@ impl FileTranscriptionManager {
             audio_seconds,
         })
     }
+}
+
+/// Adds a transcribed file to History (upstream `73c0958`): its 16 kHz audio
+/// is written to the recordings folder first, so a row never points at a file
+/// that is not there, then the row, titled with the file name and marked
+/// `mode` = `file` (which retention cleanup leaves alone).
+#[allow(clippy::too_many_arguments)]
+async fn save_file_to_history(
+    app: &AppHandle,
+    source: &Path,
+    samples: Arc<Vec<f32>>,
+    raw_text: String,
+    processed: &crate::actions::ProcessedTranscription,
+    post_process: bool,
+    model_id: &str,
+    audio_seconds: f64,
+) -> Result<(), String> {
+    let hm = app
+        .try_state::<Arc<crate::managers::history::HistoryManager>>()
+        .ok_or("History is not available")?
+        .inner()
+        .clone();
+    let file_name = import_file_name(hm.recordings_dir(), chrono::Utc::now().timestamp_millis());
+    let wav_path = hm.recordings_dir().join(&file_name);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::audio_toolkit::save_wav_file(&wav_path, &samples)
+    })
+    .await
+    .map_err(|e| format!("audio write task failed: {e}"))?
+    .map_err(|e| format!("could not write its audio: {e}"))?;
+
+    let title = source
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| source.to_string_lossy().to_string());
+    let entry = crate::managers::history::NewHistoryEntry {
+        file_name,
+        title: Some(title),
+        transcription_text: raw_text,
+        post_process_requested: post_process,
+        post_processed_text: processed.post_processed_text.clone(),
+        post_process_prompt: processed.post_process_prompt.clone(),
+        model_id: Some(model_id.to_string()),
+        audio_duration_ms: Some(audio_seconds * 1000.0),
+        sample_rate_hz: Some(SAMPLE_RATE as i32),
+        mode: Some("file".to_string()),
+        ..Default::default()
+    };
+    tauri::async_runtime::spawn_blocking(move || hm.save_entry_full(entry))
+        .await
+        .map_err(|e| format!("history task failed: {e}"))?
+        .map_err(|e| format!("could not save the History row: {e}"))?;
+    Ok(())
+}
+
+/// A recordings-folder name for an imported file's audio that no other file
+/// has: the millisecond timestamp, then `-2`, `-3`, ... if it is taken.
+fn import_file_name(recordings_dir: &Path, timestamp_ms: i64) -> String {
+    let base = format!(
+        "{}-file-{timestamp_ms}",
+        crate::app_identity::RECORDING_BASENAME
+    );
+    let mut name = format!("{base}.wav");
+    let mut n = 2;
+    while recordings_dir.join(&name).exists() {
+        name = format!("{base}-{n}.wav");
+        n += 1;
+    }
+    name
 }
 
 struct FileOutcome {
@@ -1054,6 +1187,16 @@ pub fn list_audio_files(folder: &Path, include_subfolders: bool) -> Result<Vec<P
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_imported_file_never_takes_a_taken_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = import_file_name(dir.path(), 1_700_000_000_123);
+        assert!(first.ends_with("-file-1700000000123.wav"), "{first}");
+        std::fs::write(dir.path().join(&first), b"").unwrap();
+        let second = import_file_name(dir.path(), 1_700_000_000_123);
+        assert!(second.ends_with("-file-1700000000123-2.wav"), "{second}");
+    }
 
     #[test]
     fn extra_slots_keep_their_positions() {

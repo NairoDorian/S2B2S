@@ -1172,7 +1172,16 @@ Backend: `file_transcription.rs` + `commands/file_transcription.rs`; frontend:
   a flag checked between files and between segments — an in-flight decode call
   finishes first. The primary engine is reloaded before each segment when the
   unload timeout is `Immediately`, exactly like the headless path does.
-- File transcriptions do not create history rows or statistics runs.
+- File transcriptions create no statistics runs, and no History rows unless
+  `save_to_history` is on (upstream `73c0958`): then each transcribed file's
+  16 kHz audio is written to the recordings folder first
+  (`<RECORDING_BASENAME>-file-<ms>.wav`), and its row is titled with the file
+  name and has `mode` = `file`, which `cleanup_old_entries` never removes. A
+  History failure is logged and does not fail the file.
+- Audio dropped anywhere in the main window opens this page with it queued
+  (`App.tsx` `routeDroppedAudio`; on the page its own handler takes the drop,
+  folders included). A job that panics is awaited by a supervisor task that
+  releases `running`, sends the final event and raises the file notice.
 - **Known limitation**: the job refuses to start during a recording, but not
   the reverse — a hotkey dictation started while a file job runs competes for
   the primary engine, and one of the two can fail with "Model is not available

@@ -2961,6 +2961,7 @@ impl ShortcutAction for MultiSttAction {
                     if let Err(err) =
                         hm_clone.save_entry_full(crate::managers::history::NewHistoryEntry {
                             file_name,
+                            title: None,
                             transcription_text: multi_transcript,
                             post_process_requested: merge_requested,
                             post_processed_text: Some(merged_for_history),

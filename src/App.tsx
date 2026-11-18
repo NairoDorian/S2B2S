@@ -14,6 +14,11 @@ import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
 } from "tauri-plugin-macos-permissions-api";
+import {
+  isSupportedAudioPath,
+  useFileTranscriptionStore,
+} from "@/stores/fileTranscriptionStore";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import SecureInputWarning from "./components/SecureInputWarning";
@@ -50,6 +55,20 @@ const NOOP = () => {};
 let hasCompletedPostOnboardingInit = false;
 
 const currentSection = () => useNavigationStore().section;
+
+/**
+ * Audio dropped anywhere in the window opens Transcribe Files with it queued
+ * (upstream `73c0958` / `815e73f`). On that page its own handler takes the
+ * drop (folders included), and nothing is queued while a job runs there.
+ */
+const routeDroppedAudio = (paths: string[]) => {
+  if (currentSection() === "fileTranscription") return;
+  const audio = paths.filter(isSupportedAudioPath);
+  if (audio.length === 0) return;
+  setSection("fileTranscription");
+  const files = useFileTranscriptionStore();
+  if (!files.running) files.addPaths(audio);
+};
 const direction = () => getLanguageDirection(currentLanguage());
 
 const revealMainWindowForPermissions = async () => {
@@ -195,6 +214,30 @@ function App() {
   // Recording, paste, transcription and model-load failures are notices
   // (`src-tauri/src/notices.rs`): the footer chip lists them and pops each
   // one up as a toast (`stores/noticeStore.ts`).
+
+  createEffect(
+    () => undefined,
+    () => {
+      let disposed = false;
+      let unlisten: (() => void) | null = null;
+      getCurrentWebviewWindow()
+        .onDragDropEvent((event) => {
+          if (event.payload.type === "drop")
+            routeDroppedAudio(event.payload.paths);
+        })
+        .then((fn) => {
+          if (disposed) fn();
+          else unlisten = fn;
+        })
+        .catch((error) =>
+          console.error("Drag & drop listener unavailable:", error),
+        );
+      return () => {
+        disposed = true;
+        unlisten?.();
+      };
+    },
+  );
   createEffect(
     () => undefined,
     () => {

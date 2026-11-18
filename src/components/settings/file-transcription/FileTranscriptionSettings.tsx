@@ -52,6 +52,7 @@ const DEFAULTS: Required<FileTranscriptionSettingsType> = {
   overwrite_existing: false,
   include_subfolders: true,
   max_segment_minutes: 10,
+  save_to_history: false,
 };
 
 const MODES: FileTranscriptionMode[] = [
@@ -585,6 +586,17 @@ export const FileTranscriptionSettings = () => {
           isUpdating={isUpdating("file_transcription")}
           label={t("settings.fileTranscription.subfolders.label")}
           description={t("settings.fileTranscription.subfolders.description")}
+          descriptionMode="tooltip"
+          grouped
+        />
+        <ToggleSwitch
+          checked={options().save_to_history}
+          onChange={(checked) => saveOptions({ save_to_history: checked })}
+          isUpdating={isUpdating("file_transcription")}
+          label={t("settings.fileTranscription.saveToHistory.label")}
+          description={t(
+            "settings.fileTranscription.saveToHistory.description",
+          )}
           descriptionMode="tooltip"
           grouped
         />

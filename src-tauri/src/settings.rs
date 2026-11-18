@@ -609,6 +609,10 @@ pub struct FileTranscriptionSettings {
     /// cut at the quietest point near the boundary, so one file never holds
     /// the engine (or memory) for an hour at a time. 1–60.
     pub max_segment_minutes: u32,
+    /// Also add each transcribed file to History (upstream `73c0958`): its
+    /// audio is written to the recordings folder first, the row is titled with
+    /// the file name, and retention cleanup never removes it.
+    pub save_to_history: bool,
 }
 
 impl Default for FileTranscriptionSettings {
@@ -620,6 +624,7 @@ impl Default for FileTranscriptionSettings {
             overwrite_existing: false,
             include_subfolders: true,
             max_segment_minutes: 10,
+            save_to_history: false,
         }
     }
 }

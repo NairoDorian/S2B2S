@@ -1126,6 +1126,10 @@
         "noFiles": "Add audio files or a folder to get started.",
         "nothingAdded": "Nothing to add: no supported audio files found ({{formats}}).",
         "emptyFolder": "That folder contains no supported audio files."
+      },
+      "saveToHistory": {
+        "label": "Also save to History",
+        "description": "Add each transcribed file to History too, with its audio and the file name as its title. History cleanup never removes these."
       }
     },
     "recall": {
