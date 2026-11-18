@@ -53,7 +53,7 @@
     "postinstall": "bun scripts/check-nix-deps.ts"
   },
   "dependencies": {
-    "@solidjs/web": "2.0.0-rc.21",
+    "@solidjs/web": "2.0.1",
     "@tailwindcss/vite": "4.3.5",
     "@tauri-apps/api": "3.0.0-alpha.3",
     "@tauri-apps/plugin-dialog": "3.0.0-alpha.4",
@@ -62,25 +62,25 @@
     "@tauri-apps/plugin-os": "3.0.0-alpha.3",
     "@tauri-apps/plugin-process": "3.0.0-alpha.3",
     "@tauri-apps/plugin-updater": "3.0.0-alpha.3",
-    "i18next": "27.1.2",
-    "solid-js": "2.0.0-rc.21",
+    "i18next": "27.1.5",
+    "solid-js": "2.0.1",
     "tailwindcss": "4.3.5",
     "tauri-plugin-macos-permissions-api": "git+https://github.com/NairoDorian/tauri-plugin-macos-permissions.git"
   },
   "devDependencies": {
-    "@playwright/test": "1.66.0-alpha-2026-11-15",
-    "@solidjs/vite-plugin": "3.0.0-next.57",
+    "@playwright/test": "1.66.0-alpha-2026-11-18",
+    "@solidjs/vite-plugin": "3.0.1",
     "@tauri-apps/cli": "3.0.0-alpha.6",
     "@types/bun": "1.4.4",
     "@types/node": "26.6.6",
-    "bun-types": "1.4.5-canary.20261115T140911",
+    "bun-types": "1.4.5-canary.20261117T141241",
     "cheerio": "^1.2.0",
     "eslint-plugin-i18next": "^6.1.5",
-    "oxlint": "1.93.0",
+    "oxlint": "1.94.0",
     "prettier": "4.0.0-alpha.13",
     "turndown": "7.2.5",
     "turndown-plugin-gfm": "^1.0.2",
-    "typescript": "7.1.0-dev.20261115.1",
-    "vite": "8.3.8"
+    "typescript": "7.1.0-dev.20261118.1",
+    "vite": "8.4.0-beta.1"
   }
 }
