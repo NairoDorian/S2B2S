@@ -601,3 +601,46 @@ fn speech_clock_reset_adopts_the_new_hold() {
     assert!(!clock.snapshot().speaking);
     assert_eq!(clock.snapshot().speech_ms, 2 * FRAME_MS);
 }
+
+#[test]
+fn a_second_of_exact_zeros_is_a_silent_input_and_one_sample_is_not() {
+    let silent = Arc::new(AtomicBool::new(false));
+    let mut processor = CaptureProcessor::with_options(
+        16_000,
+        cpal::SampleFormat::F32,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(super::DenoiseControls::new(super::DenoiseParams::default())),
+        Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        Arc::clone(&silent),
+        Instant::now(),
+    );
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+
+    // Zero-filled start-up buffers, shorter than a second: not yet silent.
+    processor.process_raw_chunk(&[0.0; 8_000], ChunkDisposition::Capture);
+    assert!(!silent.load(Ordering::Relaxed));
+    processor.process_raw_chunk(&[0.0; 8_000], ChunkDisposition::Capture);
+    assert!(silent.load(Ordering::Relaxed), "a second of zeros");
+
+    // One real sample and the take is not silent, whatever follows.
+    let mut chunk = [0.0; 1_024];
+    chunk[700] = 1e-4;
+    processor.process_raw_chunk(&chunk, ChunkDisposition::Capture);
+    processor.process_raw_chunk(&[0.0; 32_000], ChunkDisposition::Capture);
+    assert!(!silent.load(Ordering::Relaxed));
+    let _ = processor.finish_recording();
+
+    // The next take starts over.
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    assert!(!silent.load(Ordering::Relaxed));
+    processor.process_raw_chunk(&[0.0; 16_000], ChunkDisposition::Capture);
+    assert!(silent.load(Ordering::Relaxed));
+}

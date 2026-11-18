@@ -3150,7 +3150,7 @@ export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "ac
 export type Notice = Notice_Serialize | Notice_Deserialize;
 
 /**  The frontend maps each code to its text in `src/lib/notices.ts`. */
-export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "NoMicrophone" | "MicPermissionDenied" | "RecordingFailed" | "ModelLoadFailed" | "PostProcessFailed" | "MergeFailed" | "FileTranscriptionFailed" | "GpuFallback" | "LlamaServerFailed";
+export type NoticeCode = "TranscriptionFailed" | "PasteFailed" | "PasteBlockedElevated" | "NoMicrophone" | "MicPermissionDenied" | "RecordingFailed" | "MicrophoneSilent" | "NoModelSelected" | "ModelLoadFailed" | "PostProcessFailed" | "MergeFailed" | "FileTranscriptionFailed" | "GpuFallback" | "LlamaServerFailed";
 
 export type NoticeLevel = 
 /**  Nothing came out, or the app cannot do its job. */

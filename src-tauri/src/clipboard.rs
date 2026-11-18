@@ -3,7 +3,7 @@ use crate::input::{self, EnigoState};
 use crate::settings::TypingTool;
 use crate::settings::{AutoSubmitKey, ClipboardHandling, PasteMethod, get_settings};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::sync::OnceLock;
@@ -859,21 +859,190 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
+/// What [`paste_with_method`] did with the text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PasteOutcome {
+    Pasted,
+    /// The focused window takes no input from this app (Windows: it runs at a
+    /// higher integrity level, e.g. "Run as administrator"), so nothing
+    /// arrived, whatever the paste returned.
+    Blocked,
+}
+
+/// Whether `paste_method` works by sending keystrokes to the focused window.
+pub(crate) fn sends_keys(paste_method: PasteMethod) -> bool {
+    match paste_method {
+        PasteMethod::Direct
+        | PasteMethod::DirectStreaming
+        | PasteMethod::CtrlV
+        | PasteMethod::CtrlShiftV
+        | PasteMethod::ShiftInsert => true,
+        PasteMethod::None | PasteMethod::ExternalScript => false,
+    }
+}
+
+/// What Windows said about the integrity level of the focused window's process.
+#[cfg(any(test, target_os = "windows"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ForegroundIntegrity {
+    Level(u32),
+    /// Windows refused the query. It does that for a process elevated under
+    /// another account, which this app cannot send input to either.
+    Denied,
+    /// No focused window, or the query failed for another reason.
+    Unknown,
+}
+
+/// Fail-open: when either level is unknown, the paste is reported as usual.
+#[cfg(any(test, target_os = "windows"))]
+fn integrity_blocks_input(foreground: ForegroundIntegrity, ours: Option<u32>) -> bool {
+    match foreground {
+        ForegroundIntegrity::Level(theirs) => ours.is_some_and(|ours| theirs > ours),
+        ForegroundIntegrity::Denied => true,
+        ForegroundIntegrity::Unknown => false,
+    }
+}
+
+/// Whether the focused window drops the keystrokes this app sends it
+/// (upstream `e529447`).
+///
+/// Windows blocks input sent to a process at a higher integrity level, such as
+/// an app started with "Run as administrator", and `SendInput` is not
+/// documented to report it. A handful of system calls; always `false` on
+/// other platforms.
+pub(crate) fn foreground_window_is_elevated() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::System::Threading::GetCurrentProcess;
+
+        // SAFETY: the pseudo-handle from GetCurrentProcess is always valid and
+        // needs no closing.
+        let ours = unsafe { process_integrity_level(GetCurrentProcess()) }.ok();
+        let foreground = foreground_integrity();
+        debug!("Integrity levels: foreground {foreground:?}, ours {ours:?}");
+        integrity_blocks_input(foreground, ours)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn foreground_integrity() -> ForegroundIntegrity {
+    use windows::Win32::Foundation::{CloseHandle, E_ACCESSDENIED};
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    // SAFETY: every handle is checked before use, and the process handle is
+    // closed before returning.
+    let level = unsafe {
+        let window = GetForegroundWindow();
+        if window.is_invalid() {
+            return ForegroundIntegrity::Unknown;
+        }
+        let mut process_id = 0u32;
+        if GetWindowThreadProcessId(window, Some(&mut process_id)) == 0 {
+            return ForegroundIntegrity::Unknown;
+        }
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).and_then(|process| {
+            let level = process_integrity_level(process);
+            let _ = CloseHandle(process);
+            level
+        })
+    };
+
+    match level {
+        Ok(level) => ForegroundIntegrity::Level(level),
+        Err(e) if e.code() == E_ACCESSDENIED => ForegroundIntegrity::Denied,
+        Err(e) => {
+            debug!("Couldn't read the focused window's integrity level: {e}");
+            ForegroundIntegrity::Unknown
+        }
+    }
+}
+
+/// The integrity level of `process`, e.g. `0x2000` for a normal app and
+/// `0x3000` for one run as administrator.
+///
+/// # Safety
+/// `process` must be a valid handle with `PROCESS_QUERY_LIMITED_INFORMATION`.
+#[cfg(target_os = "windows")]
+unsafe fn process_integrity_level(
+    process: windows::Win32::Foundation::HANDLE,
+) -> windows::core::Result<u32> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{
+        GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TOKEN_MANDATORY_LABEL,
+        TOKEN_QUERY, TokenIntegrityLevel,
+    };
+    use windows::Win32::System::Threading::OpenProcessToken;
+
+    // SAFETY (whole body): the caller guarantees `process`; the token is
+    // closed on every path, and the buffer is large enough and aligned for a
+    // TOKEN_MANDATORY_LABEL followed by the SID it points to.
+    unsafe {
+        let mut token = HANDLE::default();
+        OpenProcessToken(process, TOKEN_QUERY, &mut token)?;
+
+        // A SID is at most 68 bytes; u64 elements keep the buffer aligned.
+        let mut buffer = [0u64; 16];
+        let mut written = 0u32;
+        let queried = GetTokenInformation(
+            token,
+            TokenIntegrityLevel,
+            Some(buffer.as_mut_ptr().cast()),
+            std::mem::size_of_val(&buffer) as u32,
+            &mut written,
+        );
+        let _ = CloseHandle(token);
+        queried?;
+
+        // The level is the SID's last sub-authority.
+        let sid = (*buffer.as_ptr().cast::<TOKEN_MANDATORY_LABEL>()).Label.Sid;
+        let count = u32::from(*GetSidSubAuthorityCount(sid));
+        Ok(*GetSidSubAuthority(sid, count.saturating_sub(1)))
+    }
+}
+
 /// Deliver `text` to the foreground application using the configured paste
 /// method, or `method_override` when given. The override is used when the
 /// configured method is `DirectStreaming` but the text is a post-processed /
 /// Multi-STT result: the live stream already served as the preview in the
 /// overlay, and the final text goes in through the default clipboard paste.
+///
+/// Windows drops the keystrokes sent to an elevated window and may not say so,
+/// so the focused window is checked first; the paste still runs exactly as
+/// configured, and only what is reported changes ([`PasteOutcome::Blocked`]).
 pub fn paste_with_method(
     text: String,
     app_handle: AppHandle,
     method_override: Option<PasteMethod>,
-) -> Result<(), String> {
+) -> Result<PasteOutcome, String> {
     let _paste = PASTE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let settings = get_settings(&app_handle);
     let paste_method = method_override.unwrap_or(settings.paste_method);
+    let blocked = sends_keys(paste_method) && foreground_window_is_elevated();
+    let result = paste_as_configured(text, &app_handle, &settings, paste_method);
+    if !blocked {
+        return result.map(|()| PasteOutcome::Pasted);
+    }
+    if let Err(e) = result {
+        warn!("Paste into an elevated window failed: {e}");
+    }
+    Ok(PasteOutcome::Blocked)
+}
+
+fn paste_as_configured(
+    text: String,
+    app_handle: &AppHandle,
+    settings: &crate::settings::AppSettings,
+    paste_method: PasteMethod,
+) -> Result<(), String> {
+    let app_handle = app_handle.clone();
     let paste_delay_ms = settings.paste_delay_ms;
     let paste_delay_after_ms = settings.paste_delay_after_ms;
 
@@ -983,6 +1152,30 @@ pub fn paste_with_method(
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn only_a_higher_integrity_level_blocks_input() {
+        const MEDIUM: u32 = 0x2000;
+        const HIGH: u32 = 0x3000;
+        use ForegroundIntegrity::*;
+
+        assert!(integrity_blocks_input(Level(HIGH), Some(MEDIUM)));
+        assert!(!integrity_blocks_input(Level(MEDIUM), Some(MEDIUM)));
+        // This app itself running as administrator can paste anywhere.
+        assert!(!integrity_blocks_input(Level(HIGH), Some(HIGH)));
+        assert!(!integrity_blocks_input(Level(MEDIUM), Some(HIGH)));
+        assert!(integrity_blocks_input(Denied, Some(MEDIUM)));
+        assert!(!integrity_blocks_input(Unknown, Some(MEDIUM)));
+        assert!(!integrity_blocks_input(Level(HIGH), None));
+    }
+
+    #[test]
+    fn only_keystroke_methods_can_be_blocked() {
+        assert!(sends_keys(PasteMethod::CtrlV));
+        assert!(sends_keys(PasteMethod::DirectStreaming));
+        assert!(!sends_keys(PasteMethod::None));
+        assert!(!sends_keys(PasteMethod::ExternalScript));
+    }
 
     #[cfg(target_os = "linux")]
     const YDOTOOL_0_1_8_HELP: &str = r#"

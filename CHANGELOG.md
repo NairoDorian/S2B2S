@@ -873,6 +873,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Three silent failures now say what happened (2026-11-18).** A hotkey
+  pressed with no model selected (its files removed) now says No Model
+  Selected instead of doing nothing; a microphone that sends nothing but
+  digital silence for a second (muted, or the wrong device) says so instead
+  of looking like the model missed your speech; and on Windows, a paste or
+  live typing into an app running as administrator, which Windows silently
+  drops, is reported (the text is in History). Each is a notice in the tray
+  and footer. Ported from upstream.
+
 - **A GPU error no longer breaks transcription until restart (2026-11-18).**
   When the graphics backend failed during a transcription (a lost Vulkan
   device, a driver reset), the model stayed loaded in a broken state and every

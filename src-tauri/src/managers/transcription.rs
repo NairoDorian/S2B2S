@@ -997,6 +997,11 @@ impl TranscriptionManager {
             crate::notices::NoticeSource::Model,
             Some(crate::notices::NoticeCode::ModelLoadFailed),
         );
+        crate::notices::clear_matching(
+            &self.app_handle,
+            crate::notices::NoticeSource::Dictation,
+            Some(crate::notices::NoticeCode::NoModelSelected),
+        );
 
         let load_duration = load_start.elapsed();
         debug!(
@@ -1036,6 +1041,12 @@ impl TranscriptionManager {
                     .store(false, Ordering::Release);
             }
             let settings = get_settings(&self_clone.app_handle);
+            // An empty selection has nothing to load; the recording start says
+            // so through the No model selected notice.
+            if settings.selected_model.is_empty() {
+                debug!("No model is selected; nothing to load");
+                return;
+            }
             if let Err(e) = self_clone.load_model(&settings.selected_model) {
                 error!("Failed to load model: {}", e);
             }

@@ -56,9 +56,12 @@ pub enum NoticeSource {
 pub enum NoticeCode {
     TranscriptionFailed,
     PasteFailed,
+    PasteBlockedElevated,
     NoMicrophone,
     MicPermissionDenied,
     RecordingFailed,
+    MicrophoneSilent,
+    NoModelSelected,
     ModelLoadFailed,
     PostProcessFailed,
     MergeFailed,
@@ -72,9 +75,12 @@ impl NoticeCode {
         match self {
             Self::TranscriptionFailed
             | Self::PasteFailed
+            | Self::PasteBlockedElevated
             | Self::NoMicrophone
             | Self::MicPermissionDenied
             | Self::RecordingFailed
+            | Self::MicrophoneSilent
+            | Self::NoModelSelected
             | Self::ModelLoadFailed
             | Self::FileTranscriptionFailed
             | Self::LlamaServerFailed => NoticeLevel::Error,
@@ -87,9 +93,12 @@ impl NoticeCode {
         match self {
             Self::TranscriptionFailed => &strings.transcription_failed_title,
             Self::PasteFailed => &strings.paste_failed_title,
+            Self::PasteBlockedElevated => &strings.paste_blocked_elevated_title,
             Self::NoMicrophone => &strings.no_input_device_title,
             Self::MicPermissionDenied => &strings.mic_permission_denied_title,
             Self::RecordingFailed => &strings.recording_failed_title,
+            Self::NoModelSelected => &strings.no_model_selected_title,
+            Self::MicrophoneSilent => &strings.microphone_silent_title,
             Self::ModelLoadFailed => &strings.model_load_failed_title,
             Self::PostProcessFailed => &strings.post_process_failed_title,
             Self::MergeFailed => &strings.merge_failed_title,
@@ -295,6 +304,7 @@ mod tests {
     #[test]
     fn levels_follow_whether_a_result_came_out() {
         assert_eq!(NoticeCode::TranscriptionFailed.level(), NoticeLevel::Error);
+        assert_eq!(NoticeCode::NoModelSelected.level(), NoticeLevel::Error);
         assert_eq!(NoticeCode::PostProcessFailed.level(), NoticeLevel::Warning);
         assert_eq!(NoticeCode::MergeFailed.level(), NoticeLevel::Warning);
         assert_eq!(NoticeCode::GpuFallback.level(), NoticeLevel::Warning);

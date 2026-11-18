@@ -57,6 +57,30 @@ fn finish_paste_ui(ah: &AppHandle, session: u64) {
     }
 }
 
+/// The focused window runs elevated (Windows "Run as administrator"), so the
+/// keystrokes of the paste or of direct streaming never arrived (upstream
+/// `e529447`). The text is still in History.
+fn report_paste_blocked(app: &AppHandle) {
+    warn!("The focused window is elevated; the text was not pasted into it");
+    notices::raise(
+        app,
+        Notice::new(NoticeCode::PasteBlockedElevated, NoticeSource::Dictation),
+    );
+}
+
+/// A take with no speech whose microphone sent nothing but exact zeros for
+/// at least a second (upstream `70f490e`): a muted microphone or the wrong
+/// device, which would otherwise look like the model missed the speech.
+fn report_silent_input(app: &AppHandle, rm: &AudioRecordingManager) {
+    if rm.last_input_silent() {
+        warn!("The microphone sent only digital silence; nothing was transcribed");
+        notices::raise(
+            app,
+            Notice::new(NoticeCode::MicrophoneSilent, NoticeSource::Dictation),
+        );
+    }
+}
+
 /// A recording that could not start, as a dictation notice: the microphone is
 /// missing or blocked, or the start failed some other way (the raw error is the
 /// detail either way).
@@ -619,6 +643,18 @@ pub(crate) fn transcription_model_available(app: &AppHandle) -> bool {
         return true;
     }
     let selected = get_settings(app).selected_model;
+    // Nothing selected (a cleaner removed the model's files and startup
+    // cleared the selection, upstream `d654302`): say so, rather than a
+    // "Model not found" with no name, or nothing at all. Ends when a model
+    // next loads.
+    if selected.is_empty() {
+        warn!("Not starting recording: no model is selected");
+        notices::raise(
+            app,
+            Notice::new(NoticeCode::NoModelSelected, NoticeSource::Dictation),
+        );
+        return false;
+    }
     match app.state::<Arc<ModelManager>>().get_model_path(&selected) {
         Ok(_) => true,
         Err(e) => {
@@ -916,6 +952,7 @@ impl ShortcutAction for TranscribeAction {
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
+                report_silent_input(&ah, &rm);
             } else {
                 let settings = get_settings(&ah);
                 let raw_count = recorded.raw_samples.len();
@@ -1184,6 +1221,12 @@ impl ShortcutAction for TranscribeAction {
                                 "Direct streaming or empty output - skipping final paste action (direct_streamed: {})",
                                 was_direct_stream_written
                             );
+                            // The typewriter sent its keystrokes to the window
+                            // that is still in front; one that is elevated got
+                            // none of them.
+                            if was_direct_stream_written && utils::foreground_window_is_elevated() {
+                                report_paste_blocked(&ah);
+                            }
                             utils::hide_recording_overlay(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
                         } else {
@@ -1213,10 +1256,13 @@ impl ShortcutAction for TranscribeAction {
                                         ah_clone.clone(),
                                         paste_override,
                                     ) {
-                                        Ok(()) => debug!(
+                                        Ok(utils::PasteOutcome::Pasted) => debug!(
                                             "Text pasted successfully in {:?}",
                                             paste_time.elapsed()
                                         ),
+                                        Ok(utils::PasteOutcome::Blocked) => {
+                                            report_paste_blocked(&ah_clone)
+                                        }
                                         Err(e) => {
                                             error!("Failed to paste transcription: {}", e);
                                             notices::raise(
@@ -2358,6 +2404,7 @@ impl ShortcutAction for MultiSttAction {
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 restore_power_if_triggered_on_start(&ah);
+                report_silent_input(&ah, &rm);
                 return;
             }
 
@@ -2954,6 +3001,9 @@ impl ShortcutAction for MultiSttAction {
             };
             if typed_by_session {
                 debug!("Multi-STT streaming: the session typed the text; no paste");
+                if utils::foreground_window_is_elevated() {
+                    report_paste_blocked(&ah);
+                }
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
@@ -3005,7 +3055,10 @@ impl ShortcutAction for MultiSttAction {
                         }
                         match utils::paste_with_method(final_text, ah_clone.clone(), paste_override)
                         {
-                            Ok(()) => debug!("Multi-STT: Text pasted successfully"),
+                            Ok(utils::PasteOutcome::Pasted) => {
+                                debug!("Multi-STT: Text pasted successfully")
+                            }
+                            Ok(utils::PasteOutcome::Blocked) => report_paste_blocked(&ah_clone),
                             Err(e) => {
                                 error!("Multi-STT: Failed to paste transcription: {}", e);
                                 notices::raise(

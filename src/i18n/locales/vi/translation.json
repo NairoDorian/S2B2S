@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "Chưa chọn mô hình",
+    "noModelSelected": "Tải xuống hoặc chọn một mô hình trong Cài đặt > Mô hình.",
+    "microphoneSilentTitle": "Micrô không có âm thanh",
+    "microphoneSilent": "Micrô chỉ gửi về khoảng lặng. Hãy kiểm tra xem micrô có bị tắt tiếng không, hoặc chọn micrô khác trong Cài đặt.",
+    "pasteBlockedElevatedTitle": "Không thể dán vào ứng dụng admin",
+    "pasteBlockedElevated": "Ứng dụng đang hoạt động chạy với quyền quản trị viên nên {{app}} không thể dán vào đó. Bạn có thể sao chép bản chép lời từ Lịch sử."
   },
   "notices": {
     "errorOne": "{{n}} lỗi",

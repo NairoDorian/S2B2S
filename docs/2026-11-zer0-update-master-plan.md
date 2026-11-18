@@ -701,8 +701,14 @@ holds). Raised today: transcription, paste and recording failures (both
 actions), post-processing that did not run, a Multi-STT merge that did not
 land (batch, or a streaming chunk left on its fallback), model loads (primary
 and extras), the GPU CPU fallback of Phase 7, file jobs, the llama server.
-Left: the overlay notice line, and the three notices that need new detection
-(No model selected, microphone silence, paste blocked by an elevated window).
+The three that need new detection followed the same day: No model selected
+(`d654302`: the check every recording start makes, and no load attempted for
+an empty selection), microphone silence (`70f490e`: a recorder flag, set after
+a second of nothing but exact zeros so start-up buffers and short taps do not
+count) and paste blocked by an elevated window (`e529447`: the integrity-level
+check before every keystroke paste and after a direct-streaming session; the
+paste runs as configured). Left: the overlay notice line, and the onboarding
+microphone check of `0e5e9ca` that reuses the silence flag.
 
 ---
 

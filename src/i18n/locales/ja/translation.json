@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "モデルが選択されていません",
+    "noModelSelected": "設定 > モデルでモデルをダウンロードまたは選択してください。",
+    "microphoneSilentTitle": "マイクが無音です",
+    "microphoneSilent": "マイクから無音しか届いていません。ミュートになっていないか確認するか、設定で別のマイクを選択してください。",
+    "pasteBlockedElevatedTitle": "管理者アプリに貼り付けできません",
+    "pasteBlockedElevated": "アクティブなアプリが管理者として実行されているため、{{app}} は貼り付けできません。文字起こしは履歴からコピーできます。"
   },
   "notices": {
     "errorOne": "エラー {{n}} 件",

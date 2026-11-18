@@ -18,7 +18,6 @@ interface NoticeStore {
   /** Every active notice, newest first. */
   notices: Notice[];
   panelOpen: boolean;
-  initialized: boolean;
   initialize: () => Promise<void>;
   setPanelOpen: (open: boolean) => void;
   /** Ends a notice: here, in the tray and in the footer. */
@@ -37,14 +36,17 @@ const toastNotice = (notice: Notice) => {
   show(t(display.title), { description });
 };
 
+let initialized = false;
+
 export const noticeStore = createSolidStore<NoticeStore>((set, get) => ({
   notices: [],
   panelOpen: false,
-  initialized: false,
 
   initialize: async () => {
-    if (get().initialized) return;
-    set({ initialized: true });
+    // A module flag, not store state: this runs from an effect, where a
+    // reactive read would not be tracked.
+    if (initialized) return;
+    initialized = true;
 
     // Listen first so nothing is missed; an event then outranks the snapshot,
     // which may have been read before it.

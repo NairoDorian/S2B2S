@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "Model seçilmedi",
+    "noModelSelected": "Ayarlar > Modeller bölümünden bir model indirin veya seçin.",
+    "microphoneSilentTitle": "Mikrofon sessiz",
+    "microphoneSilent": "Mikrofonunuz yalnızca sessizlik gönderdi. Sesinin kapalı olmadığını kontrol edin veya Ayarlar'dan başka bir mikrofon seçin.",
+    "pasteBlockedElevatedTitle": "Yapıştırma engellendi",
+    "pasteBlockedElevated": "Etkin uygulama yönetici olarak çalışıyor, bu yüzden {{app}} içine yapıştıramıyor. Metni Geçmiş'ten kopyalayabilirsiniz."
   },
   "notices": {
     "errorOne": "{{n}} hata",

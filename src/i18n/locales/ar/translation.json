@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "لم يتم اختيار نموذج",
+    "noModelSelected": "نزّل نموذجًا أو اختره من الإعدادات > النماذج.",
+    "microphoneSilentTitle": "الميكروفون صامت",
+    "microphoneSilent": "لم يرسل الميكروفون سوى الصمت. تأكد من أنه غير مكتوم، أو اختر ميكروفونًا آخر من الإعدادات.",
+    "pasteBlockedElevatedTitle": "تعذر اللصق في تطبيقات المسؤول",
+    "pasteBlockedElevated": "التطبيق النشط يعمل بصلاحيات المسؤول، لذا لا يستطيع {{app}} اللصق فيه. يمكنك نسخ النص من السجل."
   },
   "notices": {
     "errorOne": "{{n}} خطأ",

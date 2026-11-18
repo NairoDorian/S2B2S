@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "Няма избран модел",
+    "noModelSelected": "Изтеглете или изберете модел от Настройки > Модели.",
+    "microphoneSilentTitle": "Микрофонът е безмълвен",
+    "microphoneSilent": "Микрофонът изпраща само тишина. Проверете дали не е заглушен или изберете друг микрофон от Настройки.",
+    "pasteBlockedElevatedTitle": "Поставянето е блокирано",
+    "pasteBlockedElevated": "Активното приложение работи като администратор, затова {{app}} не може да поставя в него. Можете да копирате транскрипцията от История."
   },
   "notices": {
     "errorOne": "{{n}} грешка",

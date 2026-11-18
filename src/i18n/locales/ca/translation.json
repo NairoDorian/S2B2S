@@ -2011,7 +2011,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "Cap model seleccionat",
+    "noModelSelected": "Baixa o tria un model a Configuració > Models.",
+    "microphoneSilentTitle": "El micròfon està en silenci",
+    "microphoneSilent": "El micròfon només ha enviat silenci. Comprova que no estigui silenciat o tria un altre micròfon a Configuració.",
+    "pasteBlockedElevatedTitle": "No es pot enganxar en apps admin",
+    "pasteBlockedElevated": "L'aplicació activa s'executa com a administrador, així que {{app}} no hi pot enganxar. Pots copiar la transcripció des d'Historial."
   },
   "notices": {
     "errorOne": "{{n}} error",

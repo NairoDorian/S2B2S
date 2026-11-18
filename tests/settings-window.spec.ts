@@ -946,6 +946,37 @@ test.describe("recording overlay window", () => {
 });
 
 test.describe("notices", () => {
+  test("a dictation notice with a page of its own opens that page", async ({
+    page,
+  }) => {
+    const crashes = watchForCrashes(page);
+    await page.addInitScript(() => {
+      (window as any).__TAURI_MOCK_REPLIES__ = {
+        get_active_notices: [
+          {
+            code: "NoModelSelected",
+            level: "error",
+            source: "dictation",
+            detail: null,
+          },
+        ],
+      };
+    });
+    await boot(page);
+    await page.getByRole("button", { name: "1 error" }).click();
+    const panel = page.getByRole("dialog", { name: "Notices" });
+    await expect(panel.getByText("No Model Selected")).toBeVisible();
+    await expect(
+      panel.getByText("Download or select a model in Settings > Models."),
+    ).toBeVisible();
+    await panel.getByRole("button", { name: "Show" }).click();
+    await expect(sidebarButton(page, "Models")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(crashes).toEqual([]);
+  });
+
   test("the footer counts active notices and the panel opens, shows and dismisses them", async ({
     page,
   }) => {

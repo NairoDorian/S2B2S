@@ -430,8 +430,13 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   code). The tray badges its idle icon and names the headline notice in its
   menu and tooltip (`build.rs` copies every `errors.*Title` into the tray
   strings); a no-op without a managed store (headless). Raised by both
-  dictation actions (recording, transcription, paste, post-processing, merge),
-  model loads, the GPU CPU fallback, file jobs and the llama server. Toasts
+  dictation actions (recording, transcription, paste, post-processing, merge,
+  No model selected from `transcription_model_available`, a microphone that
+  sent a second of exact zeros — `AudioRecorder::input_silent`, scanned on
+  the consumer thread only until the take's first non-zero sample — and a
+  paste or direct-streaming session whose focused window is elevated,
+  `clipboard::foreground_window_is_elevated`, which only changes what is
+  reported), model loads, the GPU CPU fallback, file jobs and the llama server. Toasts
   stay `sessionToast` for everything transient
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`

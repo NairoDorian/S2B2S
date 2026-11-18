@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "Není vybrán žádný model",
+    "noModelSelected": "Stáhněte nebo vyberte model v Nastavení > Modely.",
+    "microphoneSilentTitle": "Mikrofon je tichý",
+    "microphoneSilent": "Mikrofon posílá jen ticho. Zkontrolujte, že není ztlumený, nebo vyberte jiný mikrofon v Nastavení.",
+    "pasteBlockedElevatedTitle": "Nelze vložit do aplikace správce",
+    "pasteBlockedElevated": "Aktivní aplikace běží jako správce, takže do ní {{app}} nemůže vkládat. Přepis můžete zkopírovat z Historie."
   },
   "notices": {
     "errorOne": "{{n}} chyba",

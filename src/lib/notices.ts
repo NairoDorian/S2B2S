@@ -18,6 +18,10 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
     title: "errors.pasteFailedTitle",
     explanation: (t) => t("errors.pasteFailed"),
   },
+  PasteBlockedElevated: {
+    title: "errors.pasteBlockedElevatedTitle",
+    explanation: (t) => t("errors.pasteBlockedElevated"),
+  },
   NoMicrophone: {
     title: "errors.noInputDeviceTitle",
     explanation: (t) => t("errors.noInputDevice"),
@@ -30,6 +34,14 @@ const NOTICE_DISPLAY: Record<NoticeCode, NoticeDisplay> = {
       }),
   },
   RecordingFailed: { title: "errors.recordingFailedTitle" },
+  MicrophoneSilent: {
+    title: "errors.microphoneSilentTitle",
+    explanation: (t) => t("errors.microphoneSilent"),
+  },
+  NoModelSelected: {
+    title: "errors.noModelSelectedTitle",
+    explanation: (t) => t("errors.noModelSelected"),
+  },
   ModelLoadFailed: { title: "errors.modelLoadFailedTitle" },
   PostProcessFailed: {
     title: "errors.postProcessFailedTitle",
@@ -61,4 +73,13 @@ const NOTICE_PAGE: Record<NoticeSource, SidebarSection> = {
   local_llm: "llama",
 };
 
-export const noticePage = (source: NoticeSource) => NOTICE_PAGE[source];
+/** The page "Show" opens: the source's, unless the code names a better one. */
+export const noticePage = (notice: {
+  code: NoticeCode;
+  source: NoticeSource;
+}) =>
+  notice.code === "NoModelSelected"
+    ? "models"
+    : notice.code === "MicrophoneSilent"
+      ? "general"
+      : NOTICE_PAGE[notice.source];

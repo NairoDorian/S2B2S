@@ -364,6 +364,11 @@ pub struct AudioRecorder {
     /// Milliseconds of speech in the most recent recording, published by the
     /// consumer thread's [`SpeechClock`]. Final once `stop()` has returned.
     speech_ms: Arc<AtomicU64>,
+    /// Whether the most recent recording received at least
+    /// [`SILENT_INPUT_MIN_SECS`] of audio and every sample of it was exactly
+    /// zero: a muted microphone or a wrong default device, not a quiet speaker.
+    /// Set by the consumer thread; what the silent-microphone notice reads.
+    silent_input: Arc<AtomicBool>,
     /// Which input channel to use. None = average all (original behavior).
     selected_channel: Option<usize>,
     /// Preferred stream config cached per device name.
@@ -387,6 +392,7 @@ impl AudioRecorder {
             denoise_enabled: Arc::new(AtomicBool::new(false)),
             denoise_controls: Arc::new(DenoiseControls::new(DenoiseParams::default())),
             speech_ms: Arc::new(AtomicU64::new(0)),
+            silent_input: Arc::new(AtomicBool::new(false)),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
@@ -506,6 +512,12 @@ impl AudioRecorder {
         self.speech_ms.load(Ordering::Relaxed)
     }
 
+    /// Whether the most recent recording received only exact zeros (upstream
+    /// `70f490e`). Final once `stop()` has returned.
+    pub fn input_silent(&self) -> bool {
+        self.silent_input.load(Ordering::Relaxed)
+    }
+
     pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
         if self.worker_handle.is_some() {
             if !self.needs_reopen() {
@@ -539,6 +551,7 @@ impl AudioRecorder {
         let denoise_enabled = Arc::clone(&self.denoise_enabled);
         let denoise_controls = Arc::clone(&self.denoise_controls);
         let speech_ms = Arc::clone(&self.speech_ms);
+        let silent_input = Arc::clone(&self.silent_input);
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
@@ -682,6 +695,7 @@ impl AudioRecorder {
                         denoise_enabled,
                         denoise_controls,
                         speech_ms,
+                        silent_input,
                         stream_running_at,
                     );
                     run_consumer(
@@ -1106,6 +1120,10 @@ enum ChunkDisposition {
     Discard,
 }
 
+/// How long a take has to be nothing but exact zeros to count as a silent
+/// input (`AudioRecorder::input_silent`).
+const SILENT_INPUT_MIN_SECS: u64 = 1;
+
 /// Converts raw ring samples into 16 kHz frames across recording sessions.
 pub(crate) struct CaptureProcessor {
     in_sample_rate: u32,
@@ -1119,6 +1137,13 @@ pub(crate) struct CaptureProcessor {
     /// experimental Multi-STT streaming coordinator. See `ChunkTap`.
     chunk_tap: Option<Arc<ChunkTap>>,
     speech_clock: SpeechClock,
+    /// Published to the recorder: see `AudioRecorder::silent_input`.
+    silent_input: Arc<AtomicBool>,
+    /// A non-zero sample arrived in this take. Once set, a chunk costs one
+    /// bool check; before, it is scanned up to its first non-zero sample.
+    signal_seen: bool,
+    /// Samples of this take, all exactly zero, before `signal_seen`.
+    zero_samples: u64,
     stream_running_at: Instant,
     /// Direct path: native rate → 16 kHz VAD frames.
     frame_resampler: FrameResampler,
@@ -1177,6 +1202,7 @@ impl CaptureProcessor {
             Arc::new(AtomicBool::new(false)),
             Arc::new(DenoiseControls::new(DenoiseParams::default())),
             Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicBool::new(false)),
             stream_running_at,
         )
     }
@@ -1194,6 +1220,7 @@ impl CaptureProcessor {
         denoise_enabled: Arc<AtomicBool>,
         denoise_controls: Arc<DenoiseControls>,
         speech_clock_total: Arc<AtomicU64>,
+        silent_input: Arc<AtomicBool>,
         stream_running_at: Instant,
     ) -> Self {
         // A recorder built without a detector falls back to 480 samples (30 ms)
@@ -1234,6 +1261,9 @@ impl CaptureProcessor {
             analysis,
             chunk_tap,
             speech_clock,
+            silent_input,
+            signal_seen: false,
+            zero_samples: 0,
             stream_running_at,
             frame_resampler,
             denoise: None,
@@ -1295,6 +1325,9 @@ impl CaptureProcessor {
         }
         self.denoise_active = self.denoise_enabled.load(Ordering::Relaxed);
         self.speech_clock.reset(u64::from(pause_hold_ms));
+        self.signal_seen = false;
+        self.zero_samples = 0;
+        self.silent_input.store(false, Ordering::Relaxed);
         if policy != VadPolicy::Disabled
             && let Some(cfg) = &self.vad
         {
@@ -1331,6 +1364,21 @@ impl CaptureProcessor {
 
         if disposition == ChunkDisposition::Discard {
             return;
+        }
+
+        if !self.signal_seen {
+            if raw.iter().any(|&sample| sample != 0.0) {
+                self.signal_seen = true;
+                self.silent_input.store(false, Ordering::Relaxed);
+            } else {
+                // A device can hand over a few zero-filled buffers as its
+                // stream starts, and a tap can be shorter than that: only a
+                // second of nothing but zeros is a silent input.
+                self.zero_samples += raw.len() as u64;
+                if self.zero_samples >= u64::from(self.in_sample_rate) * SILENT_INPUT_MIN_SECS {
+                    self.silent_input.store(true, Ordering::Relaxed);
+                }
+            }
         }
 
         let pipeline_start = Instant::now();

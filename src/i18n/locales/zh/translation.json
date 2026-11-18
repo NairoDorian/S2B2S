@@ -2008,7 +2008,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "未选择模型",
+    "noModelSelected": "请在 设置 > 模型 中下载或选择一个模型。",
+    "microphoneSilentTitle": "麦克风没有声音",
+    "microphoneSilent": "麦克风只传来了静音。请检查它是否已静音，或在 设置 中选择其他麦克风。",
+    "pasteBlockedElevatedTitle": "无法粘贴到管理员应用",
+    "pasteBlockedElevated": "当前活动的应用程序以管理员身份运行，因此 {{app}} 无法粘贴到其中。可以从历史记录中复制转录内容。"
   },
   "notices": {
     "errorOne": "{{n}} 个错误",

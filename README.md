@@ -245,6 +245,15 @@ This project is actively being developed and has some [known issues](https://git
 
 Using a Bluetooth headset microphone on macOS may temporarily reduce playback quality or volume while recording because Bluetooth switches to bidirectional audio. Keep your headphones as the output device and select your Mac's built-in or an external microphone in ZER0 to avoid this.
 
+### Administrator Apps (Windows)
+
+Windows does not let ZER0 paste or type into an app that runs as administrator. ZER0
+checks the focused window before it reports a paste, so instead of a silent failure
+you get a notice (tray, footer), and the transcript is in History. With the native
+keyboard implementation the shortcut also does not fire while an administrator app is
+focused. This is how Windows works; to use ZER0 with such apps, run ZER0 as
+administrator too.
+
 ### fn and Globe Key Shortcuts (macOS)
 
 Shortcuts that include the `fn` (Globe) key **only work on Apple keyboards** — your Mac's built-in keyboard or an Apple external keyboard. They will never trigger on a third-party keyboard, even while it is connected to the same Mac.

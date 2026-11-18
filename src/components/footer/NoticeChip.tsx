@@ -75,7 +75,7 @@ function NoticeChip() {
   };
 
   const show = (notice: Notice) => {
-    setSection(noticePage(notice.source));
+    setSection(noticePage(notice));
     store.dismiss(notice);
     store.setPanelOpen(false);
   };

@@ -1281,6 +1281,17 @@ impl AudioRecordingManager {
 
     /// Milliseconds of speech the VAD measured in the most recent recording.
     /// Valid once [`Self::stop_recording`] has returned.
+    /// Whether the last recording received only digital silence (every
+    /// sample exactly zero): a muted microphone or the wrong device, not a
+    /// quiet speaker.
+    pub fn last_input_silent(&self) -> bool {
+        self.recorder
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|rec| rec.input_silent())
+    }
+
     pub fn last_speech_ms(&self) -> u64 {
         self.recorder
             .lock()

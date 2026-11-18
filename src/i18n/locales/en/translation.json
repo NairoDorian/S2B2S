@@ -2011,7 +2011,13 @@
     "gpuFallbackTitle": "Running on CPU After a GPU Error",
     "gpuFallback": "The GPU failed twice while transcribing, so this model now runs on the CPU, which is slower. Change a backend setting or restart the app to use the GPU again.",
     "llamaServerFailedTitle": "Local LLM Failed to Start",
-    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run."
+    "llamaServerFailed": "The llama.cpp server stopped or could not start, so post-processing and merges that use it will not run.",
+    "noModelSelectedTitle": "No Model Selected",
+    "noModelSelected": "Download or select a model in Settings > Models.",
+    "microphoneSilentTitle": "Microphone Is Silent",
+    "microphoneSilent": "Your microphone sent only silence. Check that it isn't muted, or choose a different microphone in Settings.",
+    "pasteBlockedElevatedTitle": "Can't Paste into Admin Apps",
+    "pasteBlockedElevated": "The active application is running as administrator, so {{app}} can't paste into it. You can copy the transcript from History."
   },
   "notices": {
     "errorOne": "{{n}} error",
