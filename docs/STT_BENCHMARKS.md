@@ -178,3 +178,35 @@ every case.
   is level. Side finding for the engine: on Vulkan the step pipeline gains
   nothing here (its event waits move into `tensor_get`, 106 → 302 ms, with
   the step loop unchanged).
+
+### Engine `e5d0af8d`: the iGPU decoder fix (same day)
+
+The engine now keeps the Parakeet / Nemotron decoder on the host for an
+integrated GPU (`GGML_BACKEND_DEVICE_TYPE_IGPU`). Measured through the app
+the same way (CPU-lane builds of the three pins, 3 rotating rounds on the
+Intel iGPU, 2 on the RTX's Vulkan, fleurs-en, decode in brackets):
+
+| Intel Iris Xe (Vulkan) | `cfb07a12` | `8b27bc6b` | `e5d0af8d` |
+| ---------------------- | ---------: | ---------: | ---------: |
+| Nemotron 3.5, batch    |   460 (87) |  527 (153) |   464 (88) |
+| Nemotron 3.5, stream   | 1932 (163) | 2005 (223) | 1951 (163) |
+| Parakeet Redux         |   279 (41) |   270 (62) |   259 (42) |
+| Parakeet TDT v3        |   299 (38) |   322 (57) |   304 (40) |
+| Parakeet Ultra         |   416 (40) |   438 (59) |   421 (44) |
+
+On the RTX's Vulkan `e5d0af8d` keeps the GPU decoder (decode 21-43 ms, as
+`8b27bc6b`). Transcripts identical everywhere. One `8b27bc6b` run of
+Nemotron on the iGPU ended in `ggml_vulkan: device lost on Vulkan1` (a
+driver reset): the GPU decoder on an integrated GPU is the path the fix
+removes; seen once, so not proven to be its cause.
+
+**Build hygiene found on the way:** a `dev:cpu` build after a `dev:fast` one
+in the same target directory kept the CUDA build's `ggml-cuda.dll` in the
+engine's `OUT_DIR/bin` (neither the cache restore nor `cmake --install`
+removes files a configuration does not produce), so the CPU-lane exe
+registered a CUDA device from another engine revision, staged the module,
+and the cache save stored it under the CPU key. `build.rs` now prunes
+`ggml*.dll` files it did not stage from the development directories; the
+engine side (clear the install tree before restoring or installing) is a
+fork change. Before this, the CPU-lane numbers above were taken with the
+stale module removed by hand.

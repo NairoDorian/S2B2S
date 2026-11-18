@@ -253,3 +253,22 @@ changed. What it means here:
   so a stale hand-dropped module cannot replace a shipped one.
 - The log callback no longer unwinds a panic into C (`fern` with both
   standard streams closed), which would have aborted the app.
+
+## Update: 2026-11-18 (engine `e5d0af8d`)
+
+- Pin moved to `e5d0af8d`: the Parakeet / Nemotron decoder stays on the host
+  for an integrated GPU (the iGPU regression measured above), discrete CUDA,
+  ROCm and Vulkan unchanged; the choice is per session from the model's own
+  device, so a Multi-STT set on CUDA and the iGPU gets each its own. No API
+  change. Through the app: Intel iGPU back to `cfb07a12`'s numbers, RTX
+  Vulkan keeps the GPU decoder ([STT_BENCHMARKS.md](STT_BENCHMARKS.md)).
+- **Lane cross-contamination.** The engine's build script restores its cache,
+  or installs, into the same `OUT_DIR` whatever the configuration, and
+  neither removes what the previous configuration installed: after a
+  `dev:fast` build a `dev:cpu` build kept `ggml-cuda.dll`, the library
+  loaded it from that folder (a CPU-lane exe listed a CUDA device), the app
+  staged it and the engine saved it into the CPU cache entry. App side,
+  `build.rs` prunes `ggml*.dll` it did not stage from the development
+  directories. Engine side, the fix is to clear `OUT_DIR`'s install tree
+  before a cache restore or `cmake --install` (and the cache entry before a
+  save), and to prune stale ggml DLLs in `stage_windows_dlls`.

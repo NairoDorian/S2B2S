@@ -337,8 +337,16 @@ src-tauri/Cargo.lock` must print nothing.
    `build.rs` bundles the engine's license texts. Measured A/B through the
    app (CPU lane, Vulkan + CPU, 8 runs per arm, alternating): transcripts
    identical in all 18 cases, Vulkan 1.24-1.51x faster for Nemotron and the
-   Parakeets, CPU level, R2T2 streaming on Vulkan 3.6 % slower (open,
-   [STT_BENCHMARKS.md](STT_BENCHMARKS.md)).
+   Parakeets, CPU level; R2T2 streaming on Vulkan read 1-3 % slower, which
+   the per-stage breakdown traced to the laptop GPU's clock, not a code path.
+   CUDA (fast-lane builds): Nemotron 1.6-2.5x, Parakeets 1.3-1.8x, the rest
+   level. One regression, the Intel iGPU (see step 7)
+   ([STT_BENCHMARKS.md](STT_BENCHMARKS.md)).
+7. **Third bump, 2026-11-18: `8b27bc6b` → `e5d0af8d`** (the user's fix for
+   the iGPU regression ZER0 measured: the transducer decoder stays on the host
+   for an integrated GPU). Verified through the app: Intel iGPU back to
+   `cfb07a12`'s numbers, RTX Vulkan unchanged. Found on the way and fixed in
+   `build.rs`: a CPU-lane build kept the CUDA lane's `ggml-cuda.dll`.
 
 ---
 

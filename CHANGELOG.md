@@ -840,6 +840,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Parakeet models are no longer slower on an integrated GPU (2026-11-18).**
+  The engine update of the same day ran the Parakeet / Nemotron decoder on
+  every Vulkan GPU, and on an Intel iGPU that was 3-15 % slower than before
+  (and one run hit a driver reset); engine `e5d0af8d` keeps it on the CPU for
+  integrated GPUs, which brings the old numbers back, while CUDA and discrete
+  Vulkan cards keep their gain. Also: a CPU-only development build no longer
+  picks up the CUDA module a previous CUDA build left in the target folder.
+
 - **The VAD slider moves both edges of the speech gate (2026-11-18).** Since
   the engine took over voice detection (2026-11-17) the gate was built with an
   explicit exit threshold, which the engine keeps fixed when the threshold

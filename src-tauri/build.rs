@@ -337,13 +337,18 @@ fn stage_transcribe_runtime_libs() {
             // below, so an architecture plugin from an earlier build (one that
             // used the `arch-dl` module split) would stay beside the executable
             // indefinitely — and the app's plugin scan would then try to load a
-            // family older than the one compiled into libtranscribe. Only the
-            // plugin files this staging owns are touched.
+            // family older than the one compiled into libtranscribe. A ggml
+            // backend module of another build lane is the same hazard: after
+            // a `dev:fast` build, `ggml-cuda.dll` stayed beside a `dev:cpu`
+            // executable, which then registered a CUDA device from another
+            // engine revision. Only the files this staging owns are touched.
             if let Ok(entries) = std::fs::read_dir(&target) {
                 for entry in entries.flatten() {
                     let name = entry.file_name();
                     let Some(name) = name.to_str() else { continue };
-                    if name.starts_with("transcribe-arch-") && !desired.contains_key(name) {
+                    let ours = name.starts_with("transcribe-arch-")
+                        || (name.starts_with("ggml") && name.ends_with(".dll"));
+                    if ours && !desired.contains_key(name) {
                         let _ = std::fs::remove_file(entry.path());
                     }
                 }
