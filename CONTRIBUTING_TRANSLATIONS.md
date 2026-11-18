@@ -9,7 +9,9 @@ Thank you for helping translate ZER0! This guide explains how to add or improve 
 ## Quick Start
 
 1. Fork the repository
-2. Copy the English translation file to your language folder
+2. Check the [currently supported languages](#currently-supported-languages).
+   For an existing language, edit its translation file; for a new language,
+   copy the English translation file to a new language folder
 3. Translate the values (not the keys!)
 4. Submit a pull request
 
@@ -186,7 +188,8 @@ keys are still waiting.
 ## Requested Languages
 
 - Any language not listed above
-- Completing the 87 missing fork keys in the existing locales
+- Translating the fork's keys that are still English in the existing locales
+  (the English copies mark exactly which ones)
 
 ---
 

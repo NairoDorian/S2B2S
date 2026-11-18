@@ -264,6 +264,9 @@ If you switch between a MacBook keyboard and an external one, pick a shortcut bu
 
 ### Linux Notes
 
+Step-by-step setup for GNOME on Wayland (ydotool, uinput, the input group,
+non-QWERTY paste): [Ubuntu 26.04 GNOME Wayland](docs/troubleshooting/ubuntu-26-04-gnome-wayland/README.md).
+
 **Text Input Tools:**
 
 For reliable text input on Linux, install the appropriate tool for your display server:
