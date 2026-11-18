@@ -25,7 +25,7 @@ pub const RELEASES_URL: &str = "https://github.com/NairoDorian/S2B2S/releases/la
 /// Who this application says it is on outbound HTTP requests: model downloads,
 /// GitHub API calls, LLM provider calls. `name/version` is the shape every one
 /// of those services expects.
-pub const USER_AGENT: &str = "ZER0/0.9.7";
+pub const USER_AGENT: &str = "ZER0/0.10.0";
 
 /// The product-name folder leaf a platform may use (kept for the migration's
 /// symmetry). The app-data folder that holds models, history and settings is

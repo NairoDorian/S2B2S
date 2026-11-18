@@ -119,7 +119,7 @@ export const APP = {
   description: `${NAME} — real-time speech to text`,
   repoOwner: "NairoDorian",
   repoName: "S2B2S",
-  version: "0.9.7",
+  version: "0.10.0",
   /**
    * The 0.9.x identity, kept as a record of what was rather than as a setting.
    * Never written anywhere — only READ, so an install made before the rename
