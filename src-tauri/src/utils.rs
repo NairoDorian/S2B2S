@@ -299,6 +299,17 @@ pub fn app_env_flag(suffix: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// The `GDK_BACKEND` the user asked for through `<PREFIX>GDK_BACKEND`
+/// (upstream `bd87c72`), if any; empty or blank counts as unset. The AppImage's
+/// GTK hook runs `export GDK_BACKEND=x11` after the user's environment (a
+/// workaround for tauri-apps/tauri#8541), so a plain `GDK_BACKEND=wayland`
+/// never reaches the app; a variable the hook does not know about does.
+/// `main` copies it into `GDK_BACKEND` on Linux before GTK starts. Platform
+/// independent so it is tested everywhere.
+pub fn requested_gdk_backend(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|v| !v.is_empty())
+}
+
 /// A fresh, empty directory under the system temp directory for a test that
 /// needs to touch the filesystem.
 ///
@@ -331,6 +342,18 @@ pub fn temp_test_dir(purpose: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn requested_gdk_backend_ignores_blank_and_keeps_the_value() {
+        assert_eq!(requested_gdk_backend(None), None);
+        assert_eq!(requested_gdk_backend(Some("")), None);
+        assert_eq!(requested_gdk_backend(Some("  ")), None);
+        assert_eq!(requested_gdk_backend(Some(" x11 ")), Some("x11"));
+        assert_eq!(
+            requested_gdk_backend(Some("wayland,x11")),
+            Some("wayland,x11")
+        );
+    }
 
     #[test]
     fn arm64_native_machine_is_the_only_match() {

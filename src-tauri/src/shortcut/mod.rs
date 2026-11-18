@@ -40,6 +40,9 @@ pub fn init_shortcuts(app: &AppHandle) {
         KeyboardImplementation::Tauri => {
             tauri_impl::init_shortcuts(app);
         }
+        KeyboardImplementation::None => {
+            info!("Built-in keyboard shortcuts are off; use the CLI flags or signals");
+        }
         KeyboardImplementation::NativeKeys => {
             if let Err(e) = native_keys::init_shortcuts(app) {
                 error!("Failed to initialize native-keys shortcuts: {}", e);
@@ -135,6 +138,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
         KeyboardImplementation::NativeKeys => native_keys::register_shortcut(app, binding),
+        KeyboardImplementation::None => Ok(()),
     }
 }
 
@@ -150,6 +154,7 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
         KeyboardImplementation::NativeKeys => native_keys::unregister_shortcut(app, binding),
+        KeyboardImplementation::None => Ok(()),
     }
 }
 
@@ -189,6 +194,10 @@ pub fn should_register_binding(
 ) -> bool {
     // `cancel` is registered dynamically for the duration of a recording only.
     if binding.id == "cancel" || binding.current_binding.is_empty() {
+        return false;
+    }
+    // Built-in shortcuts are off: the compositor drives the app through its CLI.
+    if settings.keyboard_implementation == KeyboardImplementation::None {
         return false;
     }
     if binding.id == "multi_stt_transcribe" && !settings.multi_stt_enabled {
@@ -538,6 +547,7 @@ pub fn get_keyboard_implementation(app: AppHandle) -> String {
         KeyboardImplementation::Tauri => "tauri".to_string(),
         // FROZEN: the value already written into every user's settings file.
         KeyboardImplementation::NativeKeys => "handy_keys".to_string(),
+        KeyboardImplementation::None => "none".to_string(),
     }
 }
 
@@ -553,6 +563,8 @@ fn validate_shortcut_for_implementation(
     match implementation {
         KeyboardImplementation::Tauri => tauri_impl::validate_shortcut(raw),
         KeyboardImplementation::NativeKeys => native_keys::validate_shortcut(raw),
+        // Nothing is registered, so any spelling is kept as it is.
+        KeyboardImplementation::None => Ok(()),
     }
 }
 
@@ -562,6 +574,7 @@ fn parse_keyboard_implementation(s: &str) -> KeyboardImplementation {
         "tauri" => KeyboardImplementation::Tauri,
         // FROZEN: the spellings 0.9.x persisted; both must keep parsing.
         "handy_keys" => KeyboardImplementation::NativeKeys,
+        "none" => KeyboardImplementation::None,
         other => {
             warn!(
                 "Invalid keyboard implementation '{}', defaulting to tauri",
@@ -586,6 +599,7 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
             KeyboardImplementation::NativeKeys => native_keys::unregister_shortcut(app, binding),
+            KeyboardImplementation::None => Ok(()),
         };
 
         if let Err(e) = result {
@@ -645,6 +659,7 @@ fn register_all_shortcuts_for_implementation(
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
             KeyboardImplementation::NativeKeys => native_keys::register_shortcut(app, binding),
+            KeyboardImplementation::None => Ok(()),
         };
 
         if let Err(e) = result {
@@ -2333,6 +2348,26 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
 mod tests {
     use handy_keys::Hotkey;
     use tauri_plugin_global_shortcut::Shortcut;
+
+    #[test]
+    fn no_binding_is_live_without_a_keyboard_implementation() {
+        let mut settings = crate::settings::get_default_settings();
+        let binding = crate::settings::ShortcutBinding {
+            id: "transcribe".to_string(),
+            name: String::new(),
+            description: String::new(),
+            default_binding: "ctrl+alt+space".to_string(),
+            current_binding: "ctrl+alt+space".to_string(),
+        };
+        settings.multi_stt_performance_mode_enabled = false;
+        assert!(super::should_register_binding(&settings, &binding));
+        settings.keyboard_implementation = crate::settings::KeyboardImplementation::None;
+        assert!(!super::should_register_binding(&settings, &binding));
+        assert_eq!(
+            super::parse_keyboard_implementation("none"),
+            crate::settings::KeyboardImplementation::None
+        );
+    }
 
     #[test]
     fn compound_shortcut_keys_parse_on_both_backends() {

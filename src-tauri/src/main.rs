@@ -11,6 +11,21 @@ fn main() {
     {
         // DMABUF renderer causes crashes on various GPU/display server configurations
         unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+
+        // GTK's display backend, chosen by the user even inside the AppImage,
+        // whose launch hook forces GDK_BACKEND=x11 (see requested_gdk_backend).
+        // First, so GTK never sees the forced value.
+        let gdk_backend = app_lib::app_env_var("GDK_BACKEND");
+        if let Some(backend) = app_lib::requested_gdk_backend(gdk_backend.as_deref()) {
+            unsafe { std::env::set_var("GDK_BACKEND", backend) };
+        }
+
+        // Gamescope's WSI layer aborts during Vulkan device creation on SteamOS
+        // (upstream 310749b); this app uses Vulkan for compute only. A value
+        // the user set, even an empty one, is kept.
+        if std::env::var_os("DISABLE_GAMESCOPE_WSI").is_none() {
+            unsafe { std::env::set_var("DISABLE_GAMESCOPE_WSI", "1") };
+        }
     }
 
     #[cfg(target_os = "windows")]

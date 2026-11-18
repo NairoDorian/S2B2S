@@ -891,6 +891,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Linux and macOS fixes from upstream (2026-11-18).** On Linux the
+  default shortcuts no longer use Ctrl+Space (ibus's input-method switch);
+  the keyboard implementation can be set to None, for Wayland compositors
+  that bind ZER0's CLI flags themselves; `ZER0_GDK_BACKEND` picks GTK's
+  backend even inside the AppImage; Gamescope's Vulkan layer is kept away
+  (SteamOS); the Debian package declares its OpenSSL 3 dependency. On
+  macOS, Intel Macs build without Metal (it could hang every model load on
+  some AMD GPUs), and builds for older macOS link clang's runtime. Built
+  and tested on Windows only; the Linux and macOS paths are unverified.
+
 - **Three silent failures now say what happened (2026-11-18).** A hotkey
   pressed with no model selected (its files removed) now says No Model
   Selected instead of doing nothing; a microphone that sends nothing but

@@ -745,6 +745,20 @@ platform-specific What's New); `2b3f7c8` #2336 Debian OpenSSL dependency;
 `298653c` #2367 Linux `default_binding` avoids the ibus hotkey (ZER0's
 `current_binding` is empty, so only "reset" changes).
 
+**Status 2026-11-18.** No Linux or macOS toolchain here (the WSL Ubuntu has
+no Rust, cmake or build libraries, and `sudo` needs the maintainer), so this
+batch is split. **Done** (compiled here, or config): `7bfb2e2` (target
+tables), `5197faf` part (`link_clang_rt_osx` in `build.rs`, host code),
+`2b3f7c8` (deb `libssl3t64 | libssl3`), `298653c` (adapted: Linux transcribe
+`ctrl+alt+space`, post-process `ctrl+alt+shift+space`, Multi-STT
+`alt+shift+space`, since ZER0's Multi-STT default was `ctrl+alt+space`),
+`ef3086e` (`KeyboardImplementation::None`, cross-platform code), `bd87c72` and
+`310749b` (the logic in `utils::requested_gdk_backend`, tested here; the
+Linux block of `main.rs` only sets the two variables). **Waiting for a Linux
+or macOS build** (Linux-only modules that cannot be type-checked here):
+`f3d8b87`, `e286103`, `c530a49`, `d2ee871`, `4ec61f0`, `3c7a538`, `bd4b027`,
+`4a096e3`, `dce2976`.
+
 **macOS**: `7bfb2e2` #2340 Metal off on Intel Macs (target table);
 `5197faf` (part) link `clang_rt.osx` now that ORT no longer supplies it (check
 ZER0's `build.rs`); `dce2976` #2057 `tccutil` reset before asking again.
@@ -815,14 +829,14 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 12  | `8605699` | #2117 | NSIS installer icon                                      | Port, P3                                                                         | `175806e9` (staged by the gate with it)                 |
 | 13  | `345caa8` | #1941 | refresh custom sounds when opening the picker            | Adapt, P4                                                                        | `b0b9c2fb`                                              |
 | 14  | `ffbc950` | #2203 | transcribe 0.3.0                                         | Covered, P2                                                                      | `eeb2e9a5`                                              |
-| 15  | `73ab851` | #2206 | Ubuntu 26.04 GNOME Wayland guide                         | Adapt, P10                                                                       |                                                         |
-| 16  | `586a838` | #2212 | Ubuntu guide: overlay, wl-clipboard, non-QWERTY          | Adapt, P10                                                                       |                                                         |
+| 15  | `73ab851` | #2206 | Ubuntu 26.04 GNOME Wayland guide                         | Adapt, P10                                                                       | `1973b088`                                              |
+| 16  | `586a838` | #2212 | Ubuntu guide: overlay, wl-clipboard, non-QWERTY          | Adapt, P10                                                                       | `1973b088`                                              |
 | 17  | `a94b403` | #2116 | portable: legacy model cache                             | Adapt, P3                                                                        | `3d125dfd`                                              |
 | 18  | `c8262ab` | #2208 | transcribe.cpp in its own worker process                 | Skip (D2); ideas in P7                                                           |                                                         |
 | 19  | `20a6685` | #2227 | show "loading model" instead of "Transcribing…"          | Adapt, P4                                                                        | `b2f51e6f`                                              |
 | 20  | `417dc6a` |       | loading notice in the Live preview                       | Adapt, P4                                                                        | `b2f51e6f`                                              |
-| 21  | `afe5a63` |       | format Ubuntu notes                                      | Adapt, P10                                                                       |                                                         |
-| 22  | `f6b3f82` | #2235 | translation guide vs supported locales                   | Adapt, P10                                                                       |                                                         |
+| 21  | `afe5a63` |       | format Ubuntu notes                                      | Adapt, P10                                                                       | `1973b088`                                              |
+| 22  | `f6b3f82` | #2235 | translation guide vs supported locales                   | Adapt, P10                                                                       | `1973b088`                                              |
 | 23  | `48a3d8e` | #2249 | Linux renderer opt-out                                   | Adapt, P10 (final form = row 68)                                                 |                                                         |
 | 24  | `1b011a1` | #2265 | transcribe 0.4.0                                         | Covered, P2                                                                      | `eeb2e9a5`                                              |
 | 25  | `a42131d` | #2188 | move to handy-recorder                                   | Skip (D3)                                                                        |                                                         |
@@ -844,7 +858,7 @@ reason), **Defer** (Phase 12). Fill the last column with the ZER0 commit.
 | 41  | `2b3f7c8` | #2336 | Debian OpenSSL 3 dependency                              | Port, P10                                                                        |                                                         |
 | 42  | `7bfb2e2` | #2340 | Metal off on Intel macOS                                 | Adapt, P10                                                                       |                                                         |
 | 43  | `0ed36e1` | #2344 | one HTTP client for post-processing                      | Port, P7                                                                         | `8f7b92cc`                                              |
-| 44  | `1607381` | #2348 | stale user manager and the input group                   | Adapt, P10                                                                       |                                                         |
+| 44  | `1607381` | #2348 | stale user manager and the input group                   | Adapt, P10                                                                       | `1973b088`                                              |
 | 45  | `889fca0` | #2290 | keep dictation when post-processing is blank             | Port, P7                                                                         | `cba43c6f`                                              |
 | 46  | `a537ec4` | #2253 | reset buttons name their setting                         | Adapt, P4                                                                        | `2e9e849c`                                              |
 | 47  | `298653c` | #2367 | Linux defaults avoid the ibus hotkey                     | Adapt, P10                                                                       |                                                         |

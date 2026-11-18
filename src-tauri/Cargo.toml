@@ -220,8 +220,18 @@ transcribe-cpp = { version = "*", default-features = false }
 # upstream builds it (2696c49, 1472087): decoding Opus files is cheap.
 opusic-sys = { version = "^0.7", features = ["no-simd"] }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# The engine per macOS arch (upstream 7bfb2e2). Apple Silicon links the Metal
+# build. Intel Macs are CPU-only: ggml-metal compiles its embedded shader
+# library at backend init (app launch, whatever accelerator is selected), and
+# on some AMD GPUs that compile never finishes, hanging every model load.
+# With no features, transcribe-cpp-sys sets TRANSCRIBE_METAL=OFF.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }
+
+[target.'cfg(all(target_os = "macos", target_arch = "x86_64"))'.dependencies]
+transcribe-cpp = { version = "*", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "^0.6.5"
 objc2-foundation = "^0.3.2"
 objc2-app-kit = "^0.3.2"

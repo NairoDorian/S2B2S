@@ -285,6 +285,11 @@ pub enum KeyboardImplementation {
     /// `rename` below is the frozen wire value, not a name.
     #[serde(rename = "handy_keys")]
     NativeKeys,
+    /// No built-in global shortcuts (upstream `ef3086e`): the app is driven by
+    /// its CLI flags (`--toggle-transcription`, ...) bound in a Wayland
+    /// compositor, where neither backend can grab a global shortcut. Offered
+    /// on Linux only.
+    None,
 }
 
 impl Default for KeyboardImplementation {
@@ -2562,8 +2567,10 @@ pub fn get_default_settings() -> AppSettings {
     let default_shortcut = "ctrl+space";
     #[cfg(target_os = "macos")]
     let default_shortcut = "option+space";
+    // Not Ctrl+Space on Linux: it is ibus's input-method switch (upstream
+    // 298653c).
     #[cfg(target_os = "linux")]
-    let default_shortcut = "ctrl+space";
+    let default_shortcut = "ctrl+alt+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let default_shortcut = "alt+space";
 
@@ -2574,8 +2581,9 @@ pub fn get_default_settings() -> AppSettings {
     // the primary transcribe shortcut.
     #[cfg(target_os = "macos")]
     let default_multi_stt_shortcut = "ctrl+option+space";
+    // Linux's transcribe default took Ctrl+Alt+Space (above).
     #[cfg(target_os = "linux")]
-    let default_multi_stt_shortcut = "ctrl+alt+space";
+    let default_multi_stt_shortcut = "alt+shift+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let default_multi_stt_shortcut = "alt+shift+space";
 
@@ -2595,7 +2603,7 @@ pub fn get_default_settings() -> AppSettings {
     #[cfg(target_os = "macos")]
     let default_post_process_shortcut = "option+shift+space";
     #[cfg(target_os = "linux")]
-    let default_post_process_shortcut = "ctrl+shift+space";
+    let default_post_process_shortcut = "ctrl+alt+shift+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let default_post_process_shortcut = "alt+shift+space";
 

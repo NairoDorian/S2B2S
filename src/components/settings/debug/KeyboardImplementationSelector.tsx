@@ -4,6 +4,7 @@ import { Dropdown, type DropdownOption } from "../../ui/Dropdown";
 import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
+import { type } from "@tauri-apps/plugin-os";
 
 // The labels are English like the sibling debug selectors; only the `value`s
 // are wire values, and `handy_keys` is one of them — it is what every existing
@@ -11,6 +12,9 @@ import { sessionToast as toast } from "@/lib/sessionToast";
 const KEYBOARD_IMPLEMENTATION_OPTIONS: DropdownOption[] = [
   { value: "tauri", label: "Tauri Global Shortcut" },
   { value: "handy_keys", label: "Native Keys" },
+  // Linux only: on Wayland the compositor owns keybindings and drives the app
+  // through its CLI flags (`--toggle-transcription`, ...).
+  ...(type() === "linux" ? [{ value: "none", label: "None" }] : []),
 ];
 
 interface KeyboardImplementationSelectorProps {

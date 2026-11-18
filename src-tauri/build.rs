@@ -10,6 +10,12 @@ fn main() {
         build_apple_intelligence_bridge();
     }
 
+    // clang's compiler runtime, for ggml-metal's `@available` checks (upstream
+    // 5197faf; see link_clang_rt_osx).
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        link_clang_rt_osx();
+    }
+
     generate_tray_translations();
 
     // Linux ships transcribe-cpp as a shared libtranscribe + loadable ggml
@@ -500,6 +506,35 @@ fn split_versioned_so(name: &str) -> Option<(&str, usize)> {
         .iter()
         .all(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
         .then_some((stem, comps.len()))
+}
+
+/// Link clang's compiler runtime, which provides `__isPlatformVersionAtLeast`.
+///
+/// ggml-metal guards newer Metal APIs with `@available`. When the deployment
+/// target is older than the SDK (a build for macOS 11.0), clang lowers those
+/// checks to calls into `libclang_rt.osx.a`, which rustc does not link
+/// (`-nodefaultlibs`). Upstream got it through ort-sys's static ONNX Runtime
+/// until ORT went; this app dropped ORT earlier and links it itself. A build
+/// targeting the host macOS folds the checks away, which is why only such a
+/// build hits the undefined symbol. Runs only for a macOS target.
+fn link_clang_rt_osx() {
+    let output = std::process::Command::new("clang")
+        .arg("--print-resource-dir")
+        .output()
+        .expect("run `clang --print-resource-dir` to locate libclang_rt.osx.a");
+    assert!(
+        output.status.success(),
+        "`clang --print-resource-dir` failed; cannot locate libclang_rt.osx.a"
+    );
+    let resource_dir = String::from_utf8(output.stdout).expect("clang resource dir is UTF-8");
+    let darwin_dir = std::path::Path::new(resource_dir.trim()).join("lib/darwin");
+    assert!(
+        darwin_dir.join("libclang_rt.osx.a").exists(),
+        "libclang_rt.osx.a not found in {}",
+        darwin_dir.display()
+    );
+    println!("cargo:rustc-link-search=native={}", darwin_dir.display());
+    println!("cargo:rustc-link-lib=static=clang_rt.osx");
 }
 
 /// Generate tray menu translations from frontend locale files.

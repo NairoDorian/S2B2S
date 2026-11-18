@@ -49,7 +49,7 @@ pub use cli::CliArgs;
 #[cfg(debug_assertions)]
 use specta_typescript::Typescript;
 use tauri_specta::{Builder, ErrorHandlingMode, collect_commands, collect_events};
-pub use utils::{app_env_flag, app_env_var, env_flag_enabled};
+pub use utils::{app_env_flag, app_env_var, env_flag_enabled, requested_gdk_backend};
 
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;

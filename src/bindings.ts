@@ -2009,7 +2009,14 @@ export type KeyboardImplementation = "tauri" |
  *  spelling would read as "unknown variant" and drop the setting. The
  *  `rename` below is the frozen wire value, not a name.
  */
-"handy_keys";
+"handy_keys" | 
+/**
+ *  No built-in global shortcuts (upstream `ef3086e`): the app is driven by
+ *  its CLI flags (`--toggle-transcription`, ...) bound in a Wayland
+ *  compositor, where neither backend can grab a global shortcut. Offered
+ *  on Linux only.
+ */
+"none";
 
 export type LLMPrompt = {
 	id: string,

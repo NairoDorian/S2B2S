@@ -586,8 +586,27 @@ If the recording overlay is empty or bordered, fully quit ZER0 and launch a
 env -u ZER0_NO_GTK_LAYER_SHELL GDK_BACKEND=wayland zer0
 ```
 
-If this works, apply `GDK_BACKEND=wayland` only to ZER0's launcher. This
-workaround does not work with AppImages that force X11.
+If this works, apply `GDK_BACKEND=wayland` only to ZER0's launcher.
+
+The AppImage forces `GDK_BACKEND=x11` in its launch script, after your
+environment, so `GDK_BACKEND=wayland ./ZER0.AppImage` has no effect. Use
+`ZER0_GDK_BACKEND` instead; ZER0 copies it into `GDK_BACKEND` before GTK
+starts:
+
+```bash
+ZER0_GDK_BACKEND=wayland ./ZER0_x.y.z_amd64.AppImage
+```
+
+For a launcher, put the variable in the `.desktop` entry, for example
+`Exec=env ZER0_GDK_BACKEND=wayland /path/to/ZER0_x.y.z_amd64.AppImage`. Try
+native Wayland if the AppImage shows a frozen Language dropdown, a black window
+after closing to the tray and relaunching, or exits with `Failed to initialize
+gtk backend` on a Wayland-only compositor (Niri without XWayland). It stays
+opt-in because of [tauri#8541](https://github.com/tauri-apps/tauri/issues/8541).
+
+On SteamOS and other Gamescope sessions, ZER0 sets `DISABLE_GAMESCOPE_WSI=1`
+for itself unless you set it: the Gamescope WSI layer aborts during Vulkan
+device creation, and ZER0 only uses Vulkan for compute.
 
 ### Vulkan Overlays and Capture Tools on Windows (`ZER0_KEEP_VULKAN_IMPLICIT_LAYERS`)
 
