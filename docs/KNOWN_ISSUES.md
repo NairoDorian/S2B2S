@@ -73,6 +73,14 @@ items live here, self-contained.
 
 ## Bugs left open
 
+- **A CUDA fault still ends the app.** The backend-error recovery of
+  2026-11-18 (upstream `2eab8fc`, adapted in-process) catches what the engine
+  returns as `TRANSCRIBE_ERR_BACKEND`: every C++ exception at its API (Vulkan's
+  device-lost included) and failed graph computes. ggml's CUDA backend instead
+  reports an error through `GGML_ABORT`, which ends the process before any
+  error comes back; upstream survives that only because its engine runs in a
+  worker process (decision D2 declined that design for Multi-STT). Fixing it
+  in-process would need the engine to return CUDA errors rather than abort.
 - **Old ONNX model directories are never cleaned up.** The transcribe.cpp-only
   change (2026-09-10) stopped listing the 11 legacy ONNX models but
   deliberately leaves their extracted directories (`parakeet-tdt-0.6b-v2-int8/`

@@ -25,8 +25,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 use transcribe_cpp::{
-    AllowlistLetters, Backend, Device, Feature, Model, ModelOptions, RunOptions, Session,
-    StreamOptions, Task,
+    AllowlistLetters, Backend, Device, ErrorKind, Feature, Model, ModelOptions, RunOptions,
+    Session, StreamOptions, Task,
 };
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -485,6 +485,11 @@ pub struct TranscriptionManager {
     is_loading: Arc<Mutex<bool>>,
     loading_condvar: Arc<Condvar>,
     reload_model_on_next_use: Arc<AtomicBool>,
+    /// The primary model was loaded on a device chosen by index
+    /// (`--device-index`). A backend error is then not recovered on another
+    /// backend: the caller asked for that device, as upstream's supervisor
+    /// never overrides an explicitly chosen one.
+    device_pinned: Arc<AtomicBool>,
     /// Routes real-time audio frames to the active streaming worker; see
     /// [`StreamRouter`]. Shared with the audio recorder so per-frame feeds skip
     /// Tauri state and the manager lock.
@@ -579,6 +584,7 @@ impl TranscriptionManager {
             is_loading: Arc::new(Mutex::new(false)),
             loading_condvar: Arc::new(Condvar::new()),
             reload_model_on_next_use: Arc::new(AtomicBool::new(false)),
+            device_pinned: Arc::new(AtomicBool::new(false)),
             router: Arc::new(StreamRouter::new()),
             extra_engines: Arc::new(Mutex::new(HashMap::new())),
             extra_unload_requests: Arc::new(Mutex::new(HashSet::new())),
@@ -809,6 +815,8 @@ impl TranscriptionManager {
         device_index: Option<usize>,
     ) -> Result<()> {
         apply_accelerator_settings(&self.app_handle);
+        self.device_pinned
+            .store(device_index.is_some(), Ordering::Release);
 
         let load_start = std::time::Instant::now();
         debug!("Starting to load model: {}", model_id);
@@ -1499,6 +1507,9 @@ impl TranscriptionManager {
             // Only one can ever be held: the drain stops at the first
             // non-Feed command, which is handled on the next pass.
             let mut deferred: Option<StreamCmd> = None;
+            // A feed failed in the compute backend: the stream is not fed
+            // again, and finalize hands the recording to the batch path.
+            let mut backend_failed = false;
             loop {
                 let cmd = match deferred.take() {
                     Some(cmd) => cmd,
@@ -1509,6 +1520,9 @@ impl TranscriptionManager {
                 };
                 match cmd {
                     StreamCmd::Feed { pcm, queued_at } => {
+                        if backend_failed {
+                            continue;
+                        }
                         perf.queue_max = perf.queue_max.max(queued_at.elapsed());
                         // Take every frame that is already waiting and hand the
                         // library one buffer instead of one frame per call.
@@ -1581,13 +1595,30 @@ impl TranscriptionManager {
                             }
                             Err(e) => {
                                 perf.record_compute(feed_start.elapsed());
-                                warn!("stream feed failed: {}", e);
+                                if e.kind() == ErrorKind::Backend {
+                                    // The backend may fail every later call
+                                    // (upstream `2eab8fc`): the batch path at
+                                    // stop decodes the recording and recovers
+                                    // the engine.
+                                    error!(
+                                        "stream feed failed in the compute backend: {}; the batch path takes over at stop",
+                                        e
+                                    );
+                                    backend_failed = true;
+                                } else {
+                                    warn!("stream feed failed: {}", e);
+                                }
                             }
                         }
                     }
                     StreamCmd::Finalize(reply) => {
                         let finalize_start = Instant::now();
-                        let result = match stream.finalize() {
+                        let finalized = if backend_failed {
+                            Err("the compute backend failed during the live stream".to_string())
+                        } else {
+                            stream.finalize().map_err(|e| e.to_string())
+                        };
+                        let result = match finalized {
                             // After finalize the committed prefix holds the full
                             // text; display() = committed + tentative is the safe read.
                             Ok(update) => {
@@ -2226,7 +2257,7 @@ impl TranscriptionManager {
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
-        self.transcribe_internal(audio, None)
+        self.transcribe_recovering(&audio, None)
             .map(|(text, _, _)| text)
     }
 
@@ -2235,7 +2266,7 @@ impl TranscriptionManager {
         audio: Vec<f32>,
         run: StatisticsRunContext,
     ) -> Result<TrackedTranscription> {
-        match self.transcribe_internal(audio, Some(&run)) {
+        match self.transcribe_recovering(&audio, Some(&run)) {
             Ok((text, Some(attempt), language)) => Ok(TrackedTranscription {
                 text,
                 attempt,
@@ -2254,9 +2285,100 @@ impl TranscriptionManager {
         }
     }
 
+    /// [`Self::transcribe_internal`], recovering from a backend error
+    /// (upstream `2eab8fc`, adapted in-process: this app has no worker process to
+    /// replace). A run that fails in the compute backend — a lost GPU device, a
+    /// failed graph compute — has already dropped its engine. The model is
+    /// reloaded once on the same backend and the run retried, since a driver
+    /// reset often clears it; if that fails too, the model runs on CPU for the
+    /// rest of the session ([`mark_cpu_fallback`]) and the run is retried
+    /// there. Never after a failure on CPU, and never on a device chosen by
+    /// index. Each attempt is its own statistics attempt.
+    ///
+    /// What this cannot reach: a GPU fault the backend turns into a process
+    /// abort (a CUDA error goes through `GGML_ABORT`) ends the app before any
+    /// error comes back.
+    fn transcribe_recovering(
+        &self,
+        audio: &[f32],
+        statistics: Option<&StatisticsRunContext>,
+    ) -> Result<(
+        String,
+        Option<PendingStatisticsAttempt>,
+        crate::language_detection::LanguageDecision,
+    )> {
+        let model_id = self.get_current_model();
+        let first = self.transcribe_internal(audio, statistics);
+        let (Err(error), Some(model_id)) = (&first, model_id) else {
+            return first;
+        };
+        let Some(failure) = backend_failure(error) else {
+            return first;
+        };
+        if failure.on_cpu() || self.device_pinned.load(Ordering::Acquire) {
+            return first;
+        }
+        warn!(
+            "Model '{}' hit a backend error on {}: {}; reloading it there and retrying",
+            model_id, failure.backend, failure.message
+        );
+        match self.reload_for_recovery(&model_id) {
+            Ok(true) => {
+                let second = self.transcribe_internal(audio, statistics);
+                match &second {
+                    Err(e) if backend_failure(e).is_some_and(|f| !f.on_cpu()) => {
+                        warn!("Model '{}' failed again on its backend: {}", model_id, e)
+                    }
+                    Ok(_) => {
+                        info!("Model '{}' recovered on its backend", model_id);
+                        return second;
+                    }
+                    Err(_) => return second,
+                }
+            }
+            // Another model took over meanwhile: nothing of ours to recover.
+            Ok(false) => return first,
+            Err(e) => warn!(
+                "Model '{}' could not be reloaded on its backend: {:#}",
+                model_id, e
+            ),
+        }
+        mark_cpu_fallback(&model_id);
+        match self.reload_for_recovery(&model_id) {
+            Ok(true) => self.transcribe_internal(audio, statistics),
+            Ok(false) => first,
+            Err(e) => Err(e.context(format!(
+                "model '{model_id}' could not be reloaded on CPU after a backend error"
+            ))),
+        }
+    }
+
+    /// Reloads `model_id` as the primary model for a recovery retry, under the
+    /// loading flag, so a stream or a run waiting on a load waits on this one.
+    /// `Ok(false)` when another model was loaded meanwhile (a model switch): it
+    /// is the user's, and is left alone.
+    fn reload_for_recovery(&self, model_id: &str) -> Result<bool> {
+        loop {
+            if let Some(_guard) = self.try_start_loading() {
+                if self
+                    .get_current_model()
+                    .is_some_and(|current| current != model_id)
+                {
+                    return Ok(false);
+                }
+                self.load_model(model_id)?;
+                return Ok(true);
+            }
+            let mut is_loading = self.is_loading.lock().unwrap();
+            while *is_loading {
+                is_loading = self.loading_condvar.wait(is_loading).unwrap();
+            }
+        }
+    }
+
     fn transcribe_internal(
         &self,
-        audio: Vec<f32>,
+        audio: &[f32],
         statistics: Option<&StatisticsRunContext>,
     ) -> Result<(
         String,
@@ -2321,7 +2443,7 @@ impl TranscriptionManager {
         // will actually use. The coercion is capability-aware (a must-pick model
         // never receives "auto") and computed fresh here — it is never written
         // back to settings, so the intent survives switching models and back.
-        let language_plan = self.run_language(&settings, &active_model, &audio);
+        let language_plan = self.run_language(&settings, &active_model, audio);
         let validated_language = language_plan.intent().to_string();
         if validated_language != settings.selected_language {
             debug!(
@@ -2442,8 +2564,12 @@ impl TranscriptionManager {
                             run_options.vocabulary.len()
                         );
 
+                        let backend = session.model().backend();
+                        if let Some(injected) = injected_backend_error(&backend) {
+                            return Err(injected);
+                        }
                         session
-                            .run(&audio, &run_options)
+                            .run(audio, &run_options)
                             .map(|t| {
                                 // Whisper's audio-based LID (auto mode only;
                                 // `None` when a language hint was passed).
@@ -2457,18 +2583,48 @@ impl TranscriptionManager {
                                 });
                                 drop_vocabulary_echo(t.text, &run_options.vocabulary)
                             })
-                            .map_err(|e| {
-                                anyhow::anyhow!("transcribe-cpp transcription failed: {}", e)
-                            })
+                            .map_err(|e| engine_run_error(e, &backend))
                     }
                 }
             }));
 
             let text = match transcribe_result {
                 Ok(inner_result) => {
-                    // Success or normal error: return the engine unless a model
-                    // switch/unload invalidated it while it was in use.
-                    self.return_engine(engine, &active_model);
+                    if let Err(e) = &inner_result
+                        && let Some(failure) = backend_failure(e)
+                    {
+                        // A backend error can leave this engine unusable for
+                        // every later run (a lost GPU device): drop it rather
+                        // than give it back. `transcribe_recovering` reloads
+                        // the model; otherwise the next use does.
+                        warn!(
+                            "Dropping the '{}' engine after a backend error on {}",
+                            active_model, failure.backend
+                        );
+                        drop(engine);
+                        {
+                            let mut current = self
+                                .current_model_id
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            if current.as_deref() == Some(active_model.as_str()) {
+                                *current = None;
+                            }
+                        }
+                        let _ = self.app_handle.emit(
+                            "model-state-changed",
+                            ModelStateEvent {
+                                event_type: "unloaded".to_string(),
+                                model_id: None,
+                                model_name: None,
+                                error: Some(e.to_string()),
+                            },
+                        );
+                    } else {
+                        // Success or normal error: return the engine unless a
+                        // model switch/unload invalidated it while in use.
+                        self.return_engine(engine, &active_model);
+                    }
                     match inner_result {
                         Ok(t) => t,
                         Err(e) => {
@@ -3657,7 +3813,7 @@ impl TranscriptionManager {
     /// Transcribe audio with one of the extra model engines.
     /// The engine is temporarily removed from the map, used, and returned.
     pub fn transcribe_with_extra(&self, model_id: &str, audio: Vec<f32>) -> Result<String> {
-        self.transcribe_with_extra_internal(model_id, audio, None)
+        self.transcribe_with_extra_recovering(model_id, &audio, None)
             .map(|(text, _, _)| text)
     }
 
@@ -3667,7 +3823,7 @@ impl TranscriptionManager {
         audio: Vec<f32>,
         run: StatisticsRunContext,
     ) -> Result<TrackedTranscription> {
-        match self.transcribe_with_extra_internal(model_id, audio, Some(&run)) {
+        match self.transcribe_with_extra_recovering(model_id, &audio, Some(&run)) {
             Ok((text, Some(attempt), language)) => Ok(TrackedTranscription {
                 text,
                 attempt,
@@ -3686,10 +3842,67 @@ impl TranscriptionManager {
         }
     }
 
+    /// [`Self::transcribe_with_extra_internal`] with the primary model's
+    /// recovery ([`Self::transcribe_recovering`]): after a backend error the
+    /// extra is reloaded once on its backend, then on CPU, and the decode is
+    /// retried — per model, so one extra falling back never moves another.
+    fn transcribe_with_extra_recovering(
+        &self,
+        model_id: &str,
+        audio: &[f32],
+        statistics: Option<&StatisticsRunContext>,
+    ) -> Result<(
+        String,
+        Option<PendingStatisticsAttempt>,
+        crate::language_detection::LanguageDecision,
+    )> {
+        let first = self.transcribe_with_extra_internal(model_id, audio, statistics);
+        let Err(error) = &first else {
+            return first;
+        };
+        let Some(failure) = backend_failure(error) else {
+            return first;
+        };
+        if failure.on_cpu() {
+            return first;
+        }
+        warn!(
+            "Extra model '{}' hit a backend error on {}: {}; reloading it there and retrying",
+            model_id, failure.backend, failure.message
+        );
+        match self.load_extra_model(model_id) {
+            Ok(_) => {
+                let second = self.transcribe_with_extra_internal(model_id, audio, statistics);
+                match &second {
+                    Err(e) if backend_failure(e).is_some_and(|f| !f.on_cpu()) => warn!(
+                        "Extra model '{}' failed again on its backend: {}",
+                        model_id, e
+                    ),
+                    Ok(_) => {
+                        info!("Extra model '{}' recovered on its backend", model_id);
+                        return second;
+                    }
+                    Err(_) => return second,
+                }
+            }
+            Err(e) => warn!(
+                "Extra model '{}' could not be reloaded on its backend: {:#}",
+                model_id, e
+            ),
+        }
+        mark_cpu_fallback(model_id);
+        self.load_extra_model(model_id).map_err(|e| {
+            e.context(format!(
+                "extra model '{model_id}' could not be reloaded on CPU after a backend error"
+            ))
+        })?;
+        self.transcribe_with_extra_internal(model_id, audio, statistics)
+    }
+
     fn transcribe_with_extra_internal(
         &self,
         model_id: &str,
-        audio: Vec<f32>,
+        audio: &[f32],
         statistics: Option<&StatisticsRunContext>,
     ) -> Result<(
         String,
@@ -3738,13 +3951,13 @@ impl TranscriptionManager {
         // The slot's own plan against its own model: a pinned slot keeps its
         // language; a slot whose model cannot detect gets the detector's pick,
         // shared with the other slots of this recording (one run, cached).
-        let language_plan = self.run_language(&settings, model_id, &audio);
+        let language_plan = self.run_language(&settings, model_id, audio);
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(
                 &mut engine,
                 &settings,
-                &audio,
+                audio,
                 model_id,
                 &self.model_manager,
                 Some(language_plan.intent()),
@@ -3767,6 +3980,15 @@ impl TranscriptionManager {
                     &output.supported_languages,
                 );
                 (Ok(filtered), Some(engine))
+            }
+            // A backend error can leave the engine unusable (see the primary
+            // path): it is dropped, and the recovering caller reloads it.
+            Ok(Err(e)) if backend_failure(&e).is_some() => {
+                warn!(
+                    "Dropping extra model '{}' engine after a backend error",
+                    model_id
+                );
+                (Err(e), None)
             }
             Ok(Err(e)) => (Err(e), Some(engine)),
             Err(panic_payload) => {
@@ -4827,13 +5049,17 @@ fn transcribe_with_engine(
     };
 
     let mut model_detected_language: Option<String> = None;
+    let backend = session.model().backend();
+    if let Some(injected) = injected_backend_error(&backend) {
+        return Err(injected);
+    }
     let text = session
         .run(audio, &run_options)
         .map(|t| {
             model_detected_language = t.language;
             drop_vocabulary_echo(t.text, &run_options.vocabulary)
         })
-        .map_err(|e| anyhow::anyhow!("transcribe-cpp transcription failed: {}", e))?;
+        .map_err(|e| engine_run_error(e, &backend))?;
 
     let output_language = with_model_detected_language(
         resolve_output_language_evidence(
@@ -5181,6 +5407,121 @@ pub fn get_effective_r2t2_chunk_ms(settings: &AppSettings, model_id: &str) -> u3
     )
 }
 
+/// A run that failed in the compute backend (`ErrorKind::Backend`: a lost GPU
+/// device, a failed graph compute; the engine maps every C++ exception at its
+/// API to it). Carried in the `anyhow` error so the recovering callers can
+/// tell it from other failures, and displayed exactly as the plain error was.
+#[derive(Debug)]
+struct BackendRunError {
+    message: String,
+    /// `Model::backend()` of the engine that failed (`cpu`, `vulkan`, ...).
+    backend: String,
+}
+
+impl BackendRunError {
+    fn on_cpu(&self) -> bool {
+        self.backend.eq_ignore_ascii_case("cpu")
+    }
+}
+
+impl std::fmt::Display for BackendRunError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "transcribe-cpp transcription failed: {}", self.message)
+    }
+}
+
+impl std::error::Error for BackendRunError {}
+
+/// The error a failed `Session::run` becomes: a [`BackendRunError`] for a
+/// backend failure, the plain message otherwise.
+fn engine_run_error(e: transcribe_cpp::Error, backend: &str) -> anyhow::Error {
+    if e.kind() == ErrorKind::Backend {
+        anyhow::Error::new(BackendRunError {
+            message: e.to_string(),
+            backend: backend.to_string(),
+        })
+    } else {
+        anyhow::anyhow!("transcribe-cpp transcription failed: {}", e)
+    }
+}
+
+/// The backend failure behind `error`, if that is what it is.
+fn backend_failure(error: &anyhow::Error) -> Option<&BackendRunError> {
+    error.downcast_ref::<BackendRunError>()
+}
+
+/// Development-only fault injection for the recovery path:
+/// `<PREFIX>FORCE_BACKEND_ERROR=once` fails the next batch run on a GPU engine
+/// with a backend error, `=always` every one (so the model ends on CPU, where
+/// nothing is injected). Primary and extras alike; release builds never read it.
+#[cfg(debug_assertions)]
+fn injected_backend_error(backend: &str) -> Option<anyhow::Error> {
+    static FIRED: AtomicBool = AtomicBool::new(false);
+    let mode = crate::utils::app_env_var("FORCE_BACKEND_ERROR")?;
+    if backend.eq_ignore_ascii_case("cpu") {
+        return None;
+    }
+    match mode.trim() {
+        "always" => {}
+        "once" if !FIRED.swap(true, Ordering::AcqRel) => {}
+        _ => return None,
+    }
+    warn!("Injecting a backend error on {backend} (FORCE_BACKEND_ERROR={mode})");
+    Some(anyhow::Error::new(BackendRunError {
+        message: "injected backend error".to_string(),
+        backend: backend.to_string(),
+    }))
+}
+
+#[cfg(not(debug_assertions))]
+fn injected_backend_error(_backend: &str) -> Option<anyhow::Error> {
+    None
+}
+
+/// Models whose GPU backend failed twice in a row this session: they load on
+/// CPU ([`resolve_model_backend`]) until the user changes a backend setting
+/// ([`clear_cpu_fallbacks`]) or the app restarts. Per model id, so one model
+/// falling back never moves another (a second GPU, a per-model backend).
+static CPU_FALLBACK_MODELS: std::sync::LazyLock<Mutex<HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn cpu_fallback_active(model_id: &str) -> bool {
+    CPU_FALLBACK_MODELS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(model_id)
+}
+
+/// Sends `model_id` to CPU for the rest of the session after its GPU backend
+/// failed twice.
+fn mark_cpu_fallback(model_id: &str) {
+    let newly = CPU_FALLBACK_MODELS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(model_id.to_string());
+    if newly {
+        error!(
+            "Model '{}' failed twice on its GPU backend; it runs on CPU until a backend setting changes or the app restarts",
+            model_id
+        );
+    }
+}
+
+/// Forgets every CPU fallback: an explicit accelerator, GPU device or
+/// per-model backend choice asks for the GPU again.
+pub fn clear_cpu_fallbacks() {
+    let mut models = CPU_FALLBACK_MODELS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if !models.is_empty() {
+        info!(
+            "Backend setting changed; {} model(s) may use their GPU again",
+            models.len()
+        );
+        models.clear();
+    }
+}
+
 /// Resolve the `(backend, device)` a **specific** model should load with.
 ///
 /// This is the single place the two load sites (the primary model and
@@ -5196,8 +5537,9 @@ fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Op
     let accelerator = settings.transcribe_accelerator;
     let requested = get_effective_model_backend(settings, model_id);
     // An emulated x64 process on Windows ARM64 has no GPU backends at all, so
-    // every GPU request — global or per-model — collapses to CPU there.
-    let requested = if transcribe_gpu_disabled_for_host() {
+    // every GPU request — global or per-model — collapses to CPU there. So does
+    // a model whose GPU backend failed twice this session (`mark_cpu_fallback`).
+    let requested = if transcribe_gpu_disabled_for_host() || cpu_fallback_active(model_id) {
         ModelBackendSetting::Cpu
     } else {
         requested
@@ -5514,6 +5856,66 @@ impl Drop for TranscriptionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_backend_error_is_told_apart_and_reads_as_before() {
+        let gpu = engine_run_error(
+            transcribe_cpp::Error::Backend("device lost".into()),
+            "vulkan",
+        );
+        let failure = backend_failure(&gpu).expect("a backend error is classified");
+        assert!(!failure.on_cpu());
+        // Exactly what the plain `anyhow!` produced before.
+        assert_eq!(
+            gpu.to_string(),
+            format!(
+                "transcribe-cpp transcription failed: {}",
+                transcribe_cpp::Error::Backend("device lost".into())
+            )
+        );
+
+        let cpu = engine_run_error(transcribe_cpp::Error::Backend("compute".into()), "CPU");
+        assert!(backend_failure(&cpu).unwrap().on_cpu());
+
+        let other = engine_run_error(transcribe_cpp::Error::Other("bad input".into()), "vulkan");
+        assert!(backend_failure(&other).is_none());
+        assert_eq!(
+            other.to_string(),
+            format!(
+                "transcribe-cpp transcription failed: {}",
+                transcribe_cpp::Error::Other("bad input".into())
+            )
+        );
+    }
+
+    #[test]
+    fn a_cpu_fallback_moves_only_its_model_until_cleared() {
+        // Unique ids: the registry is process-wide and tests run in parallel.
+        let fallen = "test-fallback/model-Q8_0.gguf";
+        let other = "test-fallback/other-Q8_0.gguf";
+        let settings = crate::settings::get_default_settings();
+        let before = resolve_model_backend(&settings, fallen);
+
+        mark_cpu_fallback(fallen);
+        assert!(cpu_fallback_active(fallen));
+        assert!(!cpu_fallback_active(other));
+        assert!(matches!(
+            resolve_model_backend(&settings, fallen),
+            (Backend::Cpu, None)
+        ));
+        assert_eq!(
+            format!("{:?}", resolve_model_backend(&settings, other)),
+            format!("{before:?}"),
+            "another model moved with it"
+        );
+
+        clear_cpu_fallbacks();
+        assert!(!cpu_fallback_active(fallen));
+        assert_eq!(
+            format!("{:?}", resolve_model_backend(&settings, fallen)),
+            format!("{before:?}")
+        );
+    }
 
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()

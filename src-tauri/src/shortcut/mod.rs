@@ -2230,6 +2230,9 @@ pub fn change_show_tray_icon_setting(app: AppHandle, enabled: bool) -> Result<()
 /// The currently running transcription, if any, keeps its existing engine.
 fn save_accelerator_and_reload_next_use(app: &AppHandle, s: settings::AppSettings) {
     settings::write_settings(app, s);
+    // An explicit backend choice asks for the GPU again, even for a model that
+    // fell back to CPU after a backend error this session.
+    crate::managers::transcription::clear_cpu_fallbacks();
 
     let tm = app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
     tm.reload_model_on_next_use();

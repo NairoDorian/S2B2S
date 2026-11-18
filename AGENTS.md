@@ -316,7 +316,15 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
     they were not sent; a result that is only the word list read back is
     dropped (`echoes_vocabulary`). Live streams do not send it (R2T2's
     streaming ticks decode without the run params while the model advertises
-    the feature), so they keep the fuzzy correction
+    the feature), so they keep the fuzzy correction. A run that fails in the
+    compute backend (`ErrorKind::Backend`, carried as `BackendRunError`)
+    drops its engine; `transcribe_recovering` / `transcribe_with_extra_recovering`
+    reload the model once on its backend and retry, then on CPU for the rest
+    of the session (`mark_cpu_fallback`, read by `resolve_model_backend`,
+    cleared by any backend setting change), never after a CPU failure or on a
+    `--device-index` device. A stream whose feed fails that way stops feeding
+    and hands the recording to the batch path at stop. Debug builds inject
+    the error with `ZER0_FORCE_BACKEND_ERROR=once|always`
   - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum.
     Each row records the language its text came out in and how it was chosen
     (`language` + `language_source`: selected / model / detected / fallback,

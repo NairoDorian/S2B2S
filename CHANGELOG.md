@@ -864,6 +864,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A GPU error no longer breaks transcription until restart (2026-11-18).**
+  When the graphics backend failed during a transcription (a lost Vulkan
+  device, a driver reset), the model stayed loaded in a broken state and every
+  later dictation failed. Now the model is reloaded and the transcription
+  retried on the same GPU; if it fails again, that model switches to the CPU
+  for the rest of the session (changing any backend setting tries the GPU
+  again). Applies to the main model and each Multi-STT model separately. A
+  CUDA fault still closes the app (see docs/KNOWN_ISSUES.md). Adapted from
+  upstream.
+
 - **Deleting a model keeps its other quantizations (2026-11-18).** Deleting a
   catalog model removed its whole download folder, so a second quantization of
   the same model (say a Q4_K_M next to the default Q8_0) disappeared with it.

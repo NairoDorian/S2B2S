@@ -735,6 +735,9 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         pipeline_runs[i]["text"] = serde_json::json!(text);
         pipeline_runs[i]["wall_ms"] = serde_json::json!(times_ms[i]);
     }
+    // A backend error recovered by reloading (on CPU after a second one)
+    // changes the backend the runs finished on: report that one.
+    let bound_backend = tm.current_backend().or(bound_backend);
     let warm_mean_ms = (times_ms[1] + times_ms[2]) / 2.0;
     let best_ms = times_ms[1].min(times_ms[2]);
     let rtf = if warm_mean_ms > 0.0 {
