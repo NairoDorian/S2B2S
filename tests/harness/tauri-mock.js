@@ -238,6 +238,8 @@
     overlay_stream_text_height: 0,
     //   What Auto does for the selected model: the plain "it just works" case.
     get_language_status: { kind: "auto" },
+    //   The same per extra Multi-STT slot; no slot has a model in the fixture.
+    get_multi_stt_language_statuses: [],
   };
 
   // Structured results (paginated history, statistics summary, arch plugins)

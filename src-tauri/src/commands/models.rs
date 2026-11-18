@@ -554,6 +554,39 @@ pub fn get_language_status(
     ))
 }
 
+/// What Auto does for each extra Multi-STT slot, in slot order ("Model 2"
+/// first): the slot's own language over its own model, through the same
+/// policy as [`get_language_status`] and the slot's runs
+/// (`apply_extra_model_settings`). `None` for an empty slot or a model the
+/// registry does not know. One call for the whole page.
+#[tauri::command]
+#[specta::specta]
+pub fn get_multi_stt_language_statuses(
+    app: AppHandle,
+) -> Result<Vec<Option<crate::language_detection::LanguageStatus>>, String> {
+    let settings = crate::settings::get_settings(&app);
+    let model_manager = app.state::<Arc<ModelManager>>();
+    let detector_ready = model_manager.language_detector_path().is_some();
+    Ok(settings
+        .multi_stt_extra_models
+        .iter()
+        .map(|slot| {
+            let model_id = slot.model_id.as_deref()?;
+            let model = model_manager.get_model_info(model_id)?;
+            let mut slot_settings = settings.clone();
+            crate::managers::transcription::apply_extra_model_settings(
+                &mut slot_settings,
+                model_id,
+            );
+            Some(crate::language_detection::status_for(
+                &slot_settings,
+                Some(&model),
+                detector_ready,
+            ))
+        })
+        .collect())
+}
+
 /// Download the spoken-language detector now (≈27 MB, once). Progress and
 /// completion arrive as the usual model-download events under the
 /// detector's id.

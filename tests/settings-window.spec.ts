@@ -605,6 +605,81 @@ test.describe("post-processing model combobox", () => {
  * `src/i18n/index.ts` is still doing its job), and the switch has to reach the
  * backend as a settings write.
  */
+/**
+ * A Multi-STT slot explains its own language plan. Slot "Model 2" runs a model
+ * that cannot tell French from English by itself, the user speaks both, and the
+ * detector is not on disk: the slot says what Auto falls back to and offers the
+ * download, exactly as the General page's line does for the primary model.
+ */
+test.describe("Multi-STT slot language", () => {
+  test.use({
+    settingsOverrides: {
+      multi_stt_enabled: true,
+      spoken_languages: ["fr", "en"],
+      multi_stt_extra_models: [{ model_id: "canary-test", language: null }],
+    },
+  });
+
+  test("a slot explains its plan and offers the detector", async ({ page }) => {
+    const crashes = watchForCrashes(page);
+    await page.addInitScript(() => {
+      (window as any).__TAURI_MOCK_REPLIES__ = {
+        get_available_models: [
+          {
+            id: "canary-test",
+            name: "Canary Test",
+            description: "",
+            filename: "canary-test.gguf",
+            source: {
+              Url: { url: "https://example.invalid/canary-test.gguf" },
+            },
+            size_mb: 1,
+            is_downloaded: true,
+            is_downloading: false,
+            partial_size: null,
+            accuracy_score: null,
+            speed_score: null,
+            supports_translation: false,
+            is_recommended: false,
+            supported_languages: ["en", "fr", "de"],
+            supports_language_selection: true,
+            is_custom: false,
+            supports_streaming: false,
+            supports_language_detection: false,
+          },
+        ],
+        get_multi_stt_language_statuses: [
+          { kind: "detector_missing", fallback: "fr" },
+        ],
+      };
+    });
+    await boot(page);
+    await sidebarButton(page, "Multi STT").click();
+
+    await expect(
+      page.getByText(/until it is downloaded, Auto transcribes in French/),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Download the detector" }).click();
+    await expect
+      .poll(async () =>
+        (await calls(page)).some((c) => c.cmd === "download_language_detector"),
+      )
+      .toBe(true);
+    // The list is asked for again after the download.
+    await expect
+      .poll(
+        async () =>
+          (await calls(page)).filter(
+            (c) => c.cmd === "get_multi_stt_language_statuses",
+          ).length,
+      )
+      .toBeGreaterThan(1);
+
+    expect(await unhandled(page)).toEqual([]);
+    expect(crashes).toEqual([]);
+  });
+});
+
 test.describe("language switch", () => {
   test("re-renders the window in the chosen language", async ({ page }) => {
     const crashes = watchForCrashes(page);

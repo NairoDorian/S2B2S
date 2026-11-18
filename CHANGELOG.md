@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each Multi-STT slot explains its language plan (2026-11-18).** Under a
+  slot's language control, the same line the General page shows for the
+  primary model: what Auto falls back to with that slot's model and language,
+  and why (the language detector is not downloaded, only one of your
+  languages fits the model, or none does), with the detector download where
+  it applies.
+
 - **History shows each transcription's language (2026-11-18).** A row now
   records the language its text came out in and how it was chosen: the one
   you picked, the model's own detection, the language detector's pick from

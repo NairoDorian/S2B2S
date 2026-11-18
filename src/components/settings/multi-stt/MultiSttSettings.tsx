@@ -28,7 +28,8 @@ import {
 } from "@/lib/streamingLatency";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
-import { commands } from "@/bindings";
+import { commands, type LanguageStatus } from "@/bindings";
+import { languageStatusText } from "@/lib/languageStatus";
 import { ModelStateEvent } from "@/lib/types/events";
 import {
   SELECTABLE_LANGUAGES,
@@ -62,6 +63,12 @@ interface PerModelLanguageSelectorProps {
   modelInfo: ModelInfo | undefined;
   language: string | null;
   onSelect: (language: string | null) => void;
+  /** What Auto does for this slot (`get_multi_stt_language_statuses`). */
+  languageStatus: LanguageStatus | null;
+  /** Whether the user listed any spoken languages (the line needs some). */
+  hasSpokenLanguages: boolean;
+  onDownloadDetector: () => void;
+  detectorDownloading: boolean;
 }
 
 const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
@@ -107,6 +114,17 @@ const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
       ? (getLanguageLabel("auto") ?? t("settings.general.language.auto"))
       : (getLanguageLabel(effectiveLang()) ?? t("multiStt.models.notSelected"));
 
+  // The slot's plan under its control, worded as on the General page: what
+  // Auto falls back to, and why, for this slot's model and language.
+  const statusText = () =>
+    props.hasSpokenLanguages
+      ? languageStatusText(
+          props.languageStatus,
+          t,
+          (code) => getLanguageLabel(code) ?? code,
+        )
+      : null;
+
   return (
     <Show when={props.modelId && props.modelInfo ? props.modelInfo : undefined}>
       {(modelInfo) => (
@@ -131,6 +149,25 @@ const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
               class="min-w-[140px]"
             />
           </div>
+          <Show when={statusText()}>
+            {(text) => (
+              <div class="mt-1 ml-1 flex flex-wrap items-center gap-2 text-[11px] leading-snug text-amber-400/80">
+                <span>{text()}</span>
+                <Show when={props.languageStatus?.kind === "detector_missing"}>
+                  <button
+                    type="button"
+                    onClick={() => props.onDownloadDetector()}
+                    disabled={props.detectorDownloading}
+                    class="rounded px-1 text-accent hover:bg-mid-gray/10 disabled:opacity-50"
+                  >
+                    {props.detectorDownloading
+                      ? t("settings.general.spokenLanguages.status.downloading")
+                      : t("settings.general.spokenLanguages.status.download")}
+                  </button>
+                </Show>
+              </div>
+            )}
+          </Show>
         </Show>
       )}
     </Show>
@@ -141,6 +178,10 @@ interface ExtraModelSlotProps {
   /** The slot's "Model N" number (2 is the first extra). */
   slot: number;
   config: ExtraSlotConfig;
+  languageStatus: LanguageStatus | null;
+  hasSpokenLanguages: boolean;
+  onDownloadDetector: () => void;
+  detectorDownloading: boolean;
   /** Downloaded models this slot may pick: none that another slot runs. */
   options: DropdownOption[];
   modelInfo: ModelInfo | undefined;
@@ -298,6 +339,10 @@ const ExtraModelSlot = (props: ExtraModelSlotProps) => {
         modelInfo={props.modelInfo}
         language={props.config.language ?? null}
         onSelect={(language) => props.onChange({ language })}
+        languageStatus={props.languageStatus}
+        hasSpokenLanguages={props.hasSpokenLanguages}
+        onDownloadDetector={props.onDownloadDetector}
+        detectorDownloading={props.detectorDownloading}
       />
       <Show
         when={
@@ -352,6 +397,55 @@ export const MultiSttSettings = () => {
   const currentModel = () => store.currentModel;
 
   const multiSttEnabled = () => getSetting("multi_stt_enabled") ?? false;
+
+  // Each extra slot's language plan, fetched in one call: refetched when the
+  // spoken languages, the global language or any slot changes, and when the
+  // detector finishes downloading (here, on the General page, or in the
+  // background).
+  const [languageStatuses, setLanguageStatuses] = createSignal<
+    (LanguageStatus | null)[]
+  >([]);
+  const [detectorDownloading, setDetectorDownloading] = createSignal(false);
+  const refreshLanguageStatuses = async () => {
+    const result = await commands.getMultiSttLanguageStatuses();
+    setLanguageStatuses(result.status === "ok" ? result.data : []);
+  };
+  createEffect(
+    () => [
+      (getSetting("spoken_languages") ?? []).join(","),
+      getSetting("selected_language"),
+      JSON.stringify(getSetting("multi_stt_extra_models") ?? []),
+    ],
+    () => {
+      void refreshLanguageStatuses();
+    },
+  );
+  createEffect(
+    () => undefined,
+    () => {
+      let cancelled = false;
+      let unlisten: (() => void) | undefined;
+      listen<string>("model-download-complete", () => {
+        void refreshLanguageStatuses();
+      }).then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
+      return () => {
+        cancelled = true;
+        unlisten?.();
+      };
+    },
+  );
+  const downloadDetector = async () => {
+    setDetectorDownloading(true);
+    try {
+      await commands.downloadLanguageDetector();
+    } finally {
+      setDetectorDownloading(false);
+      void refreshLanguageStatuses();
+    }
+  };
   const extraSlots = (): ExtraSlotConfig[] =>
     (getSetting("multi_stt_extra_models") ?? []).map((slot) => ({
       model_id: slot.model_id ?? null,
@@ -622,6 +716,12 @@ export const MultiSttSettings = () => {
                   <ExtraModelSlot
                     slot={index + 2}
                     config={config()}
+                    languageStatus={languageStatuses()[index] ?? null}
+                    hasSpokenLanguages={
+                      (getSetting("spoken_languages") ?? []).length > 0
+                    }
+                    onDownloadDetector={() => void downloadDetector()}
+                    detectorDownloading={detectorDownloading()}
                     options={modelOptionsFor(index)}
                     modelInfo={modelInfoFor(config().model_id)}
                     isLoaded={hasId(loadedExtraModels(), config().model_id)}

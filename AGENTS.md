@@ -471,7 +471,11 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
 download_language_detector`) when a plan wants it or when the list is
   saved and a model needs it (`language_detector_needed`, decision D8); that
   run uses the first preferred language. `get_language_status` /
-  `download_language_detector` serve the line under the list
+  `download_language_detector` serve the line under the list;
+  `get_multi_stt_language_statuses` gives each extra Multi-STT slot the same
+  line under its language control (one call for the page: the slot's
+  settings view, `apply_extra_model_settings`, through `status_for`). Both
+  word it through `src/lib/languageStatus.ts`
 - `job_object.rs` - The Windows job object (kill-on-close) that ties
   `llama-server` to the app's lifetime when `llama.stop_on_exit` is on; a
   no-op elsewhere

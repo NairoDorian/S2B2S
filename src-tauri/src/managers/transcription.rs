@@ -3173,7 +3173,7 @@ pub(crate) fn language_detector_needed(
             })
 }
 
-fn apply_extra_model_settings(settings: &mut AppSettings, model_id: &str) {
+pub(crate) fn apply_extra_model_settings(settings: &mut AppSettings, model_id: &str) {
     let Some(slot) = settings.multi_stt_extra_slot_for(model_id).cloned() else {
         return;
     };

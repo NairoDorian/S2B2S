@@ -11,6 +11,7 @@ import {
   MODEL_CAPABILITY_LANGUAGES,
 } from "../../lib/constants/languages";
 import { isComposingKeyEvent } from "@/lib/utils/keyboard";
+import { languageStatusText } from "@/lib/languageStatus";
 
 interface SpokenLanguagesProps {
   descriptionMode?: "inline" | "tooltip";
@@ -86,34 +87,8 @@ export const SpokenLanguages = (props: SpokenLanguagesProps): JSX.Element => {
   };
 
   // The line under the list; nothing when Auto simply works.
-  const statusText = (): string | null => {
-    const current = status();
-    if (!current || spoken().length === 0) return null;
-    switch (current.kind) {
-      case "detector_missing":
-        return t("settings.general.spokenLanguages.status.detectorMissing", {
-          language: label(current.fallback),
-        });
-      case "auto_unavailable": {
-        const language = label(current.language);
-        const reason = current.reason;
-        if (reason.kind === "undetectable")
-          return t("settings.general.spokenLanguages.status.undetectable", {
-            language,
-            languages: reason.languages.map(label).join(", "),
-          });
-        if (reason.kind === "no_match")
-          return t("settings.general.spokenLanguages.status.noMatch", {
-            language,
-          });
-        return t("settings.general.spokenLanguages.status.oneLanguage", {
-          language,
-        });
-      }
-      default:
-        return null;
-    }
-  };
+  const statusText = (): string | null =>
+    spoken().length === 0 ? null : languageStatusText(status(), t, label);
 
   const addable = createMemo(() => {
     const chosen = new Set(spoken());

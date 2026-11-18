@@ -321,6 +321,14 @@ export const commands = {
 	 */
 	getLanguageStatus: (options?: InvokeOptions) => typedError<LanguageStatus, string>(__TAURI_INVOKE("get_language_status", undefined, options)),
 	/**
+	 *  What Auto does for each extra Multi-STT slot, in slot order ("Model 2"
+	 *  first): the slot's own language over its own model, through the same
+	 *  policy as [`get_language_status`] and the slot's runs
+	 *  (`apply_extra_model_settings`). `None` for an empty slot or a model the
+	 *  registry does not know. One call for the whole page.
+	 */
+	getMultiSttLanguageStatuses: (options?: InvokeOptions) => typedError<(LanguageStatus | null)[], string>(__TAURI_INVOKE("get_multi_stt_language_statuses", undefined, options)),
+	/**
 	 *  Download the spoken-language detector now (≈27 MB, once). Progress and
 	 *  completion arrive as the usual model-download events under the
 	 *  detector's id.
