@@ -490,8 +490,7 @@ fn hf_cached_path_in(
     revision: &str,
     filename: &str,
 ) -> Option<PathBuf> {
-    let repo_folder = format!("models--{}", repo_id.replace('/', "--"));
-    let repo_path = cache_dir.join(&repo_folder);
+    let repo_path = cache_dir.join(hf_repo_folder(repo_id));
 
     let resolve_commit = |rev: &str| -> Option<String> {
         if rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -534,6 +533,106 @@ fn hf_cached_path_in(
         .into_iter()
         .map(|snapshot| snapshot.join(filename))
         .find(|path| path.exists())
+}
+
+/// hf-hub's folder name for a model repo: `org/name` → `models--org--name`.
+fn hf_repo_folder(repo_id: &str) -> String {
+    format!("models--{}", repo_id.replace('/', "--"))
+}
+
+/// Every cached copy of `filename` in `repo_id` across `cache_dirs`: the
+/// file under each snapshot of the repo (the pin, `main`, an older pin and a
+/// ref-less folder alike — [`hf_cached_path_in`] accepts each of them), with
+/// dangling pointers included so a delete cleans those up too.
+fn hf_cached_copies_in(cache_dirs: &[PathBuf], repo_id: &str, filename: &str) -> Vec<PathBuf> {
+    cache_dirs
+        .iter()
+        .flat_map(|dir| hf_snapshots_newest_first(&dir.join(hf_repo_folder(repo_id))))
+        .map(|snapshot| snapshot.join(filename))
+        .filter(|path| path.is_file() || path.is_symlink())
+        .collect()
+}
+
+/// The `models--org--name` dir a cached file lives in.
+fn hf_repo_dir(cached_file: &Path) -> Option<PathBuf> {
+    cached_file
+        .ancestors()
+        .find(|dir| {
+            dir.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("models--"))
+        })
+        .map(Path::to_path_buf)
+}
+
+/// The blob a snapshot pointer owns, if it may be deleted along with it
+/// (upstream `93c9ee0`): `None` for a plain file (on Windows hf-hub's symlink
+/// fallback renames the blob into the snapshot, so the pointer is the data), a
+/// dangling pointer (copies at other pins can share a blob that is already
+/// gone), a target outside the repo's `blobs/`, and a blob another filename
+/// still references.
+fn unshared_blob(pointer: &Path, deleting: &HashSet<PathBuf>) -> std::io::Result<Option<PathBuf>> {
+    let is_symlink = fs::symlink_metadata(pointer)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    let Some(repo_dir) = hf_repo_dir(pointer).filter(|_| is_symlink) else {
+        return Ok(None);
+    };
+    let blob = match fs::canonicalize(pointer) {
+        Ok(blob) => blob,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    // Only ever an HF blob, never an arbitrary symlink target.
+    let blobs = fs::canonicalize(repo_dir.join("blobs"))?;
+    if blob.parent() != Some(blobs.as_path())
+        || blob_is_shared(&repo_dir.join("snapshots"), &blob, deleting)?
+    {
+        return Ok(None);
+    }
+    Ok(Some(blob))
+}
+
+/// Whether a pointer other than the ones being deleted resolves to `blob`,
+/// subfolders included. A listing error is returned rather than guessing that
+/// the blob is unshared.
+fn blob_is_shared(dir: &Path, blob: &Path, deleting: &HashSet<PathBuf>) -> std::io::Result<bool> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if deleting.contains(&path) {
+            continue;
+        }
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            if blob_is_shared(&path, blob, deleting)? {
+                return Ok(true);
+            }
+        } else if kind.is_symlink() {
+            match fs::canonicalize(&path) {
+                Ok(target) if target == blob => return Ok(true),
+                Ok(_) => {}
+                // Another dangling pointer cannot be holding this blob.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// `fs::remove_file`, where a file that is already gone counts as nothing
+/// removed rather than an error (deleting stays idempotent), and a failure
+/// names the file: a delete can stop partway through several copies.
+fn remove_file_if_present(path: &Path) -> std::io::Result<bool> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(std::io::Error::new(
+            e.kind(),
+            format!("couldn't remove {}: {}", path.display(), e),
+        )),
+    }
 }
 
 /// A cache repo folder's snapshot directories, newest first.
@@ -1315,26 +1414,42 @@ impl ModelManager {
             .is_some_and(|model| model.is_downloaded)
     }
 
-    /// Remove a single file from the shared HF cache: the snapshot pointer for
-    /// the resolved revision and, when the pointer is a symlink, the blob it
-    /// points to. Everything else in the repo (other quants, refs) is left
-    /// untouched. Returns whether anything was removed.
-    fn delete_hf_cache_file(repo_id: &str, revision: &str, filename: &str) -> bool {
-        let Some(pointer) = hf_cached_path(repo_id, revision, filename) else {
-            return false;
-        };
-        // Resolve the blob before the pointer goes away. On Windows the
-        // pointer may be a plain file (hf-hub's symlink fallback renames the
-        // blob into the snapshot), in which case there is no separate blob.
-        let is_symlink = fs::symlink_metadata(&pointer)
-            .map(|m| m.file_type().is_symlink())
-            .unwrap_or(false);
-        if is_symlink && let Ok(blob) = fs::canonicalize(&pointer) {
-            info!("Deleting HF cache blob at: {:?}", blob);
-            let _ = fs::remove_file(&blob);
+    /// Remove every cached copy of `filename` and its unshared blobs from the
+    /// HF caches. Everything else in the repo (other quants, refs, empty
+    /// directories) is left alone. Returns whether anything was removed, or the
+    /// error that kept the model's file on disk.
+    fn delete_hf_cache_file(repo_id: &str, filename: &str) -> std::io::Result<bool> {
+        Self::delete_hf_cache_file_in(&hf_cache_dirs(), repo_id, filename)
+    }
+
+    fn delete_hf_cache_file_in(
+        cache_dirs: &[PathBuf],
+        repo_id: &str,
+        filename: &str,
+    ) -> std::io::Result<bool> {
+        let pointers = hf_cached_copies_in(cache_dirs, repo_id, filename);
+        let deleting: HashSet<PathBuf> = pointers.iter().cloned().collect();
+
+        let mut deleted = false;
+        for pointer in pointers {
+            // The blob goes first: if it cannot be removed, the pointer still
+            // marks the model as downloaded, which stays true.
+            match unshared_blob(&pointer, &deleting) {
+                Ok(Some(blob)) => {
+                    info!("Deleting HF cache blob at: {:?}", blob);
+                    deleted |= remove_file_if_present(&blob)?;
+                }
+                Ok(None) => {}
+                // Cannot tell which blob it is or whether it is shared (e.g.
+                // canonicalize is unsupported on some Windows volumes): keep
+                // the blob rather than fail the delete or guess. At worst its
+                // space stays used.
+                Err(e) => warn!("Keeping HF cache blob for {:?}: {}", pointer, e),
+            }
+            info!("Deleting HF cache file at: {:?}", pointer);
+            deleted |= remove_file_if_present(&pointer)?;
         }
-        info!("Deleting HF cache file at: {:?}", pointer);
-        fs::remove_file(&pointer).is_ok()
+        Ok(deleted)
     }
 
     fn auto_select_model_if_needed(&self) -> Result<()> {
@@ -2178,59 +2293,50 @@ impl ModelManager {
 
         debug!("ModelManager: Found model info: {:?}", model_info);
 
-        if let ModelSource::HuggingFace { repo_id, revision } = &model_info.source {
-            let is_alternate_quant =
-                Self::is_catalog_alternate_quant(repo_id, &model_info.filename);
-            let mut deleted = false;
-            if is_alternate_quant {
-                // Only this quant's own file: the snapshot pointer and its
-                // blob. The default (and any other quants) survive in the
-                // cache — the entry never owned more than its one file.
-                deleted |= Self::delete_hf_cache_file(repo_id, revision, &model_info.filename);
-            } else if let Some(file) = hf_cached_path(repo_id, revision, &model_info.filename) {
-                // Cached at <cache>/models--org--name/snapshots/<rev>/<file>; remove
-                // the whole repo dir (blobs + refs + snapshots). Per product decision,
-                // delete hard-removes from the shared HF cache.
-                if let Some(repo_dir) = file.ancestors().nth(3)
-                    && repo_dir
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with("models--"))
-                {
-                    info!("Deleting HF cache repo at: {:?}", repo_dir);
-                    fs::remove_dir_all(repo_dir)?;
-                    deleted = true;
+        if let ModelSource::HuggingFace { repo_id, .. } = &model_info.source {
+            // Only this entry's own file, every cached copy of it (upstream
+            // `93c9ee0`). Other quants of the repo are separate entries:
+            // deleting the default must not take a Q4_K_M the user also
+            // downloaded with it, which removing the whole repo folder did.
+            // Per product decision this hard-removes from every HF cache,
+            // including one shared with other apps. A file that cannot be
+            // removed (in use on Windows, permissions) fails the delete so the
+            // UI says so; copies removed before it stay removed.
+            let removal = (|| -> std::io::Result<bool> {
+                let mut deleted = Self::delete_hf_cache_file(repo_id, &model_info.filename)?;
+                // Also a models-dir copy (mirror fallback / manual drop-in) and
+                // any resumable partial next to it.
+                for path in [
+                    self.models_dir.join(&model_info.filename),
+                    self.models_dir
+                        .join(format!("{}.partial", model_info.filename)),
+                ] {
+                    if path.exists() {
+                        info!("Deleting model file at: {:?}", path);
+                    }
+                    deleted |= remove_file_if_present(&path)?;
                 }
-            }
-            // Also remove a models-dir copy (mirror fallback / manual drop-in)
-            // and any resumable partial next to it.
-            for path in [
-                self.models_dir.join(&model_info.filename),
-                self.models_dir
-                    .join(format!("{}.partial", model_info.filename)),
-            ] {
-                if path.exists() {
-                    info!("Deleting model file at: {:?}", path);
-                    fs::remove_file(&path)?;
-                    deleted = true;
-                }
-            }
-            // Files already missing (e.g. removed outside the app) is not a failure —
-            // deleting is idempotent, so this still needs to fall through and clear
-            // the stale "Downloaded" entry rather than erroring out and leaving it stuck.
-            if !deleted {
-                debug!(
+                Ok(deleted)
+            })();
+            // Whatever went, the registry says what is left: the entry reads as
+            // downloaded while any copy remains, and an alternate quant (which
+            // exists only while its file is on disk) leaves the list once its
+            // last copy is gone.
+            self.update_download_status()?;
+            match removal {
+                // Files already missing (e.g. removed outside the app) are not a
+                // failure: deleting is idempotent, and the stale "Downloaded"
+                // entry is cleared above rather than left stuck.
+                Ok(false) => debug!(
                     "ModelManager: no HF cache/model files found on disk for {}; clearing stale entry",
                     model_id
-                );
+                ),
+                Ok(true) => {}
+                Err(e) => {
+                    let _ = self.app_handle.emit("model-deleted", model_id);
+                    return Err(e.into());
+                }
             }
-            // Alternate-quant entries are discovery-created (the catalog only
-            // seeds defaults), so deleting one un-discovers it rather than
-            // leaving a permanent "(Q4_K_M)" row in the list.
-            if is_alternate_quant {
-                self.available_models.lock().unwrap().remove(model_id);
-            }
-            self.update_download_status()?;
             let _ = self.app_handle.emit("model-deleted", model_id);
             return Ok(());
         }
@@ -2244,20 +2350,13 @@ impl ModelManager {
 
         let mut deleted_something = false;
 
-        // Delete complete model file if it exists
-        if model_path.exists() {
-            info!("Deleting model file at: {:?}", model_path);
-            fs::remove_file(&model_path)?;
-            info!("Model file deleted successfully");
-            deleted_something = true;
-        }
-
-        // Delete partial file if it exists
-        if partial_path.exists() {
-            info!("Deleting partial file at: {:?}", partial_path);
-            fs::remove_file(&partial_path)?;
-            info!("Partial file deleted successfully");
-            deleted_something = true;
+        // The complete model file and a resumable partial, each if present; a
+        // failure names the file it could not remove.
+        for path in [&model_path, &partial_path] {
+            if path.exists() {
+                info!("Deleting model file at: {:?}", path);
+            }
+            deleted_something |= remove_file_if_present(path)?;
         }
 
         // Files already missing (e.g. removed outside the app) is not a failure —
@@ -2432,6 +2531,120 @@ mod tests {
         fs::write(repo_dir.join("refs").join(revision), revision).unwrap();
         fs::write(&snapshot, b"model").unwrap();
         snapshot
+    }
+
+    #[test]
+    fn test_delete_removes_every_copy_and_keeps_the_other_quants() {
+        // hf-hub's no-symlink layout (Windows without developer mode): the
+        // snapshot holds the data itself. Copies at the pin, at an older
+        // snapshot and in the pre-portable cache all go; the repo's other
+        // quant and its refs stay.
+        let active = TempDir::new().unwrap();
+        let legacy = TempDir::new().unwrap();
+        let dirs = vec![active.path().to_path_buf(), legacy.path().to_path_buf()];
+        let repo = "org/model-gguf";
+        let q8 = add_cached_model(active.path(), repo, "pin", "model-Q8_0.gguf");
+        let q4 = add_cached_model(active.path(), repo, "pin", "model-Q4_K_M.gguf");
+        let older = add_cached_model(active.path(), repo, "older", "model-Q8_0.gguf");
+        let portable = add_cached_model(legacy.path(), repo, "main", "model-Q8_0.gguf");
+
+        assert!(
+            ModelManager::delete_hf_cache_file_in(&dirs, repo, "model-Q8_0.gguf").unwrap(),
+            "copies were on disk"
+        );
+        for copy in [&q8, &older, &portable] {
+            assert!(!copy.exists(), "{copy:?} survived");
+        }
+        assert_eq!(
+            hf_cached_path_among(&dirs, repo, "pin", "model-Q8_0.gguf"),
+            None,
+            "the deleted model still reads as downloaded"
+        );
+        assert!(q4.is_file(), "the other quant went with it");
+        assert!(hf_repo_dir(&q4).unwrap().join("refs").join("pin").is_file());
+
+        // Idempotent: nothing left to remove is not an error.
+        assert!(!ModelManager::delete_hf_cache_file_in(&dirs, repo, "model-Q8_0.gguf").unwrap());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_delete_reports_a_file_it_cant_remove() {
+        // A file another handle holds without delete sharing (how a loaded,
+        // memory-mapped GGUF looks to the delete) must fail the delete,
+        // naming the file, not report success while the model stays on disk.
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 0x1;
+        let cache = TempDir::new().unwrap();
+        let dirs = vec![cache.path().to_path_buf()];
+        let file = add_cached_model(cache.path(), "org/model", "main", "model.gguf");
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&file)
+            .unwrap();
+
+        let result = ModelManager::delete_hf_cache_file_in(&dirs, "org/model", "model.gguf");
+        drop(held);
+
+        let err = result.expect_err("a file in use read as deleted");
+        assert!(
+            err.to_string().contains("model.gguf"),
+            "the error does not name the file: {err}"
+        );
+        assert!(file.exists());
+    }
+
+    /// An HF-style cached file: a snapshot symlink to a blob named after its
+    /// content, so copies at several revisions can share one blob.
+    #[cfg(unix)]
+    fn add_cached_blob(cache: &Path, repo_id: &str, commit: &str, filename: &str) -> PathBuf {
+        let repo_dir = cache.join(format!("models--{}", repo_id.replace('/', "--")));
+        let blob = repo_dir.join("blobs").join("b".repeat(64));
+        fs::create_dir_all(blob.parent().unwrap()).unwrap();
+        fs::write(&blob, b"model").unwrap();
+        let pointer = repo_dir.join("snapshots").join(commit).join(filename);
+        fs::create_dir_all(pointer.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&blob, &pointer).unwrap();
+        pointer
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_delete_preserves_other_filenames_sharing_a_blob() {
+        let cache = TempDir::new().unwrap();
+        let dirs = vec![cache.path().to_path_buf()];
+        let repo = "someone/model";
+        let first = add_cached_blob(cache.path(), repo, "first", "model.gguf");
+        let second = add_cached_blob(cache.path(), repo, "second", "model.gguf");
+        let other = add_cached_blob(cache.path(), repo, "second", "other.gguf");
+        let blob = fs::canonicalize(&other).unwrap();
+
+        assert!(ModelManager::delete_hf_cache_file_in(&dirs, repo, "model.gguf").unwrap());
+        assert!(fs::symlink_metadata(first).is_err());
+        assert!(fs::symlink_metadata(second).is_err());
+        assert!(other.is_file());
+        assert!(ModelManager::delete_hf_cache_file_in(&dirs, repo, "other.gguf").unwrap());
+        assert!(!blob.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_delete_reports_a_blob_it_cant_remove() {
+        // A symlinked blob in a read-only blobs dir: the pointer stays, so the
+        // entry still (correctly) reads as downloaded.
+        use std::os::unix::fs::PermissionsExt;
+        let lock =
+            |dir: &Path, mode| fs::set_permissions(dir, fs::Permissions::from_mode(mode)).unwrap();
+        let cache = TempDir::new().unwrap();
+        let dirs = vec![cache.path().to_path_buf()];
+        let pointer = add_cached_blob(cache.path(), "org/model", "main", "model.gguf");
+        let blobs = hf_repo_dir(&pointer).unwrap().join("blobs");
+        lock(&blobs, 0o555);
+        let result = ModelManager::delete_hf_cache_file_in(&dirs, "org/model", "model.gguf");
+        lock(&blobs, 0o755);
+        assert!(result.is_err(), "undeletable blob read as {result:?}");
+        assert!(pointer.exists(), "pointer removed while its blob stayed");
     }
 
     #[test]

@@ -299,7 +299,11 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
     recording state machine, readiness generation, lazy mic close / idle
     timeout, in-place VAD threshold and denoise updates, `last_speech_ms()`)
   - `model.rs` - Model catalog, downloading (HF hub or mirror), quantization
-    variants; `model/download.rs` is the HTTP downloader
+    variants; `model/download.rs` is the HTTP downloader. Deleting a model
+    removes only its own file: every cached copy (each snapshot, the
+    pre-portable cache too) and each blob no other pointer shares, never the
+    repo folder, so another quant of the repo survives; a file that cannot be
+    removed fails the delete with its path
   - `model_capabilities.rs`, `gguf_meta.rs` - Per-model capability detection
     and GGUF metadata parsing
   - `native_streaming_latency.rs` - Maps the latency preset onto the

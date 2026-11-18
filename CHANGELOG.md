@@ -864,6 +864,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Deleting a model keeps its other quantizations (2026-11-18).** Deleting a
+  catalog model removed its whole download folder, so a second quantization of
+  the same model (say a Q4_K_M next to the default Q8_0) disappeared with it.
+  Now only that model's file goes, every cached copy of it. A file that cannot
+  be removed (in use, permissions) is reported with its path instead of the
+  delete claiming success, and the list shows what is really left. Ported
+  from upstream.
+
 - **Pasting no longer freezes the app's window (2026-11-18).** The final paste
   of a dictation or a Multi-STT result ran on the window's main thread and
   held it through the paste delays; it now runs on its own thread, which also

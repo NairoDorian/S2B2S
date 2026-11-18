@@ -233,6 +233,10 @@ const modelState = createSolidStore<ModelsStore>((set, get) => ({
         await get().loadCurrentModel();
         return true;
       } else {
+        // A delete can stop partway (one copy in use): the backend has
+        // already refreshed what is left on disk, so show that. loadModels
+        // clears the error, so it is set after.
+        await get().loadModels();
         set({ error: `Failed to delete model: ${result.error}` });
         return false;
       }
